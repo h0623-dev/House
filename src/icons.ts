@@ -17,6 +17,7 @@ const extraCells: Record<string, number> = { sweep:0, dash:1, heal:2, 'plot-empt
 let illustrationCropId = 0;
 
 const paths: Record<string,string> = {
+ move: '<path d="M9 11V4a1.5 1.5 0 0 1 3 0v7-8a1.5 1.5 0 0 1 3 0v8-6a1.5 1.5 0 0 1 3 0v7-3a1.5 1.5 0 0 1 3 0v6c0 4-3 7-7 7h-1c-3 0-5-2-6-4l-4-6a1.5 1.5 0 0 1 2.4-1.8L9 15v-4Z"/>',
  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
  leaf: '<path d="M20 3c-8-1-16 3-16 9a7 7 0 0 0 7 7c6 0 10-8 9-16Z"/><path d="M4 21 15 10M8 17v-5m0 5h5"/>',
  wood: '<path d="m5 15 9-10 6 6-10 9Z"/><ellipse cx="7.5" cy="17.5" rx="4" ry="3.5" transform="rotate(45 7.5 17.5)"/><path d="m11 9 5 5m-1-9 3-2 4 5-2 3M6 17l2 2"/>',

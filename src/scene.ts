@@ -14,7 +14,7 @@ type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [n
 type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'gather';
 type FarmAction = 'plant' | 'water' | 'harvest';
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
-type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean; placing: boolean };
+type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'harvest';
 type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; plotIndex: number; cropId: CropId; resolve: () => void };
 // The hero belongs to the truck's scale: a person fits comfortably beside its house and planters.
@@ -53,6 +53,9 @@ export class Scene {
   private cancelledMapPointer: number | null = null;
   private mapPan: Point = [0, 0];
   private mapZoom = 1;
+  private mapMoveMode = false;
+  private cameraViewport: Point = [920, 560];
+  private manualViewport: Point | null = null;
   private pinch = new MapPinchGesture();
   private cancelledGesturePointers = new Set<number>();
   private pendingFarmTouch: { pointerId: number; point: Point; timer: number } | null = null;
@@ -102,12 +105,16 @@ export class Scene {
     if (!event.isPrimary) return;
     this.cancelledFarmPointer = null;
     this.cancelledMapPointer = null;
-    if (!this.farmMode) {
+    // A farming swipe belongs to a plot only when it starts on that plot. Empty
+    // ground always moves the map, even if the drag later crosses a planter.
+    const startsFarmStroke = !this.mapMoveMode && this.farmMode !== null
+      && (!this.action || isFarmAction(this.action.kind))
+      && this.pointerHits(event.clientX, event.clientY).plots.length > 0;
+    if (!startsFarmStroke) {
       this.endMapGesture(); this.cancelledMapPointer = null;
-      this.mapGesture = { pointerId: event.pointerId, start: [event.clientX, event.clientY], last: [event.clientX, event.clientY], moved: false, placing: this.constructionMode !== null };
-      this.canvas.setPointerCapture(event.pointerId); return;
+      this.mapGesture = { pointerId: event.pointerId, start: [event.clientX, event.clientY], last: [event.clientX, event.clientY], moved: false };
+      this.canvas.setPointerCapture(event.pointerId); event.preventDefault(); return;
     }
-    if (this.action && !isFarmAction(this.action.kind)) return;
     this.endFarmStroke();
     this.cancelledFarmPointer = null;
     this.farmStroke = { pointerId: event.pointerId, last: [event.clientX, event.clientY], visited: new Set() };
@@ -130,13 +137,17 @@ export class Scene {
     const gesture = this.mapGesture;
     if (gesture && gesture.pointerId === event.pointerId) {
       const distance = Math.hypot(event.clientX - gesture.start[0], event.clientY - gesture.start[1]);
+      const previous = gesture.moved ? gesture.last : gesture.start;
       if (distance > 7) gesture.moved = true;
-      if (gesture.moved && !gesture.placing) {
-        const changeX = (event.clientX - gesture.last[0]) / this.scale, changeY = (event.clientY - gesture.last[1]) / this.scale;
+      if (gesture.moved) {
+        this.holdCamera();
+        const changeX = (event.clientX - previous[0]) / this.scale, changeY = (event.clientY - previous[1]) / this.scale;
         const nextX = Math.max(-this.mapPanLimit[0], Math.min(this.mapPanLimit[0], this.mapPan[0] - changeX));
         const nextY = Math.max(-this.mapPanLimit[1], Math.min(this.mapPanLimit[1], this.mapPan[1] - changeY));
         this.camera.x += nextX - this.mapPan[0]; this.camera.y += nextY - this.mapPan[1];
         this.mapPan = [nextX, nextY];
+        event.preventDefault();
+        this.render();
       }
       gesture.last = [event.clientX, event.clientY]; return;
     }
@@ -165,11 +176,9 @@ export class Scene {
       return;
     }
     this.pinch.up(event.pointerId);
-    this.cancelledGesturePointers.delete(event.pointerId);
-    if (event.pointerId === this.farmStroke?.pointerId) this.endFarmStroke(false);
-    if (event.pointerId === this.mapGesture?.pointerId) this.endMapGesture(false);
-    if (event.pointerId === this.cancelledFarmPointer) this.cancelledFarmPointer = null;
-    if (event.pointerId === this.cancelledMapPointer) this.cancelledMapPointer = null;
+    this.cancelledGesturePointers.add(event.pointerId);
+    if (event.pointerId === this.farmStroke?.pointerId) this.endFarmStroke();
+    if (event.pointerId === this.mapGesture?.pointerId) this.endMapGesture();
   };
   private pointer = (event: PointerEvent) => {
     const pinched = this.pinch.up(event.pointerId);
@@ -182,7 +191,7 @@ export class Scene {
       this.endMapGesture(false); if (moved) return;
     }
     if (event.pointerId === this.farmStroke?.pointerId) { this.flushFarmTouch(); this.pointerMove(event); this.endFarmStroke(false); return; }
-    if (this.action || this.farmMode) return;
+    if (this.mapMoveMode || this.action || this.farmMode) return;
     const { candidates, plots, x, y } = this.pointerHits(event.clientX, event.clientY);
     const foreground = [...candidates].reverse().find(item => (item.kind === 'pet' || item.kind === 'character') && Math.hypot(item.x - x, item.y - y) < item.radius);
     const workTree = candidates.find(item => item.kind === 'grove-work');
@@ -224,10 +233,10 @@ export class Scene {
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
-  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; } this.farmFocus = enabled; }
+  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; }
   /** A farming tool stays selected while taps or a finger swipe queue further plots. */
   setFarmMode(mode: FarmAction | null, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
-    if (mode !== this.farmMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; }
+    if (mode !== this.farmMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.farmMode = mode;
     this.canvas.style.touchAction = 'none';
     this.queuedPlotIds = mode ? [...queuedPlotIds] : [];
@@ -236,20 +245,30 @@ export class Scene {
   }
   setPlantingMode(enabled: boolean, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') { this.setFarmMode(enabled ? 'plant' : null, queuedPlotIds, selectedSeed); }
   setConstructionMode(type: BuildingType | null, selectedSlot?: number, movingId?: number) {
-    if (type !== this.constructionMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; }
+    if (type !== this.constructionMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.constructionMode = type;
     this.selectedSlot = type && selectedSlot !== undefined ? selectedSlot : null;
     this.movingBuildingId = type && movingId !== undefined ? movingId : null;
     if (type && !this.action) this.zone = 'home';
   }
   setSelectedFacility(id: number | null) {
-    if (id !== this.selectedFacilityId) { this.endFarmStroke(); this.endMapGesture(); if (id !== null) this.mapPan = [0, 0]; }
+    if (id !== this.selectedFacilityId) { this.endFarmStroke(); this.endMapGesture(); }
     this.selectedFacilityId = id;
   }
   setMapZoom(zoom: number) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zoomAt(zoom); }
   getMapZoom() { return this.mapZoom; }
+  setMapMoveMode(enabled: boolean) {
+    if (enabled === this.mapMoveMode) return;
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
+    this.mapMoveMode = enabled;
+    if (enabled) this.holdCamera();
+    this.canvas.style.cursor = enabled ? 'grab' : '';
+    this.canvas.dispatchEvent(new CustomEvent('scenemovemodechange', { detail: { enabled } }));
+    this.render();
+  }
+  getMapMoveMode() { return this.mapMoveMode; }
   resetMapView() {
-    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1;
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
   }
@@ -258,7 +277,10 @@ export class Scene {
     if (value) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); cancelAnimationFrame(this.frame); this.frame = 0; }
     else this.visibility();
   }
-  setZone(zone: 'home' | 'grove') { if (!this.action && zone !== this.zone) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.zone = zone; } }
+  setZone(zone: 'home' | 'grove', recenter = false) {
+    if (!this.action && zone !== this.zone) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zone = zone; }
+    if (recenter) this.resetMapView();
+  }
   /** Resolves only after the visible walk, work and return have finished. */
   playAction(kind: SceneAction, plotId?: number, selectedCropId?: CropId): Promise<void> {
     if (this.disposed) return Promise.resolve();
@@ -348,7 +370,9 @@ export class Scene {
       if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
     }
   }
+  private holdCamera() { this.manualViewport ??= [...this.cameraViewport]; }
   private zoomAt(zoom: number, from?: { x: number; y: number }, to = from) {
+    this.holdCamera();
     const rect = this.canvas.getBoundingClientRect();
     const center = { x: this.dx + this.camera.x * this.scale, y: this.dy + this.camera.y * this.scale };
     const local = (point?: { x: number; y: number }) => point ? { x: point.x - rect.left, y: point.y - rect.top } : center;
@@ -375,7 +399,8 @@ export class Scene {
   private publishGeometry() {
     const round = (value: number) => Math.round(value * 1000) / 1000;
     const geometry = JSON.stringify({ scale: round(this.scale), dx: round(this.dx), dy: round(this.dy), zone: this.zone,
-      farmMode: this.farmMode, constructionMode: this.constructionMode, mapZoom: this.mapZoom });
+      farmMode: this.farmMode, constructionMode: this.constructionMode, mapZoom: this.mapZoom,
+      mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null });
     if (this.canvas.dataset.sceneGeometry !== geometry) this.canvas.dataset.sceneGeometry = geometry;
     const buildings = this.state ? getSettlement(this.state).buildings : [];
     const unlocked = this.state ? getUnlockedSlots(this.state) : 2;
@@ -550,13 +575,17 @@ export class Scene {
       const desiredZoom = facility ? 1.35 : 1;
       target = { x: targetX, y: targetY, zoom: desiredZoom };
     }
+    // Keep the viewport as well as the camera fixed after a manual move. An action
+    // starting or ending must not silently change the map's scale under the finger.
+    if (this.manualViewport) [viewWidth, viewHeight] = this.manualViewport;
+    this.cameraViewport = [viewWidth, viewHeight];
     // One user-controlled magnification works on the truck, farm, grove and during chores.
     this.mapPanLimit = [viewWidth * .6, viewHeight * .6];
     this.mapPan = [Math.max(-this.mapPanLimit[0], Math.min(this.mapPanLimit[0], this.mapPan[0])),
       Math.max(-this.mapPanLimit[1], Math.min(this.mapPanLimit[1], this.mapPan[1]))];
     target.x += this.mapPan[0]; target.y += this.mapPan[1]; target.zoom *= this.mapZoom;
-    // Automatic focus waits while two fingers are steering the camera, so it cannot pull the anchor away.
-    if (!this.pinch.active) {
+    // Explicit navigation or the reset control returns to automatic camera focus.
+    if (!this.manualViewport && !this.pinch.active) {
       this.camera.x += (target.x - this.camera.x) * blend;
       this.camera.y += (target.y - this.camera.y) * blend;
       this.camera.zoom += (target.zoom - this.camera.zoom) * blend;

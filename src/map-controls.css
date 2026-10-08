@@ -7,9 +7,19 @@
 .work-view .map-controls>button[data-map-zoom],.construction-mode .map-controls>button[data-map-zoom]{display:flex}
 .farm-tray-open .map-controls,.construction-mode .map-controls,.facility-selected .map-controls{flex-direction:row;align-items:center}
 .map-controls>button:focus-visible{outline:3px solid #456b3f;outline-offset:2px}
+.map-move-tool{position:absolute;left:11px;top:87px;z-index:3;width:48px;min-height:52px}
+.map-move-tool>span{width:44px;height:38px}
+.map-move-tool .icon{width:26px;height:28px}
+.map-move-tool>small{font-size:8px}
+.map-move-tool[aria-pressed="true"]>span{background:#416441;color:#fff6d9;border-color:#e9d196;box-shadow:0 0 0 2px #fff0b7}
+.map-move-tool[aria-pressed="true"]>small{background:#416441;color:#fff8df;border-radius:4px;padding:2px 4px}
+.map-move-tool:focus-visible{outline:3px solid #456b3f;outline-offset:2px;border-radius:10px}
+.map-move-active #world{cursor:grab}
+.map-move-active #world:active{cursor:grabbing}
 .chore-status{left:12px;transform:none;width:min(calc(100% - 82px),360px)}
 .chore-status strong{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap}
 .chore-status [data-chore-phase]{font-size:9px;font-weight:600;color:#53694d}
 .chore-track i{animation:none;transition:width .15s linear}
 .farm-tray-open .chore-status{bottom:212px}
 @media(orientation:landscape) and (max-height:600px){.map-controls>button[data-map-zoom],.map-controls>button[data-map-reset]{min-height:44px;height:44px}.map-controls>button[data-farm-toggle]{width:55px}.farm-tray-open .chore-status{bottom:115px}}
+@media(orientation:landscape) and (max-height:600px){.map-move-tool{top:44px;left:11px;min-height:47px}.map-move-tool>span{height:33px}}
