@@ -68,7 +68,11 @@ function lateFixture(fresh, overrides = {}) {
  return Object.assign(state, overrides);
 }
 async function openInventory(button = quick('plant')) {
- await touch(button);
+ if (await plantingMode().isVisible() && await plantingMode().getAttribute('data-farm-mode') === 'plant') await touch(plantingMode().locator('[data-seed-change]'));
+ else await touch(button);
+ if (!await page.locator('#modal-root [data-select-seed]').first().isVisible()) {
+  await touch(plantingMode().locator('[data-seed-change]'));
+ }
  await page.locator('#modal-root [data-select-seed]').first().waitFor();
  assert.equal(await page.locator('#modal-root [data-select-seed]').count(), 6, 'inventory contains six distinct seed choices');
 }
@@ -159,7 +163,7 @@ try {
   const context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
   await context.addInitScript(() => {
    const fixture = localStorage.getItem('road-haven-seed-fixture');
-   if (fixture) { localStorage.setItem('road-haven-save-v1', fixture); localStorage.removeItem('road-haven-seed-fixture'); }
+   if (fixture) { localStorage.setItem('road-haven-save-v1', fixture); localStorage.removeItem('road-haven-seed-fixture'); localStorage.removeItem('road-haven-selected-seed-v1'); }
   });
   page = await context.newPage();
   page.on('pageerror', error => errors.push(`${width}: ${error.message}`));
@@ -178,8 +182,8 @@ try {
   await touch(page.locator('[data-start]'));
   await pauseWorld();
   const fresh = await saved();
-  assert.equal(fresh.resources.seeds, 8);
-  assert.deepEqual(fresh.seedInventory, { carrot: 3, potato: 1, tomato: 1, corn: 1, strawberry: 1, pumpkin: 1 });
+  assert.equal(fresh.resources.seeds, 23);
+  assert.deepEqual(fresh.seedInventory, { carrot: 8, potato: 3, tomato: 3, corn: 3, strawberry: 3, pumpkin: 3 });
   await openInventory();
   await assertInventoryLayout(width, height);
   await shot(`inventory-${width}`);

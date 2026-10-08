@@ -56,6 +56,8 @@ export interface SaveStorage {
 
 export const SAVE_KEY = 'road-haven-save-v1';
 export const CROP_MINUTES = CROPS.carrot.growMinutes;
+/** One normally earned seed pack can fill three plots of the discovered variety. */
+export const SEED_PACK_SIZE = 3;
 export const MAX_DECK_LEVEL = 6;
 export const resourceLabels: Record<Resource, string> = {
   wood: '목재', scrap: '고철', food: '식량', water: '물', seeds: '씨앗',
@@ -74,8 +76,8 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
     health: 100,
     energy: 85,
     morale: 90,
-    resources: { wood: 24, scrap: 12, food: 8, water: 16, seeds: 8 },
-    seedInventory: { carrot: 3, potato: 1, tomato: 1, corn: 1, strawberry: 1, pumpkin: 1 },
+    resources: { wood: 24, scrap: 12, food: 8, water: 16, seeds: 23 },
+    seedInventory: { carrot: 8, potato: 3, tomato: 3, corn: 3, strawberry: 3, pumpkin: 3 },
     plots: [
       { id: 1, plantedAt: 240, watered: true, cropId: 'carrot' },
       { id: 2, plantedAt: 420, watered: false, cropId: 'carrot' },
@@ -144,7 +146,7 @@ export function expansionCost(state: GameState): { wood: number; scrap: number }
 
 export function questList(state: GameState): Quest[] {
   const definitions = [
-    { id: 'first-harvest', title: '작은 농부의 첫걸음', description: '트럭 텃밭에서 작물 3개 수확하기', current: state.stats.harvests, target: 3, reward: '씨앗 5 · 식량 4' },
+    { id: 'first-harvest', title: '작은 농부의 첫걸음', description: '트럭 텃밭에서 작물 3개 수확하기', current: state.stats.harvests, target: 3, reward: '당근 씨앗 5 · 식량 4' },
     { id: 'road-scout', title: '도로 위의 보물찾기', description: '주변 도로에서 자원 3번 탐색하기', current: state.stats.gathers, target: 3, reward: '목재 12 · 고철 6' },
     { id: 'bigger-home', title: '조금 더 넓은 우리 집', description: '트럭 생활 공간 1번 확장하기', current: state.stats.expansions, target: 1, reward: '물 8 · 경험치 30' },
   ];
@@ -276,9 +278,9 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       next.resources.wood += 10;
       next.resources.scrap += 5;
       next.resources.water += 4;
-      addSeeds(next, foundSeed, 1);
+      addSeeds(next, foundSeed, SEED_PACK_SIZE);
       next.stats.gathers += 1;
-      message = `도로 탐색 완료! 목재 +10 · 고철 +5 · 물 +4 · ${CROPS[foundSeed].seedName} +1`;
+      message = `도로 탐색 완료! 목재 +10 · 고철 +5 · 물 +4 · ${CROPS[foundSeed].seedName} +${SEED_PACK_SIZE}`;
       duration = 35;
       xp = 12;
       break;
@@ -286,9 +288,9 @@ export function performAction(state: GameState, action: Action, plotId?: number,
     case 'chop': {
       const foundSeed = discoveredSeed(next);
       next.resources.wood += 18;
-      addSeeds(next, foundSeed, 1);
+      addSeeds(next, foundSeed, SEED_PACK_SIZE);
       next.stats.chops += 1;
-      message = `도끼로 나무를 베고 통나무를 모았어요. 목재 +18 · ${CROPS[foundSeed].seedName} +1`;
+      message = `도끼로 나무를 베고 통나무를 모았어요. 목재 +18 · ${CROPS[foundSeed].seedName} +${SEED_PACK_SIZE}`;
       duration = 35;
       xp = 14;
       break;

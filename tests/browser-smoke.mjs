@@ -103,7 +103,11 @@ async function selectPlot(id) {
 }
 
 async function chooseSeed(button, cropId = 'carrot') {
- await button.click();
+ if (await page.locator('#planting-toolbar').isVisible() && await page.locator('#planting-toolbar').getAttribute('data-farm-mode') === 'plant') await page.locator('#planting-toolbar [data-seed-change]').click();
+ else await button.click();
+ if (!await page.locator('#modal-root [data-select-seed]').first().isVisible()) {
+  await page.locator('#planting-toolbar [data-seed-change]').click();
+ }
  assert.equal(await page.locator('#modal-root [data-select-seed]').count(), 6, 'planting starts with a choice of six seeds');
  const before = await save();
  await page.locator(`[data-select-seed="${cropId}"]`).click();

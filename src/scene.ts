@@ -1,4 +1,4 @@
-import { CROPS, getCropProgress, getPlotCropId, type CropId, type GameState } from './game';
+import { CROPS, getCropProgress, getPlotCropId, type CropId, type GameState, type Plot } from './game';
 import { drawHero, type HeroPose } from './actors';
 import { drawPet, drawZombie } from './creatures';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady } from './world-art';
@@ -8,6 +8,9 @@ type Point = [number, number];
 type Selectable = 'farm' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number };
 type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'gather';
+type FarmAction = 'plant' | 'water' | 'harvest';
+type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
+const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'harvest';
 type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; plotIndex: number; cropId: CropId; resolve: () => void };
 // The hero belongs to the truck's scale: a person fits comfortably beside its house and planters.
 const WORLD_HERO_SCALE = .68;
@@ -35,7 +38,9 @@ export class Scene {
   private zone: 'home' | 'grove' = 'home';
   private selectedPlotId: number | null = null;
   private farmFocus = false;
-  private plantingMode = false;
+  private farmMode: FarmAction | null = null;
+  private farmStroke: FarmStroke | null = null;
+  private cancelledFarmPointer: number | null = null;
   private queuedPlotIds: number[] = [];
   private plantingCropId: CropId = 'carrot';
   private camera = { x: 480, y: 350, zoom: 1 };
@@ -60,32 +65,63 @@ export class Scene {
     this.render();
   };
   private visibility = () => {
-    if (document.hidden) { cancelAnimationFrame(this.frame); this.frame = 0; }
+    if (document.hidden) { this.endFarmStroke(); cancelAnimationFrame(this.frame); this.frame = 0; }
     else if (!this.frame && !this.suspended) { this.lastFrame = 0; this.frame = requestAnimationFrame(this.animate); }
   };
+  private blur = () => this.endFarmStroke();
+  private pointerDown = (event: PointerEvent) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    this.cancelledFarmPointer = null;
+    if (!this.farmMode || this.action && !isFarmAction(this.action.kind) || this.suspended) return;
+    this.endFarmStroke();
+    this.cancelledFarmPointer = null;
+    this.farmStroke = { pointerId: event.pointerId, last: [event.clientX, event.clientY], visited: new Set() };
+    this.canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    this.paintFarmPoint(event.clientX, event.clientY, false);
+  };
+  private pointerMove = (event: PointerEvent) => {
+    const stroke = this.farmStroke;
+    if (!stroke || event.pointerId !== stroke.pointerId || !this.farmMode) return;
+    event.preventDefault();
+    const [fromX, fromY] = stroke.last;
+    const steps = Math.max(1, Math.ceil(Math.hypot(event.clientX - fromX, event.clientY - fromY) / 10));
+    stroke.last = [event.clientX, event.clientY];
+    // Sparse touch events still paint every planter crossed by a fast swipe.
+    for (let step = 1; step <= steps && this.farmStroke === stroke; step++) {
+      const amount = step / steps;
+      this.paintFarmPoint(fromX + (event.clientX - fromX) * amount, fromY + (event.clientY - fromY) * amount, true);
+    }
+  };
+  private pointerCancel = (event: PointerEvent) => {
+    if (event.type === 'lostpointercapture') {
+      if (event.pointerId === this.farmStroke?.pointerId) this.endFarmStroke();
+      return;
+    }
+    if (event.pointerId === this.farmStroke?.pointerId) this.endFarmStroke(false);
+    if (event.pointerId === this.cancelledFarmPointer) this.cancelledFarmPointer = null;
+  };
   private pointer = (event: PointerEvent) => {
-    const canQueuePlant = this.plantingMode && this.action?.kind === 'plant';
-    if (this.action && !canQueuePlant) return;
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left - this.dx) / this.scale;
-    const y = (event.clientY - rect.top - this.dy) / this.scale;
-    // Small plots remain tappable on phones; choose the nearest plot when targets overlap.
-    const candidates = this.hits.filter(item => item.bounds
-      ? x >= item.bounds[0] && y >= item.bounds[1] && x <= item.bounds[2] && y <= item.bounds[3]
-      : Math.hypot(item.x - x, item.y - y) < Math.max(item.radius, 22 / this.scale));
-    const plots = candidates.filter(item => item.kind === 'farm').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    if (event.pointerId === this.cancelledFarmPointer) { this.cancelledFarmPointer = null; return; }
+    if (event.pointerId === this.farmStroke?.pointerId) { this.pointerMove(event); this.endFarmStroke(false); return; }
+    if (this.action || this.farmMode) return;
+    const { candidates, plots, x, y } = this.pointerHits(event.clientX, event.clientY);
     const foreground = [...candidates].reverse().find(item => (item.kind === 'pet' || item.kind === 'character') && Math.hypot(item.x - x, item.y - y) < item.radius);
     const workTree = candidates.find(item => item.kind === 'grove-work');
-    // In seed mode, plot taps win even when the working hero overlaps a planter.
-    const hit = this.plantingMode ? plots[0] : foreground ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
+    const hit = foreground ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
     if (hit) { this.focus(hit.kind); this.onSelect(hit.kind, hit.plotId); }
   };
 
   constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable, plotId?: number) => void) {
     this.ctx = canvas.getContext('2d')!;
     canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 텃밭과 반려견, 캐릭터, 도로 옆 벌목장을 눌러 보세요.');
+    canvas.addEventListener('pointerdown', this.pointerDown);
+    canvas.addEventListener('pointermove', this.pointerMove);
     canvas.addEventListener('pointerup', this.pointer);
+    canvas.addEventListener('pointercancel', this.pointerCancel);
+    canvas.addEventListener('lostpointercapture', this.pointerCancel);
     document.addEventListener('visibilitychange', this.visibility);
+    window.addEventListener('blur', this.blur);
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(canvas);
     this.resize();
@@ -98,16 +134,19 @@ export class Scene {
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
   setFarmFocus(enabled: boolean) { this.farmFocus = enabled; }
-  /** Keep a selected seed ready while the player taps several plots to plant in order. */
-  setPlantingMode(enabled: boolean, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
-    this.plantingMode = enabled;
-    this.queuedPlotIds = enabled ? [...queuedPlotIds] : [];
+  /** A farming tool stays selected while taps or a finger swipe queue further plots. */
+  setFarmMode(mode: FarmAction | null, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
+    if (mode !== this.farmMode) this.endFarmStroke();
+    this.farmMode = mode;
+    this.canvas.style.touchAction = mode ? 'none' : 'manipulation';
+    this.queuedPlotIds = mode ? [...queuedPlotIds] : [];
     this.plantingCropId = selectedSeed;
-    if (enabled && !this.action) this.zone = 'home';
+    if (mode && !this.action) this.zone = 'home';
   }
+  setPlantingMode(enabled: boolean, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') { this.setFarmMode(enabled ? 'plant' : null, queuedPlotIds, selectedSeed); }
   setSuspended(value: boolean) {
     this.suspended = value;
-    if (value) { cancelAnimationFrame(this.frame); this.frame = 0; }
+    if (value) { this.endFarmStroke(); cancelAnimationFrame(this.frame); this.frame = 0; }
     else this.visibility();
   }
   setZone(zone: 'home' | 'grove') { if (!this.action) this.zone = zone; }
@@ -138,6 +177,7 @@ export class Scene {
   }
   focus(kind: string) { this.focused = kind; this.focusedUntil = performance.now() + 2400; }
   resize() {
+    this.endFarmStroke();
     const bounds = this.canvas.getBoundingClientRect();
     this.width = bounds.width || 850;
     this.height = bounds.height || 650;
@@ -148,11 +188,50 @@ export class Scene {
   }
   destroy() {
     this.disposed = true;
+    this.endFarmStroke(false);
     this.action?.resolve(); this.action = null;
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
+    this.canvas.removeEventListener('pointerdown', this.pointerDown);
+    this.canvas.removeEventListener('pointermove', this.pointerMove);
     this.canvas.removeEventListener('pointerup', this.pointer);
+    this.canvas.removeEventListener('pointercancel', this.pointerCancel);
+    this.canvas.removeEventListener('lostpointercapture', this.pointerCancel);
     document.removeEventListener('visibilitychange', this.visibility);
+    window.removeEventListener('blur', this.blur);
+  }
+
+  private endFarmStroke(suppressUp = true) {
+    const stroke = this.farmStroke;
+    this.farmStroke = null;
+    if (!stroke) return;
+    this.cancelledFarmPointer = suppressUp ? stroke.pointerId : null;
+    if (this.canvas.hasPointerCapture(stroke.pointerId)) this.canvas.releasePointerCapture(stroke.pointerId);
+  }
+  private pointerHits(clientX: number, clientY: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (clientX - rect.left - this.dx) / this.scale, y = (clientY - rect.top - this.dy) / this.scale;
+    const withinCanvas = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    const candidates = withinCanvas ? this.hits.filter(item => item.bounds
+      ? x >= item.bounds[0] && y >= item.bounds[1] && x <= item.bounds[2] && y <= item.bounds[3]
+      : Math.hypot(item.x - x, item.y - y) < Math.max(item.radius, 22 / this.scale)) : [];
+    const plots = candidates.filter(item => item.kind === 'farm').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    return { candidates, plots, x, y };
+  }
+  private eligibleFarmPlot(plot: Plot) {
+    if (this.farmMode === 'plant') return plot.plantedAt === null;
+    if (this.farmMode === 'water') return plot.plantedAt !== null && !plot.watered;
+    return this.farmMode === 'harvest' && this.state !== null && getCropProgress(this.state, plot) >= 1;
+  }
+  private paintFarmPoint(clientX: number, clientY: number, swiping: boolean) {
+    const stroke = this.farmStroke;
+    if (!stroke || !this.farmMode || this.action && !isFarmAction(this.action.kind)) return;
+    const hit = this.pointerHits(clientX, clientY).plots[0];
+    if (hit?.plotId === undefined || stroke.visited.has(hit.plotId)) return;
+    const plot = this.state?.plots.find(item => item.id === hit.plotId);
+    if (swiping && (!plot || !this.eligibleFarmPlot(plot))) return;
+    stroke.visited.add(hit.plotId);
+    this.focus('farm'); this.onSelect('farm', hit.plotId);
   }
 
   private p(u: number, v: number, z = 0): Point { return [480 + u * .91 - v * .67, 420 + u * .34 + v * .47 - z]; }
@@ -169,6 +248,13 @@ export class Scene {
   private ellipse(x: number, y: number, rx: number, ry: number, fill: string, stroke = '', weight = 1.5) {
     const c = this.ctx; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); if (fill) { c.fillStyle = fill; c.fill(); }
     if (stroke) { c.strokeStyle = stroke; c.lineWidth = weight; c.stroke(); }
+  }
+  private waterDrop(x: number, y: number, size: number) {
+    const c = this.ctx; c.beginPath(); c.moveTo(x, y - size);
+    c.bezierCurveTo(x + size, y, x + size * .6, y + size * .6, x, y + size * .6);
+    c.bezierCurveTo(x - size * .6, y + size * .6, x - size, y, x, y - size);
+    c.fillStyle = '#9dd7e9'; c.fill(); c.strokeStyle = '#578da8'; c.lineWidth = 1.1; c.stroke();
+    this.line([[x - size * .3, y], [x - size * .2, y + size * .23]], '#edfbff', 1.5);
   }
   private round(x: number, y: number, width: number, height: number, radius: number, fill: string, stroke = '') {
     const c = this.ctx; c.beginPath(); c.roundRect(x, y, width, height, radius); c.fillStyle = fill; c.fill();
@@ -229,12 +315,12 @@ export class Scene {
   private updateCamera() {
     const { level, left, front } = this.deckBounds();
     const homeX = 480 - (level - 1) * 12, homeY = 350 + (level - 1) * 6;
-    const showFarm = this.farmFocus || this.plantingMode;
+    const showFarm = this.farmFocus || this.farmMode !== null;
     let target = showFarm && this.zone === 'home' ? { x: 468, y: 350, zoom: 1.48 } : { x: homeX, y: homeY, zoom: 1 };
     if (this.zone === 'grove') target = { x: 180, y: 515, zoom: 2.15 };
     const action = this.action;
     // A stable whole-farm view lets additional taps queue while the hero works.
-    if (action && !(this.plantingMode && action.kind === 'plant')) {
+    if (action && !(this.farmMode && isFarmAction(action.kind))) {
       const entry = this.ease(action.elapsed / action.walk), exit = this.ease((action.duration - action.elapsed) / action.walk), amount = Math.min(entry, exit);
       const targetPoint = action.path[action.path.length - 1];
       const logging = action.kind === 'chop' || action.kind === 'gather';
@@ -417,13 +503,17 @@ export class Scene {
         this.ctx.save(); this.ctx.globalAlpha = .25; this.poly(soil, '#251c12', '', 0); this.ctx.restore();
       }
       const queueIndex = this.queuedPlotIds.indexOf(plot.id);
-      const working = this.action?.kind === 'plant' && this.action.plotIndex === i;
-      const emptyTarget = this.plantingMode && plot.plantedAt === null;
-      if (plot.id === this.selectedPlotId || working || queueIndex >= 0 || emptyTarget) {
-        const color = working || plot.id === this.selectedPlotId ? '#ffec9a' : queueIndex >= 0 ? '#ffce74' : '#bfdca2';
+      const working = this.action !== null && isFarmAction(this.action.kind) && this.action.plotIndex === i;
+      const eligibleTarget = this.farmMode !== null && this.eligibleFarmPlot(plot);
+      const waterTool = this.farmMode === 'water';
+      const targetColor = waterTool ? '#a4d8ee' : this.farmMode === 'harvest' ? '#f5dc86' : '#bfdca2';
+      if (plot.id === this.selectedPlotId || working || queueIndex >= 0 || eligibleTarget) {
+        const color = working ? this.action?.kind === 'water' ? '#daf7ff' : '#ffec9a'
+          : queueIndex >= 0 ? waterTool ? '#85c9e6' : '#ffce74'
+          : plot.id === this.selectedPlotId ? waterTool ? '#d3f1fc' : '#ffec9a' : targetColor;
         this.ctx.save(); this.ctx.shadowColor = color; this.ctx.shadowBlur = working ? 10 : 5;
         if (queueIndex >= 0 && !working) this.ctx.setLineDash([5, 4]);
-        this.poly([this.p(u, v, 108), this.p(u + 69, v, 108), this.p(u + 69, v + 68, 108), this.p(u, v + 68, 108)], working ? '#ffe79d26' : '#bde39f16', color, working ? 3 : 2);
+        this.poly([this.p(u, v, 108), this.p(u + 69, v, 108), this.p(u + 69, v + 68, 108), this.p(u, v + 68, 108)], waterTool ? '#aadfee24' : working ? '#ffe79d26' : '#bde39f16', color, working ? 3 : 2);
         this.ctx.restore();
       }
       const progress = this.state ? getCropProgress(this.state, plot) : 0;
@@ -440,15 +530,21 @@ export class Scene {
         if (!drawCropSprite(this.ctx, cropId, 'plant', 0, 3, width, height)) drawWorldSprite(this.ctx, mature ? 'carrot' : medium ? 'carrotYoung' : 'sprout', 0, 3, width, height);
         this.ctx.restore();
       }
-      if (emptyTarget && !working) {
+      if (eligibleTarget && !working) {
         const center = this.p(u + 34, v + 34, 115);
         this.ctx.save(); this.ctx.globalAlpha = queueIndex >= 0 ? .95 : .65;
-        drawCropSprite(this.ctx, this.plantingCropId, 'seed', center[0], center[1] + 4, 18, 24);
+        if (this.farmMode === 'plant') drawCropSprite(this.ctx, this.plantingCropId, 'seed', center[0], center[1] + 4, 18, 24);
+        else {
+          const hint = this.p(u + 53, v + 46, 125);
+          this.ellipse(hint[0], hint[1], 10, 10, '#fff9e9e8', waterTool ? '#88bed5' : '#ccb16c', 1);
+          if (waterTool) this.waterDrop(hint[0], hint[1] + 1, 7);
+          else drawCropSprite(this.ctx, cropId, 'produce', hint[0], hint[1] + 8, 17, 17);
+        }
         this.ctx.restore();
         if (queueIndex >= 0) {
-          this.round(center[0] - 22, center[1] + 7, 44, 16, 8, '#ffe9b6f0', '#a7844a');
-          this.label(`대기 ${queueIndex + 1}`, center[0], center[1] + 18, 9, '#735935', 700);
-        } else {
+          this.round(center[0] - 22, center[1] + 7, 44, 16, 8, waterTool ? '#d8eff9f0' : '#ffe9b6f0', waterTool ? '#75a8bb' : '#a7844a');
+          this.label(`대기 ${queueIndex + 1}`, center[0], center[1] + 18, 9, waterTool ? '#406d82' : '#735935', 700);
+        } else if (this.farmMode === 'plant') {
           this.label('+', center[0] + 15, center[1] + 4, 17, '#e7f4c8', 700);
         }
       }
@@ -457,7 +553,7 @@ export class Scene {
       this.round(marker[0] - 5, marker[1] - 21, 11, 8, 2, '#f1dbad', '#86673e');
       this.hits.push({kind: 'farm', x: mid[0], y: mid[1], radius: 45, plotId: plot.id});
       this.pulse('farm', mid[0], mid[1], 34);
-      if (this.farmFocus || this.plantingMode || plot.id === this.selectedPlotId) {
+      if (this.farmFocus || this.farmMode || plot.id === this.selectedPlotId) {
         const label = this.p(u + 11, v + 7, 123);
         this.ellipse(label[0], label[1], 9, 9, plot.id === this.selectedPlotId ? '#ffdf93' : '#fffae6', '#84613b', 1);
         this.label(String(i + 1), label[0], label[1] + 3.2, 10, '#4d462c');

@@ -1,12 +1,12 @@
 # 로드헤이븐 웹 플레이 배포
 
-v0.6.0은 정적 웹 호스팅에서 실행할 수 있습니다. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
+v0.7.0은 정적 웹 호스팅에서 실행할 수 있습니다. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
 
 ## 준비된 파일
 
 - `artifacts/web-play/`: 웹 서버에 올릴 정적 사이트. `index.html`, `assets/`, `fonts/`, `.nojekyll`을 함께 배포합니다.
-- `artifacts/road-haven-0.6.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
-- `artifacts/road-haven-0.6.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
+- `artifacts/road-haven-0.7.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
+- `artifacts/road-haven-0.7.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
 
 `fonts/OFL-NotoSansKR.txt`와 `fonts/OFL-DMSans.txt`는 포함된 글꼴의 라이선스입니다. 배포할 때 함께 보관하세요. 생성된 `artifacts/` 디렉터리는 소스 저장소의 Git 추적에서 제외됩니다.
 

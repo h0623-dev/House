@@ -106,7 +106,11 @@ async function selectPlot(id) {
  assert.fail(`Could not select plot ${id}`);
 }
 async function chooseSeed(button, cropId = 'carrot') {
- await touch(button);
+ if (await page.locator('#planting-toolbar').isVisible() && await page.locator('#planting-toolbar').getAttribute('data-farm-mode') === 'plant') await touch(page.locator('#planting-toolbar [data-seed-change]'));
+ else await touch(button);
+ if (!await page.locator('#modal-root [data-select-seed]').first().isVisible()) {
+  await touch(page.locator('#planting-toolbar [data-seed-change]'));
+ }
  assert.equal(await page.locator('#modal-root [data-select-seed]').count(), 6, 'planting offers all six seed varieties');
  const before = await saved();
  await touch(page.locator(`[data-select-seed="${cropId}"]`));
@@ -135,7 +139,7 @@ try {
   const context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
   await context.addInitScript(() => {
    const fixture = localStorage.getItem('road-haven-touch-fixture');
-   if (fixture) { localStorage.setItem('road-haven-save-v1', fixture); localStorage.removeItem('road-haven-touch-fixture'); }
+   if (fixture) { localStorage.setItem('road-haven-save-v1', fixture); localStorage.removeItem('road-haven-touch-fixture'); localStorage.removeItem('road-haven-selected-seed-v1'); }
   });
   page = await context.newPage();
   page.on('pageerror', error => errors.push(`${width}: ${error.message}`));
@@ -165,7 +169,7 @@ try {
    }, screenshot: `tree-chopping-${width}`,
   });
   assert.equal((await saved()).resources.wood, beforeTree.resources.wood + 18, 'tree touch grants exactly one woodcutting reward');
-  assert.equal((await saved()).resources.seeds, beforeTree.resources.seeds + 1);
+  assert.equal((await saved()).resources.seeds, beforeTree.resources.seeds + 3);
   assert.equal((await saved()).stats.chops, beforeTree.stats.chops + 1);
   await shot(`grove-${width}`);
 
@@ -267,11 +271,11 @@ try {
   assert.equal(await page.locator('#modal-root [data-select-seed]').count(), 6, 'empty inventory still explains all seed varieties');
   assert.match(await page.locator('#modal-root').innerText(), /씨앗/);
   await chore(`missing-seeds-gather-${width}`, () => touch(page.locator('#modal-root [data-seed-gather]')));
-  assert.equal((await saved()).resources.seeds, 1);
+  assert.equal((await saved()).resources.seeds, 3);
   await selectPlot(3);
   await chooseSeed(quick('plant'), 'potato');
   await chore(`plant-after-gather-${width}`, () => touchPlot(3));
-  assert.equal((await saved()).resources.seeds, 0);
+  assert.equal((await saved()).resources.seeds, 2);
   assert.notEqual((await saved()).plots[2].plantedAt, null);
   assert.equal((await saved()).plots[2].cropId, 'potato', 'gathered seed variety is the crop that gets planted');
   await stopPlanting();
