@@ -4,10 +4,12 @@ import { drawPet, drawZombie } from './creatures';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady } from './world-art';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'truck' | 'pet' | 'character' | 'grove';
-type Hit = { kind: Selectable; x: number; y: number; radius: number; plotId?: number };
+type Selectable = 'farm' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work';
+type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number };
 type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'gather';
 type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; plotIndex: number; resolve: () => void };
+// The hero belongs to the truck's scale: a person fits comfortably beside its house and planters.
+const WORLD_HERO_SCALE = .68;
 
 /** A live isometric home built from our original painted anime environment art. */
 export class Scene {
@@ -38,11 +40,12 @@ export class Scene {
     if (document.hidden || this.suspended) { this.frame = 0; return; }
     this.frame = requestAnimationFrame(this.animate);
     if (timestamp - this.lastFrame < (this.reducedMotion && !this.action ? 250 : 32)) return;
-    const delta = this.lastFrame ? Math.min((timestamp - this.lastFrame) / 1000, .1) : 0;
+    const elapsed = this.lastFrame ? Math.max(0, (timestamp - this.lastFrame) / 1000) : 0;
+    const delta = Math.min(elapsed, .1);
     this.lastFrame = timestamp;
     this.time += delta;
     if (this.action) {
-      this.action.elapsed += delta;
+      this.action.elapsed += elapsed;
       if (this.action.kind === 'chop' && this.action.elapsed >= this.action.walk + this.action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
       if (this.action.elapsed >= this.action.duration) {
         const finished = this.action; this.action = null; this.zone = 'home'; finished.resolve();
@@ -60,10 +63,13 @@ export class Scene {
     const x = (event.clientX - rect.left - this.dx) / this.scale;
     const y = (event.clientY - rect.top - this.dy) / this.scale;
     // Small plots remain tappable on phones; choose the nearest plot when targets overlap.
-    const candidates = this.hits.filter(item => Math.hypot(item.x - x, item.y - y) < Math.max(item.radius, 22 / this.scale));
+    const candidates = this.hits.filter(item => item.bounds
+      ? x >= item.bounds[0] && y >= item.bounds[1] && x <= item.bounds[2] && y <= item.bounds[3]
+      : Math.hypot(item.x - x, item.y - y) < Math.max(item.radius, 22 / this.scale));
     const plots = candidates.filter(item => item.kind === 'farm').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const foreground = [...candidates].reverse().find(item => (item.kind === 'pet' || item.kind === 'character') && Math.hypot(item.x - x, item.y - y) < item.radius);
-    const hit = foreground ?? plots[0] ?? candidates[candidates.length - 1];
+    const workTree = candidates.find(item => item.kind === 'grove-work');
+    const hit = foreground ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
     if (hit) { this.focus(hit.kind); this.onSelect(hit.kind, hit.plotId); }
   };
 
@@ -111,6 +117,7 @@ export class Scene {
       walk = .7; work = 1.85;
     }
     this.zone = 'home';
+    this.lastFrame = performance.now();
     return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk * 2 + work, walk, work, path, plotIndex, resolve }; });
   }
   focus(kind: string) { this.focused = kind; this.focusedUntil = performance.now() + 2400; }
@@ -462,14 +469,15 @@ export class Scene {
     const hero = this.heroState(), [x, y] = hero.point;
     let progress = hero.progress;
     if (hero.pose === 'chop') progress = (progress * 3) % 1;
-    drawHero(this.ctx, { x, y, scale: 1, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: this.reducedMotion && !this.action ? 0 : this.time, progress });
-    this.hits.push({ kind: 'character', x, y: y - 64, radius: 60 });
-    this.pulse('character', x, y - 64, 54);
+    drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: this.reducedMotion && !this.action ? 0 : this.time, progress });
+    this.hits.push({ kind: 'character', x, y: y - 64 * WORLD_HERO_SCALE, radius: 60 * WORLD_HERO_SCALE });
+    this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && hero.pose !== 'walk') {
       const labels: Record<SceneAction, string> = { plant: '씨앗을 톡톡', water: '물을 듬뿍', harvest: '당근 수확!', chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', gather: '쓸 만한 재료 발견!' };
       const label = labels[this.action.kind];
-      this.round(x - 58, y - 160, 116, 23, 11, '#fffae8e8', '#bda982');
-      this.label(label, x, y - 145, 10, '#526750', 700);
+      const top = y - 128 * WORLD_HERO_SCALE - 32;
+      this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
+      this.label(label, x, top + 15, 10, '#526750', 700);
     }
   }
 
@@ -497,9 +505,13 @@ export class Scene {
     this.line([[134, 629], [134, 650]], '#8a693d', 3);
     this.round(48, 622, 108, 30, 7, '#f4e4b7', '#8f6b3d');
     this.label('작은 벌목장', 102, 642, 13, '#4d572f', 800);
-    this.hits.push({kind: 'grove', x: 98, y: 554, radius: 86});
+    // A tree tap starts work, while the sign opens the grove. Cover the painted canopies too.
+    this.hits.push({kind: 'grove-work', x: 97, y: 512, radius: 0, bounds: [31, 423, 163, 616]});
+    this.hits.push({kind: 'grove-work', x: 34, y: 511, radius: 0, bounds: [-15, 447, 83, 574]});
+    this.hits.push({kind: 'grove-work', x: 29, y: 577, radius: 0, bounds: [-3, 536, 61, 619]});
     this.hits.push({kind: 'grove', x: 101, y: 636, radius: 44});
     this.pulse('grove', 100, 588, 74);
+    this.pulse('grove-work', 100, 588, 74);
     if (this.zone === 'grove' && !this.action) {
       this.round(16, 421, 182, 30, 12, '#fff9e7f0', '#bcaa7a');
       this.label('나무를 눌러 벌목을 시작해요', 107, 441, 11, '#4d572f', 700);
@@ -533,14 +545,14 @@ export class Scene {
     if (action.kind === 'plant') {
       for (let i = 0; i < 9; i++) {
         const t = (progress * 2.5 + i * .12) % 1;
-        const sx = hx + 28, sy = hy - 37;
+        const sx = hx + 28 * WORLD_HERO_SCALE, sy = hy - 37 * WORLD_HERO_SCALE;
         this.ellipse(sx + (target[0] - sx + (i % 3 - 1) * 13) * t, sy + (target[1] - sy + Math.floor(i / 3) * 5) * t - Math.sin(t * Math.PI) * 19, 2, 1.2, '#eed29a', '#957044', .7);
       }
       if (progress > .7) for (let i = 0; i < 3; i++) this.sprig(target[0] - 14 + i * 14, target[1], (progress - .7) * .9);
     } else if (action.kind === 'water') {
       for (let i = 0; i < 18; i++) {
         const t = (progress * 4 + i * .071) % 1, spread = (i % 5 - 2) * 5;
-        const sx = hx + 38, sy = hy - 27;
+        const sx = hx + 38 * WORLD_HERO_SCALE, sy = hy - 27 * WORLD_HERO_SCALE;
         const x = sx + (target[0] - sx + spread) * t, y = sy + (target[1] - sy) * t + t * t * 4;
         this.line([[x, y], [x - 1.6, y - 4]], '#8dcde6', 1.8);
       }
@@ -548,7 +560,7 @@ export class Scene {
     } else if (action.kind === 'harvest') {
       for (let i = 0; i < 3; i++) {
         const t = Math.max(0, Math.min(1, (progress - i * .19) * 2));
-        const x = target[0] + i * 8 - 8 + (hx + 25 - target[0]) * t, y = target[1] - Math.sin(t * Math.PI) * 41 + (hy - 15 - target[1]) * t;
+        const x = target[0] + i * 8 - 8 + (hx + 25 * WORLD_HERO_SCALE - target[0]) * t, y = target[1] - Math.sin(t * Math.PI) * 41 + (hy - 15 * WORLD_HERO_SCALE - target[1]) * t;
         c.save(); c.translate(x, y); c.rotate(t * 2 + i * .4);
         drawWorldSprite(c, 'carrot', 0, 9, 16, 30); c.restore();
       }
@@ -564,10 +576,11 @@ export class Scene {
         this.label('목재 +18', 152, 532 - (progress - .8) * 55, 12, '#617947', 800);
       }
     } else if (action.kind === 'gather') {
-      this.round(hx - 25, hy - 57, 18, 16, 3, '#d6b17a', '#a1875c');
-      this.line([[hx - 25, hy - 49], [hx - 7, hy - 49]], '#f2d598', 2);
+      c.save(); c.translate(hx, hy); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE);
+      this.round(-25, -57, 18, 16, 3, '#d6b17a', '#a1875c');
+      this.line([[-25, -49], [-7, -49]], '#f2d598', 2); c.restore();
     } else if (action.kind === 'expand' && progress < .83) {
-      c.save(); c.translate(hx + 25, hy - 37); c.rotate(-.8 + Math.sin(progress * Math.PI * 10) * .9);
+      c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE); c.rotate(-.8 + Math.sin(progress * Math.PI * 10) * .9);
       this.line([[0, 0], [0, -29]], '#9e7750', 5); this.round(-12, -34, 25, 10, 3, '#8faaa0', '#617e75'); c.restore();
     }
     if (action.kind !== 'expand' && action.kind !== 'chop' && progress > .78) {

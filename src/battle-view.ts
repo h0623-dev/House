@@ -249,7 +249,9 @@ export class BattleView {
     if (!this.reducedMotion && s.heroHurtUntil > s.time) c.translate(Math.sin(s.time * 89) * 2, 0);
     this.drawLandscape(c, w, h, s.time);
     const floor = h * 0.77;
-    const actorScale = Math.max(0.92, Math.min(1.5, Math.min(w / 350, h / 360)));
+    // Give the road more breathing room while keeping the party and infected
+    // on the same scale and their feet anchored to the painted ground.
+    const actorScale = Math.max(0.92, Math.min(1.5, Math.min(w / 350, h / 360))) * .8;
     const heroX = w * 0.235;
     const attacking = s.heroAttackUntil > s.time;
     const skill = s.heroSkillUntil > s.time;

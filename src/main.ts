@@ -71,6 +71,7 @@ const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number)=>{
  if(kind==='pet')openModal('pet');
  if(kind==='character')openModal('character');
  if(kind==='grove'){setZone('grove');renderControls();}
+ if(kind==='grove-work'){setZone('grove');renderControls();void action('chop');}
 });
 function updateNav(){
  const active=['hunt','bag','settings'].includes(currentModal)?currentModal:selectedZone==='grove'?'grove':farmFocused?'farm':'home';
@@ -87,6 +88,13 @@ function selectPlot(id:number|null){
 }
 function preferredPlot(){return state.plots.find(p=>getCropProgress(state,p)>=1)??state.plots.find(p=>p.plantedAt!==null&&!p.watered)??state.plots.find(p=>p.plantedAt===null)??state.plots[0];}
 type FarmAction='plant'|'water'|'harvest';
+const actionNames:Record<Action,string>={plant:'씨앗 심기',water:'물 주기',harvest:'수확하기',chop:'나무 베기',gather:'도로 탐색',expand:'데크 확장',rest:'휴식하기',pet:'보리 쓰다듬기',repair:'트럭 수리',hunt:'사냥 출발'};
+const actionEnergy:Partial<Record<Action,number>>={plant:4,water:3,harvest:4,chop:10,gather:10,expand:15,repair:6,hunt:16};
+function markAvailability(button:HTMLButtonElement,available:boolean,busy:boolean,message:string){
+ // Native disabled buttons swallow touch events, so unavailable activities stay
+ // tappable and explain how to recover. Only a running chore locks the controls.
+ button.disabled=busy;button.setAttribute('aria-disabled',String(busy||!available));button.classList.toggle('unavailable',!available&&!busy);button.title=message;
+}
 function eligiblePlots(a:FarmAction){return state.plots.filter(p=>a==='plant'?p.plantedAt===null:a==='water'?p.plantedAt!==null&&!p.watered:getCropProgress(state,p)>=1);}
 function quickPlot(a:FarmAction){const eligible=eligiblePlots(a);return eligible.find(p=>p.id===selectedPlotId)??eligible[0];}
 function renderControls(){
@@ -96,8 +104,7 @@ function renderControls(){
   const farmAction=['plant','water','harvest'].includes(a);
   const plot=farmAction?quickPlot(a as FarmAction):undefined;
   const result=performAction(state,a,plot?.id);
-  button.disabled=busy||Boolean(farmAction&&!plot)||!result.ok;
-  button.title=busy?'캐릭터가 작업을 마칠 때까지 잠시 기다려요':result.ok?(farmAction?`${eligiblePlots(a as FarmAction).length}개 밭에서 가능 · 한 번 눌러 한 밭씩 돌봐요`:a==='chop'?'목재 +18 · 씨앗 +1 · 기력 10':a==='gather'?'목재 · 고철 · 물 · 씨앗을 모아요':'체력과 기력을 회복해요'):result.message;
+  markAvailability(button,Boolean((!farmAction||plot)&&result.ok),busy,busy?'캐릭터가 작업을 마칠 때까지 잠시 기다려요':result.ok?(farmAction?`${eligiblePlots(a as FarmAction).length}개 밭에서 가능 · 한 번 눌러 한 밭씩 돌봐요`:a==='chop'?'목재 +18 · 씨앗 +1 · 기력 10':a==='gather'?'목재 · 고철 · 물 · 씨앗을 모아요':'체력과 기력을 회복해요'):result.message);
   const count=button.querySelector<HTMLElement>('.action-count')!;
   count.hidden=!farmAction;count.textContent=farmAction?String(eligiblePlots(a as FarmAction).length):'';
   button.classList.toggle('context-ready',Boolean(farmAction&&plot?.id===selectedPlotId&&farmFocused));
@@ -111,7 +118,7 @@ function renderControls(){
  const grove=selectedZone==='grove';
  let contextAction:Action='chop',label='나무 베기',contextIcon='wood';
  title.textContent=grove?'도로 옆 벌목장':`${plot?.id??1}번 밭`;
- if(grove){detail.textContent=state.energy<10?'기력이 부족해요 · 휴식해 주세요':'목재 +18 · 씨앗 +1';delete actionButton.dataset.plot;details.dataset.open='grove';details.setAttribute('aria-label','벌목장 안내 보기');details.querySelector('small')!.textContent='안내';}
+ if(grove){detail.textContent=state.energy<10?'잠깐 쉬면 다시 나무를 벨 수 있어요':'나무를 직접 눌러도 벌목해요 · 기력 10';delete actionButton.dataset.plot;details.dataset.open='grove';details.setAttribute('aria-label','벌목장 안내 보기');details.querySelector('small')!.textContent='안내';}
  else if(plot){
   const progress=getCropProgress(state,plot);
   contextAction=plot.plantedAt===null?'plant':progress>=1?'harvest':'water';
@@ -120,9 +127,12 @@ function renderControls(){
   detail.textContent=plot.plantedAt!==null&&plot.watered&&progress<1?`자라는 중 · ${Math.round(progress*100)}%`:!result.ok?result.message:contextAction==='plant'?'빈 밭 · 씨앗 1개':contextAction==='harvest'?'당근이 다 자랐어요!':`물이 필요해요 · ${Math.round(progress*100)}%`;
   actionButton.dataset.plot=String(plot.id);details.dataset.open='farm';details.setAttribute('aria-label','텃밭 전체 보기');details.querySelector('small')!.textContent='전체 밭';
  }
+ const needsRest=state.energy<(actionEnergy[contextAction]??0);
+ if(grove&&needsRest){label='쉬고 벌목';contextIcon='bed';}
  actionButton.dataset.action=contextAction;actionButton.setAttribute('aria-label',`${grove?'벌목장':`${plot?.id??1}번 밭`} ${label}`);
  actionButton.querySelector('.control-icon')!.innerHTML=icon(contextIcon);actionButton.querySelector('small')!.textContent=label;
- actionButton.disabled=busy||!performAction(state,contextAction,grove?undefined:plot?.id).ok;
+ const contextResult=performAction(state,contextAction,grove?undefined:plot?.id);
+ markAvailability(actionButton,contextResult.ok,busy,contextResult.message);
  context.classList.toggle('grove-context',grove);context.classList.toggle('working',busy);
  context.querySelectorAll<HTMLButtonElement>('[data-plot-step]').forEach(b=>{b.hidden=grove;b.disabled=busy||state.plots.length<2;});
  document.querySelectorAll<HTMLButtonElement>('.game-nav button,.scene-tools button,.scene-icon,.profile-button,.context-details').forEach(b=>b.disabled=busy);
@@ -155,12 +165,22 @@ function ping(){if(!sound)return;try{audioContext??=new AudioContext();void audi
 type ChoreAction = 'plant'|'water'|'harvest'|'chop'|'expand'|'gather';
 const animatedActions:Action[]=['plant','water','harvest','chop','expand','gather'];
 const choreLabels:Record<ChoreAction,string>={plant:'텃밭으로 가서 씨앗을 뿌리고 있어요',water:'물뿌리개로 텃밭을 돌보고 있어요',harvest:'잘 자란 당근을 바구니에 담고 있어요',chop:'숲길에서 나무를 베어 목재를 모으고 있어요',expand:'새 판자를 놓아 우리집을 넓히고 있어요',gather:'트럭 주변에서 쓸 만한 물자를 찾고 있어요'};
+function showActivityHelp(a:Action,plotId:number|undefined,message:string){
+ const energy=actionEnergy[a]??0,needsHealth=a==='hunt'&&state.health<15,needsRest=state.energy<energy||needsHealth;
+ const targetPlot=plotId===undefined?'':` data-plot="${plotId}"`;
+ let recovery='';
+ if(needsRest)recovery=`<button class="button full-width" data-rest-retry="${a}"${targetPlot}>${icon('bed')} 쉬고 ${a==='hunt'?'사냥 준비하기':actionNames[a]}</button><p class="fine-print">${a==='hunt'?'휴식 후 선택한 사냥터로 돌아가 출발을 준비해요.':'휴식으로 기력을 회복한 뒤 바로 작업해요.'}<br>${state.resources.food>=1&&state.resources.water>=1?'식량 1 · 물 1 사용 · 기력 +55 · 체력 +12':'식량과 물이 없어도 잠깐 쉬면 기력 +35 · 체력 +3'}${needsHealth?'<br>체력 15까지 부족하면 한 번 더 쉬어 주세요.':''}</p>`;
+ else if((a==='plant'&&state.resources.seeds<1)||(a==='water'&&state.resources.water<1)||a==='expand'||a==='repair')recovery=`<button class="button full-width" data-action="gather">${icon('map')} 도로에서 필요한 물자 찾기</button><button class="button button-light full-width activity-secondary" data-open="grove">${icon('axe')} 벌목장으로 가기</button>`;
+ else if(['plant','water','harvest'].includes(a))recovery=`<button class="button full-width" data-show-farm>${icon('seeds')} 텃밭에서 할 일 보기</button><button class="button button-light full-width activity-secondary" data-action="chop">${icon('axe')} 기다리는 동안 나무 베기</button>`;
+ else recovery=`<button class="button full-width" data-action="rest">${icon('bed')} 우리집에서 쉬기</button>`;
+ currentModal='activity';updateNav();modalShell('OUR NEXT LITTLE STEP',actionNames[a],`<div class="activity-help-icon">${icon(a==='chop'?'axe':a==='gather'?'map':a==='plant'?'seeds':a==='water'?'water':a==='harvest'?'food':a==='hunt'?'hunt':'bed')}</div><p class="activity-block-reason" role="status">${escape(message)}</p>${needsRest?`<div class="activity-energy"><span>${icon('bolt')} 현재 기력 <b>${Math.floor(state.energy)}</b></span><span>필요한 기력 <b>${energy}</b></span></div>${a==='hunt'?`<div class="activity-energy"><span>${icon('heart')} 현재 체력 <b>${Math.floor(state.health)}</b></span><span>필요한 체력 <b>15</b></span></div>`:''}`:''}${recovery}<button class="text-button full-width" data-close>화면으로 돌아가기</button>`);
+}
 async function action(a:Action,plotId?:number){
  if(actionBusy||battleView){toast('지금 하던 일을 마치고 함께해요.');return;}
  if(a==='hunt'){openModal('hunt');return;}
  if(plotId!==undefined&&['plant','water','harvest'].includes(a))selectedPlotId=plotId;
  const before=performAction(state,a,plotId);
- if(!before.ok){toast(before.message);return;}
+ if(!before.ok){if(a==='repair'&&state.truckHealth>=100)toast(before.message);else showActivityHelp(a,plotId,before.message);return;}
  if(animatedActions.includes(a)){
   actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
   closeModal();
@@ -178,11 +198,12 @@ async function action(a:Action,plotId?:number){
  render();
  if(currentModal==='quests')openModal('quests');
  if(currentModal==='pet')openModal('pet');
+ if(currentModal==='hunt')openModal('hunt');
 }
 function startBattle(){
  if(actionBusy||battleView)return;
  const started=beginHunt(state,selectedStage);
- if(!started.ok){toast(started.message);return;}
+ if(!started.ok){showActivityHelp('hunt',undefined,started.message);return;}
  state=started.state;const expeditionId=state.expedition!.id;persist();
  closeModal();scene.setSuspended(true);app.inert=true;document.body.classList.add('in-battle');
  try {
@@ -197,20 +218,38 @@ function startBattle(){
 }
 function modalShell(eyebrow:string,title:string,body:string,wide=false){const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=false;root.innerHTML=`<section class="modal ${wide?'modal-wide':''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close round-button" data-close aria-label="닫기">${icon('close')}</button><div class="eyebrow">${eyebrow}</div><h2 id="modal-title">${title}</h2>${body}</section>`;requestAnimationFrame(()=>root.querySelector<HTMLButtonElement>('button')?.focus());}
 function closeModal(){document.querySelector<HTMLElement>('#modal-root')!.hidden=true;currentModal='';updateNav();}
-function farmContent(){return `<p class="modal-description">작업을 고르면 캐릭터가 밭으로 직접 걸어가요.<br>씨앗을 뿌리고, 물을 주고, 자라난 당근을 수확해 보세요.</p><div class="farm-grid">${state.plots.map((p,i)=>{const progress=getCropProgress(state,p);const planted=p.plantedAt!==null;return `<article class="plot-card"><div class="plot-illustration ${!planted?'empty':''}">${icon(planted?(progress>=1?'plot-ready':'plot-sprout'):'plot-empty')}</div><h3>${i+1}번 텃밭</h3><span class="plot-state">${!planted?'새로운 씨앗을 기다려요':progress>=1?'수확할 준비가 됐어요!':p.watered?'쑥쑥 자라는 중':'목이 말라요. 물을 주세요'}</span><div class="quest-progress"><span style="width:${progress*100}%"></span></div><button class="button ${planted&&progress<1?'button-light':''}" data-action="${!planted?'plant':progress>=1?'harvest':'water'}" data-plot="${p.id}" ${planted&&p.watered&&progress<1?'disabled':''}>${icon(!planted?'seeds':progress>=1?'food':'water')}${!planted?'씨앗 심기':progress>=1?'수확하기':p.watered?'잘 자라고 있어요':'물 주기'}</button></article>`;}).join('')}</div><div class="info-note">${icon('clock')} 게임 시간에 따라 자라요. 앱을 닫으면 시간도 쉬어 갑니다.</div>`;}
-function renderFarm(){const body=document.querySelector('#farm-content');if(body){const focus=document.activeElement as HTMLElement;const key=focus?.dataset.action,plot=focus?.dataset.plot;body.innerHTML=farmContent();if(key&&plot)body.querySelector<HTMLButtonElement>(`[data-action="${key}"][data-plot="${plot}"]`)?.focus();}}
-function bagContent(){return `<p class="modal-description">도로에서 모은 것들이 우리의 내일을 만들어요.</p><div class="inventory-grid">${resources.map(r=>`<div class="inventory-item"><span class="resource-icon ${r}">${icon(r)}</span><strong>${resourceLabels[r]}</strong><b>${state.resources[r]}<small>${r==='water'?' L':' 개'}</small></b><p>${({wood:'트럭을 넓힐 때 써요',scrap:'튼튼한 집의 재료예요',food:'휴식과 여행의 힘이 돼요',water:'텃밭에 생기를 더해요',seeds:'새로운 먹거리를 심어요'})[r]}</p></div>`).join('')}</div><button class="button full-width" data-action="gather">${icon('wood')} 주변에서 자원 찾기</button><button class="button button-light full-width inventory-map-link" data-open="map">${icon('map')} 도로 주변 지도 보기</button>`;}
-function renderBag(){const body=document.querySelector('#bag-content');if(body){const focused=body.contains(document.activeElement);body.innerHTML=bagContent();if(focused)body.querySelector<HTMLButtonElement>('[data-action]')?.focus();}}
+function farmContent(){return `<p class="modal-description">작업을 고르면 캐릭터가 밭으로 직접 걸어가요.<br>씨앗을 뿌리고, 물을 주고, 자라난 당근을 수확해 보세요.</p><div class="farm-grid">${state.plots.map((p,i)=>{const progress=getCropProgress(state,p);const planted=p.plantedAt!==null;return `<article class="plot-card" data-plot-card="${p.id}"><div class="plot-illustration ${!planted?'empty':''}">${icon(planted?(progress>=1?'plot-ready':'plot-sprout'):'plot-empty')}</div><h3>${i+1}번 텃밭</h3><span class="plot-state">${!planted?'새로운 씨앗을 기다려요':progress>=1?'수확할 준비가 됐어요!':p.watered?'쑥쑥 자라는 중':'목이 말라요. 물을 주세요'}</span><div class="quest-progress"><span style="width:${progress*100}%"></span></div><button class="button ${planted&&progress<1?'button-light':''}" data-action="${!planted?'plant':progress>=1?'harvest':'water'}" data-plot="${p.id}" ${planted&&p.watered&&progress<1?'disabled':''}>${icon(!planted?'seeds':progress>=1?'food':'water')}${!planted?'씨앗 심기':progress>=1?'수확하기':p.watered?'잘 자라고 있어요':'물 주기'}</button></article>`;}).join('')}</div><div class="info-note">${icon('clock')} 게임 시간에 따라 자라요. 앱을 닫으면 시간도 쉬어 갑니다.</div>`;}
+function renderFarm(){
+ const body=document.querySelector('#farm-content');if(!body)return;
+ const cards=Array.from(body.querySelectorAll<HTMLElement>('[data-plot-card]'));
+ if(cards.length!==state.plots.length||cards.some((card,i)=>card.dataset.plotCard!==String(state.plots[i].id))){body.innerHTML=farmContent();return;}
+ // Keep each touch target mounted as crops grow. Replacing the full dialog every
+ // second can remove a button between a phone's pointer-down and pointer-up.
+ cards.forEach((card,i)=>{
+  const p=state.plots[i],progress=getCropProgress(state,p),planted=p.plantedAt!==null;
+  const artKey=!planted?'plot-empty':progress>=1?'plot-ready':'plot-sprout';
+  const art=card.querySelector<HTMLElement>('.plot-illustration')!;art.classList.toggle('empty',!planted);
+  if(art.dataset.cropArt!==artKey){art.innerHTML=icon(artKey);art.dataset.cropArt=artKey;}
+  const detail=card.querySelector<HTMLElement>('.plot-state')!,text=!planted?'새로운 씨앗을 기다려요':progress>=1?'수확할 준비가 됐어요!':p.watered?'쑥쑥 자라는 중':'목이 말라요. 물을 주세요';
+  if(detail.textContent!==text)detail.textContent=text;
+  card.querySelector<HTMLElement>('.quest-progress>span')!.style.width=`${progress*100}%`;
+  const button=card.querySelector<HTMLButtonElement>('[data-action]')!,a=!planted?'plant':progress>=1?'harvest':'water',label=!planted?'씨앗 심기':progress>=1?'수확하기':p.watered?'잘 자라고 있어요':'물 주기';
+  const key=`${a}:${label}`;button.dataset.action=a;button.classList.toggle('button-light',planted&&progress<1);button.disabled=planted&&p.watered&&progress<1;
+  if(button.dataset.cropAction!==key){button.innerHTML=icon(a==='plant'?'seeds':a==='harvest'?'food':'water')+label;button.dataset.cropAction=key;}
+ });
+}
+function bagContent(){return `<p class="modal-description">도로에서 모은 것들이 우리의 내일을 만들어요.</p><div class="inventory-grid">${resources.map(r=>`<div class="inventory-item"><span class="resource-icon ${r}">${icon(r)}</span><strong>${resourceLabels[r]}</strong><b><span data-inventory-count="${r}">${state.resources[r]}</span><small>${r==='water'?' L':' 개'}</small></b><p>${({wood:'트럭을 넓힐 때 써요',scrap:'튼튼한 집의 재료예요',food:'휴식과 여행의 힘이 돼요',water:'텃밭에 생기를 더해요',seeds:'새로운 먹거리를 심어요'})[r]}</p></div>`).join('')}</div><button class="button full-width" data-action="gather">${icon('wood')} 주변에서 자원 찾기</button><button class="button button-light full-width inventory-map-link" data-open="map">${icon('map')} 도로 주변 지도 보기</button>`;}
+function renderBag(){const body=document.querySelector('#bag-content');if(body)for(const r of resources){const count=body.querySelector<HTMLElement>(`[data-inventory-count="${r}"]`)!;if(count.textContent!==String(state.resources[r]))count.textContent=String(state.resources[r]);}}
 function openModal(kind:string){if(actionBusy||battleView)return;currentModal=kind;updateNav();
  if(kind==='farm')modalShell('LITTLE GARDEN','트럭 위 작은 텃밭',`<div id="farm-content">${farmContent()}</div>`,true);
  if(kind==='bag')modalShell('THINGS WE FOUND','우리의 배낭',`<div id="bag-content">${bagContent()}</div>`,true);
- if(kind==='expand'){const cost=expansionCost(state);modalShell('A LITTLE MORE ROOM','우리집을 넓혀 볼까요?',`<div class="expansion-art">${icon('truck')}<span>Lv.${state.deckLevel}</span>${icon('arrow')}<span>${state.deckLevel>=MAX_DECK_LEVEL?'MAX':`Lv.${state.deckLevel+1}`}</span></div><p class="modal-description">옆으로 펼쳐지는 새 데크와 넓어진 통로를 직접 확인해 보세요.<br>확장할 때마다 울타리와 새 텃밭도 함께 늘어나요.</p><div class="cost-row"><span class="${state.resources.wood>=cost.wood?'':'insufficient'}">${icon('wood')} 목재 <strong>${state.resources.wood} / ${cost.wood}</strong></span><span class="${state.resources.scrap>=cost.scrap?'':'insufficient'}">${icon('scrap')} 고철 <strong>${state.resources.scrap} / ${cost.scrap}</strong></span></div><button class="button full-width" data-action="expand" ${state.deckLevel>=MAX_DECK_LEVEL||state.resources.wood<cost.wood||state.resources.scrap<cost.scrap||state.energy<15?'disabled':''}>${icon('hammer')} ${state.deckLevel>=MAX_DECK_LEVEL?'최대 크기의 우리집이에요':'데크 확장하기'}</button><button class="text-button full-width" data-action="repair">${icon('shield')} 트럭 수리 · 현재 내구도 ${state.truckHealth}%</button>`);}
+ if(kind==='expand'){const cost=expansionCost(state);modalShell('A LITTLE MORE ROOM','우리집을 넓혀 볼까요?',`<div class="expansion-art">${icon('truck')}<span>Lv.${state.deckLevel}</span>${icon('arrow')}<span>${state.deckLevel>=MAX_DECK_LEVEL?'MAX':`Lv.${state.deckLevel+1}`}</span></div><p class="modal-description">옆으로 펼쳐지는 새 데크와 넓어진 통로를 직접 확인해 보세요.<br>확장할 때마다 울타리와 새 텃밭도 함께 늘어나요.</p><div class="cost-row"><span class="${state.resources.wood>=cost.wood?'':'insufficient'}">${icon('wood')} 목재 <strong>${state.resources.wood} / ${cost.wood}</strong></span><span class="${state.resources.scrap>=cost.scrap?'':'insufficient'}">${icon('scrap')} 고철 <strong>${state.resources.scrap} / ${cost.scrap}</strong></span></div><button class="button full-width" data-action="expand" ${state.deckLevel>=MAX_DECK_LEVEL?'disabled':''}>${icon('hammer')} ${state.deckLevel>=MAX_DECK_LEVEL?'최대 크기의 우리집이에요':'데크 확장하기'}</button><button class="text-button full-width" data-action="repair">${icon('shield')} 트럭 수리 · 현재 내구도 ${state.truckHealth}%</button>`);}
  if(kind==='grove'){
-  modalShell('THE LITTLE WOODLAND','도로 옆, 우리의 벌목장',`<div class="grove-illustration"><span class="grove-sign">서울 숲길 · 채집 구역</span></div><p class="modal-description">트럭 옆 숲길로 내려가 나무를 직접 베어요.<br>도끼질이 끝나면 쓰러진 나무에서 목재를 모아 돌아옵니다.</p><div class="grove-rewards"><span>${icon('wood')} 목재 <b>+18</b></span><span>${icon('seeds')} 씨앗 <b>+1</b></span><span>${icon('bolt')} 기력 <b>−10</b></span></div><button class="button full-width" data-action="chop">${icon('wood')} 나무 베러 가기</button><button class="button button-light full-width grove-look" data-look-grove>${icon('map')} 벌목장 둘러보기</button><div class="grove-salvage"><span>고철과 물이 필요하다면</span><button class="text-button" data-action="gather">버려진 휴게소 탐색 ${icon('arrow')}</button></div>`);
+  modalShell('THE LITTLE WOODLAND','도로 옆, 우리의 벌목장',`<div class="grove-illustration"><span class="grove-sign">서울 숲길 · 채집 구역</span></div><p class="modal-description">트럭 옆 숲길로 내려가 나무를 직접 베어요.<br>벌목장 화면에서 나무를 누르거나 아래 버튼으로 시작하세요.</p><div class="grove-rewards"><span>${icon('wood')} 목재 <b>+18</b></span><span>${icon('seeds')} 씨앗 <b>+1</b></span><span>${icon('bolt')} 기력 <b>−10</b></span></div><button class="button full-width" data-action="chop">${icon('axe')} ${state.energy<10?'쉬고 나무 베러 가기':'나무 베러 가기'}</button><button class="button button-light full-width grove-look" data-look-grove>${icon('map')} 벌목장 둘러보기</button><div class="grove-salvage"><span>고철과 물이 필요하다면</span><button class="text-button" data-action="gather">버려진 휴게소 탐색 ${icon('arrow')}</button></div>`);
  }
  if(kind==='hunt'){
   const stages=[{id:1,title:STAGE_NAMES[0],desc:'숲에 숨어든 좀비 무리',tag:'추천 Lv.1',style:'forest'},{id:2,title:STAGE_NAMES[1],desc:'바리케이드 너머의 감염자',tag:'추천 Lv.2',style:'toll'},{id:3,title:STAGE_NAMES[2],desc:'거대한 경비병이 지키는 보급품',tag:'추천 Lv.3',style:'ruins'}];
-  modalShell('ADVENTURE WITH BORI','보리와 함께, 사냥 출발',`<p class="modal-description">세 번의 웨이브를 지나 보스를 물리치세요.<br>일반 공격은 자동, 강한 일격과 보리의 돌진·회복은 직접 사용할 수 있어요.</p><div class="stage-list">${stages.map(st=>`<button class="stage-card ${st.style} ${selectedStage===st.id?'selected':''}" data-stage="${st.id}" aria-pressed="${selectedStage===st.id}" style="--stage-art:url('${BATTLE_ART_URLS[st.id-1]}')"><span class="stage-number">${String(st.id).padStart(2,'0')}<span>STAGE</span></span><span class="stage-card-body"><small>${st.tag} · 3 WAVES</small><strong>${st.title}</strong><span>${st.desc}</span></span><span class="stage-check">${icon(selectedStage===st.id?'check':'chevron')}</span></button>`).join('')}</div><div class="party-preview">${portrait(state.gender)}<span><strong>${escape(state.name)} & 보리</strong><small>체력 ${Math.round(state.health)} · 기력 ${Math.round(state.energy)}</small></span><b>Lv.${state.level}</b></div><div class="battle-reward-preview">${icon('food')} 승리 보상: 식량 ${6+selectedStage*2} · 고철 ${selectedStage*2} · 목재 2</div><button class="button full-width" data-start-hunt ${state.energy<16||state.health<15?'disabled':''}>${icon('hunt')} 전투 스테이지 입장 <span class="button-cost">기력 16</span></button>${state.energy<16||state.health<15?'<p class="fine-print">건강 15와 기력 16이 필요해요. 먼저 휴식해 주세요.</p>':''}<p class="fine-print">전투 중 앱을 종료하면 보상 없이 귀환해요 · 승리 후 보상 지급</p>`,true);
+  modalShell('ADVENTURE WITH BORI','보리와 함께, 사냥 출발',`<p class="modal-description">세 번의 웨이브를 지나 보스를 물리치세요.<br>일반 공격은 자동, 강한 일격과 보리의 돌진·회복은 직접 사용할 수 있어요.</p><div class="stage-list">${stages.map(st=>`<button class="stage-card ${st.style} ${selectedStage===st.id?'selected':''}" data-stage="${st.id}" aria-pressed="${selectedStage===st.id}" style="--stage-art:url('${BATTLE_ART_URLS[st.id-1]}')"><span class="stage-number">${String(st.id).padStart(2,'0')}<span>STAGE</span></span><span class="stage-card-body"><small>${st.tag} · 3 WAVES</small><strong>${st.title}</strong><span>${st.desc}</span></span><span class="stage-check">${icon(selectedStage===st.id?'check':'chevron')}</span></button>`).join('')}</div><div class="party-preview">${portrait(state.gender)}<span><strong>${escape(state.name)} & 보리</strong><small>체력 ${Math.round(state.health)} · 기력 ${Math.round(state.energy)}</small></span><b>Lv.${state.level}</b></div><div class="battle-reward-preview">${icon('food')} 승리 보상: 식량 ${6+selectedStage*2} · 고철 ${selectedStage*2} · 목재 2</div><button class="button full-width ${state.energy<16||state.health<15?'unavailable':''}" data-start-hunt aria-disabled="${state.energy<16||state.health<15}">${icon('hunt')} 전투 스테이지 입장 <span class="button-cost">기력 16</span></button>${state.energy<16||state.health<15?`<p class="fine-print">건강 15와 기력 16이 필요해요. 먼저 휴식해 주세요.</p><button class="button button-light full-width activity-secondary" data-action="rest">${icon('bed')} 여기서 쉬고 사냥 준비하기</button>`:''}<p class="fine-print">전투 중 앱을 종료하면 보상 없이 귀환해요 · 승리 후 보상 지급</p>`,true);
  }
  if(kind==='quests'){modalShell('ONE STEP AT A TIME','작은 목표, 큰 하루',`<p class="modal-description">서두르지 않아도 괜찮아요. 하나씩 해 나가요.</p><div class="quest-list">${questList(state).map(q=>`<article class="quest-row ${q.complete?'completed':''}"><span class="quest-row-icon">${icon(q.complete?'check':'flag')}</span><div><h3>${escape(q.title)}</h3><p>${escape(q.description)}</p><small>${escape(q.reward)} · 달성 시 자동 지급</small><div class="quest-progress"><span style="width:${Math.min(100,q.current/q.target*100)}%"></span></div></div><b>${q.current}/${q.target}</b></article>`).join('')}</div>`);}
  if(kind==='pet'){modalShell('YOUR VERY BEST FRIEND','보리와 쉬어 가기',`<div class="pet-modal-art">${petPortrait()}<span>${icon('heart')}</span></div><p class="pet-dialogue">“멍! 오늘도 네 옆에 있을게.”</p><p class="modal-description">보리는 우리집을 자유롭게 뛰어다녀요.<br>쓰다듬으며 마음의 여유를 찾아보세요.</p><div class="bond-meter"><span>우리의 행복</span><strong>${Math.round(state.morale)} / 100</strong><div class="quest-progress"><span style="width:${state.morale}%"></span></div></div><button class="button full-width" data-action="pet">${icon('paw')} 보리 쓰다듬기</button>`);}
@@ -231,6 +270,8 @@ document.addEventListener('click',e=>{const t=(e.target as Element).closest<HTML
  if(t.dataset.stage){selectedStage=Number(t.dataset.stage);openModal('hunt');}
  if(t.hasAttribute('data-start-hunt'))startBattle();
  if(t.hasAttribute('data-close'))closeModal();
+ if(t.hasAttribute('data-show-farm')){closeModal();setZone('home',true);selectPlot(preferredPlot()?.id??null);}
+ if(t.dataset.restRetry){const retry=t.dataset.restRetry as Action,plot=t.dataset.plot!==undefined?Number(t.dataset.plot):undefined;closeModal();const rested=performAction(state,'rest');if(rested.ok){state=rested.state;persist();render();toast(rested.message);void action(retry,plot);}else toast(rested.message);}
  if(t.dataset.plotStep){const index=state.plots.findIndex(p=>p.id===selectedPlotId);const next=(index+Number(t.dataset.plotStep)+state.plots.length)%state.plots.length;setZone('home',true);selectPlot(state.plots[next]?.id??null);}
  if(t.dataset.quick){const a=t.dataset.quick as Action;const farm=['plant','water','harvest'].includes(a);const plot=farm?quickPlot(a as FarmAction):undefined;if(farm&&plot){selectedPlotId=plot.id;scene.setSelectedPlot(plot.id);}void action(a,plot?.id);}
  if(t.dataset.action)void action(t.dataset.action as Action,t.dataset.plot!==undefined?Number(t.dataset.plot):undefined);
