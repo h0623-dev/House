@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkUpdate, parseRelease, type Release } from '../src/update.ts';
+import { checkUpdate, parseRelease, shouldOfferUpdate, parseAutomaticUpdateState, initializeAutoUpdates, prepareAutomaticUpdate, installPreparedUpdate, isNativeUpdateSupported, type Release } from '../src/update.ts';
 
 const validRelease: Release = {
   version: '0.2.0',
@@ -27,18 +27,51 @@ test('APK downloads reject insecure protocols and URL-embedded credentials', () 
     'game.apk',
     'https://username:password@example.com/game.apk',
     'https://username@example.com/game.apk',
+    'https://@example.com/game.apk',
+    'https://example.com/game.apk#fragment',
+    'https://example.com/game.apk#',
   ]) {
     assert.throws(() => parseRelease({ ...validRelease, apkUrl }), undefined, apkUrl);
   }
 });
 
 test('version codes must support an unambiguous numeric upgrade comparison', () => {
-  for (const versionCode of [0, -1, 1.5, '2', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, null, undefined]) {
+  for (const versionCode of [0, -1, 1.5, '2', NaN, Infinity, 2100000001, Number.MAX_SAFE_INTEGER + 1, null, undefined]) {
     assert.throws(() => parseRelease({ ...validRelease, versionCode }), undefined, String(versionCode));
   }
   for (const version of ['1', '1.2', 'v1.2.3', 'latest', '', 123, null]) {
     assert.throws(() => parseRelease({ ...validRelease, version }), undefined, String(version));
   }
+});
+
+test('compatible signed game content does not require another Android engine installation', () => {
+  const contentRelease = parseRelease({ ...validRelease, version:'0.9.0', versionCode:9, minimumNativeVersionCode:8 });
+  assert.equal(shouldOfferUpdate(contentRelease, 8, true), false);
+  assert.equal(shouldOfferUpdate(contentRelease, 7, true), true);
+  assert.equal(shouldOfferUpdate(contentRelease, 8, false), true);
+  assert.equal(shouldOfferUpdate({ ...contentRelease, minimumNativeVersionCode:undefined }, 8, true), true);
+  for (const minimumNativeVersionCode of [0, -1, 1.5, '8', 10, NaN, Infinity, null]) {
+    assert.throws(() => parseRelease({ ...contentRelease, minimumNativeVersionCode }));
+  }
+});
+
+test('native download state keeps verified version and normalizes progress safely', () => {
+  assert.deepEqual(parseAutomaticUpdateState({ status:'downloading', progress:37.8, message:'받는 중', version:'0.9.0', versionCode:9, downloadedBytes:400, totalBytes:1000, revision:3 }), {
+    status:'downloading', progress:38, message:'받는 중', version:'0.9.0', versionCode:9, downloadedBytes:400, totalBytes:1000, revision:3,
+  });
+  assert.equal(parseAutomaticUpdateState({status:'ready',progress:110,message:'설치 준비됨'}).progress,100);
+  assert.equal(parseAutomaticUpdateState({status:'permission',progress:-1,message:'Android 설치 허용'}).progress,0);
+  assert.equal(parseAutomaticUpdateState({status:'error',progress:0,message:'재시도',downloadedBytes:-4}).downloadedBytes,undefined);
+  for(const data of [null,{}, {status:'installed',progress:100,message:'bad'}, {status:'ready',progress:NaN,message:'bad'}, {status:'ready',progress:100}])assert.throws(()=>parseAutomaticUpdateState(data));
+});
+
+test('web previews never start native APK download or installation automatically', async () => {
+  assert.equal(isNativeUpdateSupported(),false);
+  let callbacks=0;
+  assert.equal((await initializeAutoUpdates(()=>callbacks++)).status,'idle');
+  assert.equal(callbacks,1);
+  assert.equal((await prepareAutomaticUpdate(validRelease)).status,'idle');
+  await assert.rejects(installPreparedUpdate(),/Android/);
 });
 
 test('missing or malformed checksum, publication date, or release notes invalidate the manifest', () => {

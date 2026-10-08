@@ -27,6 +27,7 @@ const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const toolbar = () => page.locator('#planting-toolbar');
 async function touch(button) {
+ if (!await button.isVisible() && await button.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
  await button.scrollIntoViewIfNeeded();
  const box = await button.boundingBox();
  assert.ok(box, 'a touch control must be rendered');
@@ -90,15 +91,12 @@ async function chooseSeed(id) {
  await page.waitForTimeout(1300);
 }
 async function plotPoint(id) {
- const state = await save();
- return page.locator('#world').evaluate((canvas, { id, level }) => {
+ return page.locator('#world').evaluate((canvas, id) => {
   const positions = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]];
   const [u, v] = positions[id - 1], p = (u, v, z = 0) => [480 + u * .91 - v * .67, 420 + u * .34 + v * .47 - z];
-  const [x, y] = p(u + 35, v + 36, 112), step = level - 1, minX = Math.min(-10, p(-278 - step * 14, 141 + step * 36)[0] - 28);
-  const rect = canvas.getBoundingClientRect(), style = getComputedStyle(canvas), top = parseFloat(style.getPropertyValue('--world-safe-top')) || 0, bottom = parseFloat(style.getPropertyValue('--world-safe-bottom')) || 0;
-  const available = Math.max(100, rect.height - top - bottom), scale = Math.min(rect.width / Math.max(860, 828 - minX), available / (560 + Math.max(0, level - 3) * 17)) * 1.48;
-  return { x: rect.left + rect.width / 2 + (x - 468) * scale, y: rect.top + top + available / 2 + (y - 350) * scale };
- }, { id, level: state.deckLevel });
+  const [x, y] = p(u + 35, v + 36, 112), rect = canvas.getBoundingClientRect(), geometry = JSON.parse(canvas.dataset.sceneGeometry);
+  return { x: rect.left + geometry.dx + x * geometry.scale, y: rect.top + geometry.dy + y * geometry.scale };
+ }, id);
 }
 async function touchPlot(id) {
  const point = await plotPoint(id);

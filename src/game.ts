@@ -1,4 +1,5 @@
 import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
+import { getSettlement, validateSettlement, type Settlement } from './settlement';
 export { CROPS, CROP_IDS, type CropId } from './crops';
 
 export type Resource = 'wood' | 'scrap' | 'food' | 'water' | 'seeds';
@@ -27,6 +28,8 @@ export interface GameState {
   resources: Record<Resource, number>;
   /** Missing only in older saves. resources.seeds remains the inventory total. */
   seedInventory?: Record<CropId, number>;
+  /** Missing in saves created before truck settlement facilities. */
+  settlement?: Settlement;
   plots: Plot[];
   deckLevel: number;
   truckHealth: number;
@@ -78,6 +81,7 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
     morale: 90,
     resources: { wood: 24, scrap: 12, food: 8, water: 16, seeds: 23 },
     seedInventory: { carrot: 8, potato: 3, tomato: 3, corn: 3, strawberry: 3, pumpkin: 3 },
+    settlement: { buildings: [], nextBuildingId: 1, stats: { productions: 0, collections: 0 } },
     plots: [
       { id: 1, plantedAt: 240, watered: true, cropId: 'carrot' },
       { id: 2, plantedAt: 420, watered: false, cropId: 'carrot' },
@@ -99,6 +103,7 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
 function copy(state: GameState): GameState {
   return {
     ...state, resources: { ...state.resources }, seedInventory: getSeedInventory(state),
+    ...(state.settlement ? { settlement: getSettlement(state) } : {}),
     plots: state.plots.map(plot => plot.plantedAt === null ? { ...plot } : { ...plot, cropId: getPlotCropId(plot) }),
     quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
     expedition: state.expedition ? { ...state.expedition } : null,
@@ -414,6 +419,7 @@ function validateSave(value: unknown): value is GameState {
     || !CROP_IDS.every(id => isInteger((value.seedInventory as Record<string, unknown>)[id], 0, 100_000_000))) return false;
   const seedTotal = CROP_IDS.reduce((total, id) => total + Number((value.seedInventory as Record<string, unknown>)[id]), 0);
   if (seedTotal !== value.resources.seeds) return false;
+  if (Object.hasOwn(value, 'settlement') && !validateSettlement(value.settlement, { deckLevel: value.deckLevel, totalMinutes: value.totalMinutes })) return false;
   if (!Array.isArray(value.plots) || value.plots.length !== value.deckLevel + 2) return false;
   const ids = new Set<number>();
   for (const plot of value.plots) {

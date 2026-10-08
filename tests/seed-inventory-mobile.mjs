@@ -32,6 +32,7 @@ const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const plantingMode = () => page.locator('#planting-toolbar');
 async function touch(locator) {
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
  await locator.scrollIntoViewIfNeeded();
  const box = await locator.boundingBox();
  assert.ok(box, 'the intended touch target is rendered');
@@ -90,18 +91,12 @@ async function chooseSeed(id, button = quick('plant')) {
  await page.waitForTimeout(1300);
 }
 async function plotPoint(id) {
- const state = await saved();
- return page.locator('#world').evaluate((canvas, { id, level }) => {
+ return page.locator('#world').evaluate((canvas, id) => {
   const positions = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]];
   const [u, v] = positions[id - 1], p = (u, v, z = 0) => [480 + u * .91 - v * .67, 420 + u * .34 + v * .47 - z];
-  const [x, y] = p(u + 35, v + 36, 112), step = level - 1;
-  const minX = Math.min(-10, p(-278 - step * 14, 141 + step * 36)[0] - 28);
-  const rect = canvas.getBoundingClientRect(), style = getComputedStyle(canvas);
-  const top = parseFloat(style.getPropertyValue('--world-safe-top')) || 0, bottom = parseFloat(style.getPropertyValue('--world-safe-bottom')) || 0;
-  const available = Math.max(100, rect.height - top - bottom);
-  const scale = Math.min(rect.width / Math.max(860, 828 - minX), available / (560 + Math.max(0, level - 3) * 17)) * 1.48;
-  return { x: rect.left + rect.width / 2 + (x - 468) * scale, y: rect.top + top + available / 2 + (y - 350) * scale };
- }, { id, level: state.deckLevel });
+  const [x, y] = p(u + 35, v + 36, 112), rect = canvas.getBoundingClientRect(), geometry = JSON.parse(canvas.dataset.sceneGeometry);
+  return { x: rect.left + geometry.dx + x * geometry.scale, y: rect.top + geometry.dy + y * geometry.scale };
+ }, id);
 }
 async function touchPlot(id) {
  const point = await plotPoint(id);
@@ -290,14 +285,14 @@ try {
    await touchPlot(1);
    await waitBusy();
    await touchPlot(2);
-   await touch(nav('grove'));
+   await touch(nav('home'));
    await waitIdle('navigation-stops-future-planting', navStart, 8500);
    state = await saved();
    assert.equal(state.plots[0].cropId, 'tomato');
    assert.equal(state.plots[1].plantedAt, null);
    assert.equal(state.seedInventory.tomato, 3);
    assert.equal(await plantingMode().isVisible(), false);
-   assert.equal(await nav('grove').getAttribute('aria-current'), 'page', 'requested navigation happens after the current chore');
+   assert.equal(await nav('home').getAttribute('aria-current'), 'page', 'requested navigation happens after the current chore');
 
    const tired = lateFixture(fresh, { energy: 0 });
    await fixture(tired);

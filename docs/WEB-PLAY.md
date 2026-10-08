@@ -1,12 +1,12 @@
 # 로드헤이븐 웹 플레이 배포
 
-v0.7.0은 정적 웹 호스팅에서 실행할 수 있습니다. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
+v0.8.0은 정적 웹 호스팅에서 실행할 수 있습니다. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
 
 ## 준비된 파일
 
 - `artifacts/web-play/`: 웹 서버에 올릴 정적 사이트. `index.html`, `assets/`, `fonts/`, `.nojekyll`을 함께 배포합니다.
-- `artifacts/road-haven-0.7.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
-- `artifacts/road-haven-0.7.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
+- `artifacts/road-haven-0.8.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
+- `artifacts/road-haven-0.8.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
 
 `fonts/OFL-NotoSansKR.txt`와 `fonts/OFL-DMSans.txt`는 포함된 글꼴의 라이선스입니다. 배포할 때 함께 보관하세요. 생성된 `artifacts/` 디렉터리는 소스 저장소의 Git 추적에서 제외됩니다.
 
@@ -58,3 +58,5 @@ GitHub Pages를 사용할 수 있는 저장소와 설정 권한이 필요합니�
 - 단일 HTML은 로컬 HTTP로 열어 농사·벌목·확장·전투 승리와 저장·재접속을 확인했습니다. 로드 후 오프라인 상태에서도 동작했고 외부 리소스를 요청하지 않았습니다.
 - 테스트 환경의 관리형 Chromium은 `file://` 탐색을 차단하므로 단일 HTML을 파일로 직접 여는 방식은 이 환경에서 검증하지 못했습니다.
 
+
+게임 콘텐츠 자동 업데이트는 Android 앱의 전용 기능입니다. 웹과 단일 HTML은 현재 포함된 버전을 실행하며 Android의 저장 및 다운로드 공간과 별개입니다.

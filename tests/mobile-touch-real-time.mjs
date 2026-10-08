@@ -29,6 +29,7 @@ const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-ha
 const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 async function touch(locator) {
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
  await locator.scrollIntoViewIfNeeded();
  const box = await locator.boundingBox();
  assert.ok(box, 'the touch target must be rendered');
@@ -60,15 +61,11 @@ async function fixture(state) {
  await pauseWorldTime();
 }
 async function settleCamera() { await page.waitForTimeout(1300); }
-async function worldPoint(x, y, camera) {
- return page.locator('#world').evaluate((canvas, { x, y, camera }) => {
-  const rect = canvas.getBoundingClientRect(), style = getComputedStyle(canvas);
-  const top = parseFloat(style.getPropertyValue('--world-safe-top')) || 0;
-  const bottom = parseFloat(style.getPropertyValue('--world-safe-bottom')) || 0;
-  const available = Math.max(100, rect.height - top - bottom);
-  const scale = Math.min(rect.width / camera.logicalWidth, available / camera.logicalHeight) * camera.zoom;
-  return { x: rect.left + rect.width / 2 + (x - camera.x) * scale, y: rect.top + top + available / 2 + (y - camera.y) * scale };
- }, { x, y, camera });
+async function worldPoint(x, y) {
+ return page.locator('#world').evaluate((canvas, { x, y }) => {
+  const rect = canvas.getBoundingClientRect(), geometry = JSON.parse(canvas.dataset.sceneGeometry);
+  return { x: rect.left + geometry.dx + x * geometry.scale, y: rect.top + geometry.dy + y * geometry.scale };
+ }, { x, y });
 }
 async function chore(name, trigger, { noCommit, repeatedTouches, screenshot } = {}) {
  const started = Date.now();
@@ -85,10 +82,11 @@ async function chore(name, trigger, { noCommit, repeatedTouches, screenshot } = 
  timings.push({ name, elapsedMs });
  assert.ok(elapsedMs < 8500, `${name} should finish promptly using real requestAnimationFrame: ${elapsedMs} ms`);
  assert.equal(await page.locator('.chore-status').isVisible(), false, `${name} must release its work indicator`);
- assert.equal(await nav('grove').isDisabled(), false, `${name} must restore navigation`);
+ assert.equal(await nav('build').isDisabled(), false, `${name} must restore navigation`);
  assert.equal(await quick('rest').isDisabled(), false, `${name} must restore recovery controls`);
 }
 async function assertHudFits(width, height) {
+ if (!await page.locator('#farm-tray').isVisible()) await touch(page.locator('[data-farm-toggle]'));
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, `${width}×${height}: no main-screen scrolling`);
  for (const action of ['harvest', 'water', 'plant', 'chop', 'gather', 'rest']) {
   const button = quick(action), box = await button.boundingBox();
@@ -123,12 +121,10 @@ async function stopPlanting() {
  if (await page.locator('#planting-toolbar').isVisible()) await touch(page.locator('[data-plant-cancel]'));
 }
 async function touchPlot(id) {
- const state = await saved(), step = state.deckLevel - 1;
  const positions = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]];
  const [u, v] = positions[id - 1];
  const x = 480 + (u + 35) * .91 - (v + 36) * .67, y = 420 + (u + 35) * .34 + (v + 36) * .47 - 112;
- const minX = Math.min(-10, 480 + (-278 - step * 14) * .91 - (141 + step * 36) * .67 - 28);
- const point = await worldPoint(x, y, { x: 468, y: 350, zoom: 1.48, logicalWidth: Math.max(860, 828 - minX), logicalHeight: 560 + Math.max(0, state.deckLevel - 3) * 17 });
+ const point = await worldPoint(x, y);
  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the selected painted plot is clear of HUD overlays');
  await page.touchscreen.tap(point.x, point.y);
 }
@@ -155,9 +151,10 @@ try {
   const fresh = await saved();
   await shot(`home-${width}`);
 
-  await touch(nav('grove'));
+  await touch(nav('hunt'));
+  await touch(page.locator('#modal-root [data-zone="grove"]'));
   await settleCamera();
-  const tree = await worldPoint(98, 554, { x: 180, y: 515, zoom: 2.15, logicalWidth: 920, logicalHeight: 560 });
+  const tree = await worldPoint(98, 554);
   assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', tree), true, 'painted tree must remain touchable through the HUD');
   const beforeTree = await saved();
   const chopBox = await quick('chop').boundingBox();
@@ -250,7 +247,8 @@ try {
   exhausted.resources.seeds = 0;
   delete exhausted.seedInventory;
   await fixture(exhausted);
-  await touch(nav('grove'));
+  await touch(nav('hunt'));
+  await touch(page.locator('#modal-root [data-zone="grove"]'));
   assert.match(await page.locator('#plot-action small').innerText(), /쉬고/);
   await touch(page.locator('#plot-action'));
   assert.equal(await page.locator('#modal-root').isVisible(), true, 'low-energy tap must explain the obstacle');
@@ -387,7 +385,9 @@ try {
  await touch(page.locator('[data-start]'));
  await pauseWorldTime();
  const beforeSlow = await saved();
+ if (!await page.locator('#farm-tray').isVisible()) await touch(page.locator('[data-farm-toggle]'));
  const slowButtonBox = await quick('chop').boundingBox();
+ assert.ok(slowButtonBox, 'the slow-rendering duplicate-touch target is visible after opening the farm tray');
  await chore('woodcutting-at-350ms-visible-frames', () => touch(quick('chop')), {
   noCommit: async () => assert.equal((await saved()).resources.wood, beforeSlow.resources.wood),
   repeatedTouches: async () => page.touchscreen.tap(slowButtonBox.x + slowButtonBox.width / 2, slowButtonBox.y + slowButtonBox.height / 2),

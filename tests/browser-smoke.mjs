@@ -46,6 +46,26 @@ const save = async () => JSON.parse(await page.evaluate(() => localStorage.getIt
 const close = async () => page.locator('#modal-root [data-close]').click();
 const quick = action => page.locator('#quick-actions [data-quick="' + action + '"]');
 const nav = section => page.locator('[data-nav="' + section + '"]');
+async function openFarmTray() {
+ if (!await page.locator('#farm-tray').isVisible()) await page.locator('[data-farm-toggle]').click();
+}
+async function clickQuick(action) { await openFarmTray(); await quick(action).click(); }
+async function openPetOnMap() {
+ await nav('home').click(); await page.clock.runFor(2000);
+ // The pet shortcut moved onto the painted truck. Touch its roaming area in
+ // the live canvas rather than invoking the modal through a private API.
+ for (const u of [90, 62, 118, 35, 145]) for (const v of [-14, -29, 1]) {
+  const point = await page.locator('#world').evaluate((canvas, { u, v }) => {
+   const g = JSON.parse(canvas.dataset.sceneGeometry), r = canvas.getBoundingClientRect();
+   return { x: r.left + g.dx + (480 + u * .91 - v * .67) * g.scale, y: r.top + g.dy + (420 + u * .34 + v * .47 - 110) * g.scale };
+  }, { u, v });
+  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the pet roaming area is reachable on the painted truck');
+  await page.mouse.click(point.x, point.y);
+  if (await page.locator('.pet-modal-art').isVisible()) return;
+  if (await page.locator('#modal-root').isVisible()) await close();
+ }
+ assert.fail('Tapping the visible pet roaming area must open the pet interaction');
+}
 const screenshots = [];
 const screenshot = name => {
  const path = 'artifacts/v' + appVersion + '-' + name + '.png';
@@ -71,6 +91,7 @@ async function writeReceipt(status, failure) {
 async function assertHudFits(width, height) {
  await page.setViewportSize({ width, height });
  await page.clock.runFor(400);
+ await openFarmTray();
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, width + 'px mobile viewport must not overflow horizontally');
  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1), true, width + '×' + height + ' main game must fit without vertical scrolling');
  for (const action of ['harvest', 'water', 'plant', 'chop', 'gather', 'rest']) {
@@ -86,7 +107,7 @@ async function assertHudFits(width, height) {
   assert.ok(iconBox && captionBox && captionBox.y >= iconBox.y + iconBox.height - 1, action + ' caption must be below the icon');
   assert.ok(await caption.evaluate(element => parseFloat(getComputedStyle(element).fontSize) <= 12), action + ' caption should remain smaller than the button icon');
  }
- for (const section of ['home', 'farm', 'grove', 'hunt', 'bag', 'settings']) {
+ for (const section of ['home', 'farm', 'build', 'hunt', 'bag', 'settings']) {
   const box = await nav(section).boundingBox();
   assert.ok(box && box.y >= 0 && box.y + box.height <= height + 1, section + ' navigation must stay in the viewport');
   assert.ok(box.width >= 44 && box.height >= 44, section + ' navigation needs a finger-sized target');
@@ -103,6 +124,7 @@ async function selectPlot(id) {
 }
 
 async function chooseSeed(button, cropId = 'carrot') {
+ await openFarmTray();
  if (await page.locator('#planting-toolbar').isVisible() && await page.locator('#planting-toolbar').getAttribute('data-farm-mode') === 'plant') await page.locator('#planting-toolbar [data-seed-change]').click();
  else await button.click();
  if (!await page.locator('#modal-root [data-select-seed]').first().isVisible()) {
@@ -123,23 +145,19 @@ async function stopPlanting() {
 
 function paintedPlot(id) {
  const coordinates = async () => {
-  const state = await save();
-  return page.locator('#world').evaluate((canvas, { id, level }) => {
+  return page.locator('#world').evaluate((canvas, id) => {
    const positions = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]];
    const [u, v] = positions[id - 1], p = (u, v, z = 0) => [480 + u * .91 - v * .67, 420 + u * .34 + v * .47 - z];
-   const [x, y] = p(u + 35, v + 36, 112), step = level - 1;
-   const minX = Math.min(-10, p(-278 - step * 14, 141 + step * 36)[0] - 28);
-   const rect = canvas.getBoundingClientRect(), style = getComputedStyle(canvas);
-   const top = parseFloat(style.getPropertyValue('--world-safe-top')) || 0, bottom = parseFloat(style.getPropertyValue('--world-safe-bottom')) || 0;
-   const available = Math.max(100, rect.height - top - bottom);
-   const scale = Math.min(rect.width / Math.max(860, 828 - minX), available / (560 + Math.max(0, level - 3) * 17)) * 1.48;
-   return { x: rect.left + rect.width / 2 + (x - 468) * scale, y: rect.top + top + available / 2 + (y - 350) * scale, width: 1, height: 1 };
-  }, { id, level: state.deckLevel });
+   const [x, y] = p(u + 35, v + 36, 112), rect = canvas.getBoundingClientRect();
+   const geometry = JSON.parse(canvas.dataset.sceneGeometry);
+   return { x: rect.left + geometry.dx + x * geometry.scale, y: rect.top + geometry.dy + y * geometry.scale, width: 1, height: 1 };
+  }, id);
  };
  return { boundingBox: coordinates, click: async () => { const point = await coordinates(); await page.mouse.click(point.x, point.y); } };
 }
 
 async function chore(button, assertNotApplied, { workScreenshot, repeatTap = false } = {}) {
+ if (typeof button.getAttribute === 'function' && await button.getAttribute('data-quick')) await openFarmTray();
  const box = await button.boundingBox();
  await button.click();
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true');
@@ -212,13 +230,8 @@ try {
  await selectPlot(3);
  await page.clock.runFor(2000);
  const firstPlot = await page.locator('#world').evaluate(canvas => {
-  const rect = canvas.getBoundingClientRect();
-  const style = getComputedStyle(canvas);
-  const top = parseFloat(style.getPropertyValue('--world-safe-top')) || 0;
-  const bottom = parseFloat(style.getPropertyValue('--world-safe-bottom')) || 0;
-  const available = Math.max(100, rect.height - top - bottom);
-  const scale = Math.min(rect.width / 860, available / 560) * 1.48;
-  return { x: rect.left + rect.width / 2 + (354.03 - 468) * scale, y: rect.top + top + available / 2 + (317.12 - 350) * scale };
+  const rect = canvas.getBoundingClientRect(), geometry = JSON.parse(canvas.dataset.sceneGeometry);
+  return { x: rect.left + geometry.dx + 354.03 * geometry.scale, y: rect.top + geometry.dy + 317.12 * geometry.scale };
  });
  await page.mouse.click(firstPlot.x, firstPlot.y);
  assert.equal(await page.locator('#plot-action').getAttribute('data-plot'), '1', 'tapping a rendered plot must select that exact plot');
@@ -264,9 +277,11 @@ try {
  await chore(quick('chop'), async () => assert.equal((await save()).resources.wood, wood), { workScreenshot: 'mobile-woodcutting' });
  assert.equal((await save()).resources.wood, wood + 18);
  assert.equal((await save()).stats.chops, 1);
- await nav('grove').click();
+ await nav('hunt').click();
+ await page.locator('#modal-root [data-zone="grove"]').click();
  await page.clock.runFor(2000);
  await screenshot('mobile-grove');
+ await openFarmTray();
  await page.locator('#farm-context [data-open="grove"]').click();
  await page.clock.runFor(350);
  await screenshot('mobile-grove-guide');
@@ -326,7 +341,7 @@ try {
 
  // All stages use the same direct hunt entry and safe return path.
  for (const stage of [2, 3]) {
-  await quick('rest').click();
+  await clickQuick('rest');
   await enterBattle(stage);
   await page.clock.runFor(1000);
   await screenshot('battle-stage-' + stage);
@@ -350,7 +365,7 @@ try {
  await page.clock.runFor(350);
  await screenshot('mobile-overview-map');
  await close();
- await page.locator('[data-open="pet"]').click();
+ await openPetOnMap();
  await page.clock.runFor(350);
  const svgDefinitionIds = await page.locator('svg [id]').evaluateAll(elements => elements.map(element => element.id));
  assert.equal(new Set(svgDefinitionIds).size, svgDefinitionIds.length, 'illustrated portraits must use unique SVG clip/gradient IDs when shown together');
@@ -359,7 +374,7 @@ try {
  await close();
 
  await nav('settings').click();
- await page.getByRole('button', { name: '새 버전 확인', exact: true }).click();
+ await page.getByRole('button', { name: '앱 새 버전 확인', exact: true }).click();
  await page.getByText(/아직 배포 서버가 연결되지 않았어요/).waitFor();
  await close();
  const portraitSources = await page.locator('#profile img, #profile svg image').evaluateAll(images => [...new Set(images.map(image => image.getAttribute('src') || image.getAttribute('href')).filter(Boolean))]);
@@ -373,7 +388,7 @@ try {
  assert.equal(decodedPortraits.every(Boolean), true, 'anime portrait art must decode without broken images');
  await context.setOffline(true);
  await chore(quick('chop'));
- await quick('rest').click();
+ await clickQuick('rest');
  assert.ok((await save()).energy > 0);
  await context.setOffline(false);
  await assertHudFits(390, 844);
@@ -398,7 +413,7 @@ try {
  });
  await page.reload();
  await page.locator('#resident-name').getByText('노을').waitFor();
- await quick('rest').click();
+ await clickQuick('rest');
  assert.equal((await save()).deckLevel, 2);
  assert.equal((await save()).stats.chops, 0);
  assert.equal((await save()).expedition, null);
