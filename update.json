@@ -1,9 +1,9 @@
 {
-  "version": "0.11.0",
-  "versionCode": 11,
+  "version": "0.12.0",
+  "versionCode": 12,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.11.0-debug.apk",
-  "sha256": "ecabf550249957d424abf91b9e6d0376ec1c58e91f10d6190483e3005956d317",
-  "notes": "두 손가락 지도 확대·축소, 자연스러운 걷기와 사다리 이동, 재료를 줍고 담는 채집, 간단한 현재 성장 목표 화면. 기존 v0.8 이상 앱은 게임 실행 시 자동 콘텐츠 패치로 적용됩니다.",
-  "publishedAt": "2026-10-08T11:59:09.853Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.12.0-debug.apk",
+  "sha256": "7aab601e7a978504e41b807816db31b513529da5556eb3883c9cec029f00c9ec",
+  "notes": "빈 공간을 한 손가락으로 끌어 화면 이동. 화면 이동 모드에서 밭 위 드래그도 작업 없이 이동. 건설 중 화면 이동과 채집 중 수동 시점 유지. 기존 v0.8 이상 앱은 APK 재설치 없이 자동 패치로 적용됩니다.",
+  "publishedAt": "2026-10-08T13:50:49.673Z"
 }
