@@ -3,7 +3,7 @@ import { drawHero, type HeroPose } from './actors';
 
 type Point = [number, number];
 type Selectable = 'farm' | 'truck' | 'pet' | 'character' | 'grove';
-type Hit = { kind: Selectable; x: number; y: number; radius: number };
+type Hit = { kind: Selectable; x: number; y: number; radius: number; plotId?: number };
 type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'gather';
 type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; plotIndex: number; resolve: () => void };
 
@@ -26,6 +26,8 @@ export class Scene {
   private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private action: Chore | null = null;
   private zone: 'home' | 'grove' = 'home';
+  private selectedPlotId: number | null = null;
+  private farmFocus = false;
   private camera = { x: 480, y: 350, zoom: 1 };
   private treeCutAt = -100;
   private disposed = false;
@@ -55,11 +57,15 @@ export class Scene {
     const rect = this.canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left - this.dx) / this.scale;
     const y = (event.clientY - rect.top - this.dy) / this.scale;
-    const hit = [...this.hits].reverse().find(item => Math.hypot(item.x - x, item.y - y) < item.radius);
-    if (hit) { this.focus(hit.kind); this.onSelect(hit.kind); }
+    // Small plots remain tappable on phones; choose the nearest plot when targets overlap.
+    const candidates = this.hits.filter(item => Math.hypot(item.x - x, item.y - y) < Math.max(item.radius, 22 / this.scale));
+    const plots = candidates.filter(item => item.kind === 'farm').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    const foreground = [...candidates].reverse().find(item => (item.kind === 'pet' || item.kind === 'character') && Math.hypot(item.x - x, item.y - y) < item.radius);
+    const hit = foreground ?? plots[0] ?? candidates[candidates.length - 1];
+    if (hit) { this.focus(hit.kind); this.onSelect(hit.kind, hit.plotId); }
   };
 
-  constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable) => void) {
+  constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable, plotId?: number) => void) {
     this.ctx = canvas.getContext('2d')!;
     canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 텃밭과 반려견, 캐릭터, 도로 옆 벌목장을 눌러 보세요.');
     canvas.addEventListener('pointerup', this.pointer);
@@ -70,7 +76,12 @@ export class Scene {
     this.frame = requestAnimationFrame(this.animate);
   }
 
-  setState(state: GameState) { this.state = state; }
+  setState(state: GameState) {
+    this.state = state;
+    if (this.selectedPlotId !== null && !state.plots.some(plot => plot.id === this.selectedPlotId)) this.selectedPlotId = null;
+  }
+  setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
+  setFarmFocus(enabled: boolean) { this.farmFocus = enabled; }
   setSuspended(value: boolean) {
     this.suspended = value;
     if (value) { cancelAnimationFrame(this.frame); this.frame = 0; }
@@ -87,15 +98,15 @@ export class Scene {
     plotIndex = Math.max(0, plotIndex);
     const home = this.p(-74, 14, 95), [u, v] = this.plotPosition(plotIndex);
     let path: Point[] = [home, this.p(u - 9, 12, 95), this.p(u - 9, v + 39, 95)];
-    let walk = 1.15, work = 2.2;
+    let walk = .7, work = 1.7;
     if (kind === 'chop' || kind === 'gather') {
       const front = this.deckBounds().front;
       path = [home, this.p(-168, 16, 95), this.p(-176, front - 13, 95), this.rampTop(), this.rampBottom(), [146, 560], [142, 590]];
-      walk = 1.6; work = kind === 'chop' ? 2.5 : 1.8;
+      walk = .9; work = kind === 'chop' ? 1.9 : 1.45;
       if (kind === 'chop') this.treeCutAt = -100;
     } else if (kind === 'expand') {
       path = [home, this.p(-156, 16, 95), this.p(-157, this.deckBounds().front - 19, 95)];
-      walk = .85; work = 2.25;
+      walk = .7; work = 1.85;
     }
     this.zone = 'home';
     return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk * 2 + work, walk, work, path, plotIndex, resolve }; });
@@ -185,7 +196,7 @@ export class Scene {
   private updateCamera() {
     const { level, left, front } = this.deckBounds();
     const homeX = 480 - (level - 1) * 12, homeY = 350 + (level - 1) * 6;
-    let target = { x: homeX, y: homeY, zoom: 1 };
+    let target = this.farmFocus && this.zone === 'home' ? { x: 468, y: 350, zoom: 1.48 } : { x: homeX, y: homeY, zoom: 1 };
     if (this.zone === 'grove') target = { x: 180, y: 515, zoom: 2.15 };
     const action = this.action;
     if (action) {
@@ -195,18 +206,23 @@ export class Scene {
       const focusX = logging ? 160 : targetPoint[0] + 35;
       const focusY = logging ? 523 : targetPoint[1] - 45;
       const zoom = action.kind === 'expand' ? 1.08 : logging ? 2.2 : 1.78;
-      target = { x: homeX + (focusX - homeX) * amount, y: homeY + (focusY - homeY) * amount, zoom: 1 + (zoom - 1) * amount };
+      target = { x: target.x + (focusX - target.x) * amount, y: target.y + (focusY - target.y) * amount, zoom: target.zoom + (zoom - target.zoom) * amount };
     }
     const blend = this.reducedMotion ? .6 : .13;
     this.camera.x += (target.x - this.camera.x) * blend;
     this.camera.y += (target.y - this.camera.y) * blend;
     this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
     const minX = Math.min(-10, this.p(left, front)[0] - 28);
-    const logicalWidth = Math.max(990, 958 - minX);
-    const logicalHeight = 735 + Math.max(0, level - 3) * 17;
-    this.scale = Math.min(this.width / logicalWidth, this.height / logicalHeight) * this.camera.zoom;
+    const logicalWidth = Math.max(this.farmFocus ? 860 : 920 + (level - 1) * 24, 828 - minX);
+    const logicalHeight = 560 + Math.max(0, level - 3) * 17;
+    // The same scene supports the phone HUD and the standalone art preview.
+    const css = getComputedStyle(this.canvas);
+    const safeTop = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-top')) || 0);
+    const safeBottom = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-bottom')) || 0);
+    const availableHeight = Math.max(100, this.height - safeTop - safeBottom);
+    this.scale = Math.min(this.width / logicalWidth, availableHeight / logicalHeight) * this.camera.zoom;
     this.dx = this.width / 2 - this.camera.x * this.scale;
-    this.dy = this.height / 2 - this.camera.y * this.scale;
+    this.dy = safeTop + availableHeight / 2 - this.camera.y * this.scale;
   }
 
   private render() {
@@ -508,6 +524,12 @@ export class Scene {
     for (let i = 0; i < count; i++) {
       const [u, v] = this.plotPosition(i), plot = plots[i];
       this.box(u, v, 95, 69, 68, 10, '#a8845c', '#b99666', '#c5a371', '#987b53');
+      if (plot.id === this.selectedPlotId) {
+        this.ctx.save();
+        this.ctx.shadowColor = '#ffcf6b'; this.ctx.shadowBlur = 9;
+        this.poly([this.p(u, v, 108), this.p(u + 69, v, 108), this.p(u + 69, v + 68, 108), this.p(u, v + 68, 108)], '#ffe5a61a', '#ffec9a', 3.5);
+        this.ctx.restore();
+      }
       this.poly([this.p(u + 6, v + 6, 106), this.p(u + 63, v + 6, 106), this.p(u + 63, v + 62, 106), this.p(u + 6, v + 62, 106)], plot.watered ? '#786b4d' : '#9f8058', '#8c704b', 1);
       for (let j = 0; j < 3; j++) this.line([this.p(u + 11, v + 15 + j * 18, 107), this.p(u + 58, v + 15 + j * 18, 107)], plot.watered ? '#635f44' : '#826d4e', 2);
       for (let k = 0; k < 6; k++) {
@@ -526,8 +548,13 @@ export class Scene {
       const marker = this.p(u + 63, v + 9, 107); this.line([[marker[0], marker[1]], [marker[0], marker[1] - 14]], '#e5c899', 2);
       this.round(marker[0] - 5, marker[1] - 21, 11, 8, 2, '#eddbb4', '#ab946d');
       const mid = this.p(u + 35, v + 36, 112);
-      this.hits.push({kind: 'farm', x: mid[0], y: mid[1], radius: 45});
+      this.hits.push({kind: 'farm', x: mid[0], y: mid[1], radius: 45, plotId: plot.id});
       this.pulse('farm', mid[0], mid[1], 34);
+      if (this.farmFocus || plot.id === this.selectedPlotId) {
+        const label = this.p(u + 11, v + 7, 123);
+        this.ellipse(label[0], label[1], 9, 9, plot.id === this.selectedPlotId ? '#ffdf93' : '#fffae6', '#8b805d', 1);
+        this.label(String(i + 1), label[0], label[1] + 3.2, 10, '#526650');
+      }
     }
     // Additional deck space is visibly useful even before its next unlock.
     if (count < 4) {
@@ -588,14 +615,14 @@ export class Scene {
     const hero = this.heroState(), [x, y] = hero.point;
     let progress = hero.progress;
     if (hero.pose === 'chop') progress = (progress * 3) % 1;
-    drawHero(this.ctx, { x, y, scale: .81, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: this.reducedMotion && !this.action ? 0 : this.time, progress });
-    this.hits.push({ kind: 'character', x, y: y - 47, radius: 39 });
-    this.pulse('character', x, y - 47, 42);
+    drawHero(this.ctx, { x, y, scale: 1, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: this.reducedMotion && !this.action ? 0 : this.time, progress });
+    this.hits.push({ kind: 'character', x, y: y - 64, radius: 60 });
+    this.pulse('character', x, y - 64, 54);
     if (this.action && hero.pose !== 'walk') {
       const labels: Record<SceneAction, string> = { plant: '씨앗을 톡톡', water: '물을 듬뿍', harvest: '당근 수확!', chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', gather: '쓸 만한 재료 발견!' };
       const label = labels[this.action.kind];
-      this.round(x - 58, y - 132, 116, 23, 11, '#fffae8e8', '#bda982');
-      this.label(label, x, y - 117, 10, '#526750', 700);
+      this.round(x - 58, y - 160, 116, 23, 11, '#fffae8e8', '#bda982');
+      this.label(label, x, y - 145, 10, '#526750', 700);
     }
   }
 

@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      VITE_UPDATE_MANIFEST_URL: ${{ vars.UPDATE_MANIFEST_URL }}
+      VITE_UPDATE_MANIFEST_URL: ${{ vars.UPDATE_MANIFEST_URL || 'https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json' }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v4

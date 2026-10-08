@@ -1,4 +1,6 @@
-/** Original layered chibi artwork, shared by the deck and roadside adventures. */
+import { heroFrame, heroImages, type SurvivorFrame } from './character-art';
+
+/** Illustrated anime survivors, shared by the deck and roadside adventures. */
 export type HeroPose = 'idle' | 'walk' | 'sow' | 'water' | 'harvest' | 'chop' | 'attack' | 'skill' | 'hurt' | 'celebrate';
 export interface HeroOptions {
   x: number; y: number; scale: number; time: number;
@@ -9,7 +11,7 @@ function geometry(d: string) { let p = paths.get(d); if (!p) { p = new Path2D(d)
 const TAU = Math.PI * 2;
 
 /** x/y anchor the soles. At scale=1 the standing character is about 120px tall. */
-export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
+function drawVectorHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
   const female = o.gender === 'female', t = o.time, pose = o.pose;
   const moving = pose === 'walk', working = ['sow', 'water', 'harvest', 'chop'].includes(pose);
   const phase = o.progress === undefined ? (t * (pose === 'chop' ? 1.6 : 1.15)) % 1 : Math.max(0, Math.min(1, o.progress));
@@ -165,6 +167,110 @@ export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
     c.save(); c.globalAlpha=action*.75;
     c.strokeStyle='#b6ffea'; c.lineWidth=5; c.beginPath(); c.ellipse(19,-59,49,40,-.25,-1.2,1.6); c.stroke();
     c.strokeStyle='#fff9c9'; c.lineWidth=1.5; c.beginPath(); c.ellipse(19,-59,54,43,-.25,-1,1.3); c.stroke(); c.restore();
+  }
+  c.restore();
+}
+
+function drawIllustration(c: CanvasRenderingContext2D, frame: SurvivorFrame): void {
+  const image = heroImages[frame.sheet];
+  const pixelScale = 128 / (frame.footY - frame.y);
+  c.save();
+  if (frame.trimBottomLeft) {
+    const dx = (x: number) => (x - frame.footX) * pixelScale;
+    const dy = (y: number) => (y - frame.footY) * pixelScale;
+    c.beginPath(); c.moveTo(dx(frame.x), dy(frame.y));
+    c.lineTo(dx(frame.x + frame.width), dy(frame.y));
+    c.lineTo(dx(frame.x + frame.width), dy(frame.y + frame.height));
+    c.lineTo(dx(frame.trimBottomLeft.x), dy(frame.y + frame.height));
+    c.lineTo(dx(frame.trimBottomLeft.x), dy(frame.trimBottomLeft.y));
+    c.lineTo(dx(frame.x), dy(frame.trimBottomLeft.y)); c.closePath(); c.clip();
+  }
+  c.drawImage(image, frame.x, frame.y, frame.width, frame.height,
+    (frame.x - frame.footX) * pixelScale, (frame.y - frame.footY) * pixelScale,
+    frame.width * pixelScale, frame.height * pixelScale);
+  c.restore();
+}
+
+/** The sole anchor and scale are identical for farming and battle callers. */
+export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
+  const frame = heroFrame(o.gender, o.pose, o.time);
+  const image = heroImages[frame.sheet];
+  if (!image.complete || !image.naturalWidth) {
+    drawVectorHero(c, o);
+    return;
+  }
+  const t = o.time;
+  const phase = o.progress === undefined ? (t * (o.pose === 'chop' ? 1.45 : 1.1)) % 1 : Math.max(0, Math.min(1, o.progress));
+  const impulse = Math.sin(phase * Math.PI);
+  const working = ['sow', 'water', 'harvest', 'chop'].includes(o.pose);
+  const walking = o.pose === 'walk';
+  const combat = o.pose === 'attack' || o.pose === 'skill';
+  const bob = walking ? -Math.abs(Math.sin(t * 8.5)) * 3.2
+    : o.pose === 'celebrate' ? -Math.abs(Math.sin(t * 6.5)) * 8
+    : working ? -Math.sin(t * 5) * .8 : Math.sin(t * 2.4) * .6;
+  const lean = walking ? Math.sin(t * 8.5) * .028
+    : o.pose === 'chop' ? -.1 + impulse * .25
+    : o.pose === 'sow' || o.pose === 'harvest' ? Math.sin(t * 4.4) * .024
+    : combat ? -.045 + impulse * .11 : o.pose === 'hurt' ? -.13
+    : Math.sin(t * 2.1) * .006;
+
+  c.save();
+  c.translate(o.x, o.y);
+  c.scale(o.scale * o.facing, o.scale);
+  c.fillStyle = 'rgba(26,44,35,.19)';
+  c.beginPath(); c.ellipse(0, 1, combat || o.pose === 'chop' ? 28 : 19, 4.5, 0, 0, TAU); c.fill();
+  c.translate(0, bob);
+  c.rotate(lean);
+  if (o.pose === 'hurt') c.globalAlpha = .6 + Math.abs(Math.sin(t * 16)) * .4;
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = 'high';
+  drawIllustration(c, frame);
+
+  // Illustrated tools establish each action; moving effects make their work
+  // readable even at the small deck scale, without replacing the anime art.
+  if (o.pose === 'sow') {
+    for (let n = 0; n < 6; n++) {
+      const p = (t * 1.3 + n / 6) % 1;
+      c.fillStyle = n % 2 ? '#ffe5a1' : '#d7a55d';
+      c.beginPath(); c.ellipse(22 + p * 20, -56 + p * p * 38, 1.1, 1.65, -.5, 0, TAU); c.fill();
+    }
+  }
+  if (o.pose === 'water') {
+    for (let n = 0; n < 10; n++) {
+      const p = (t * 1.5 + n / 10) % 1;
+      c.globalAlpha = .85 * (1 - p);
+      c.fillStyle = n % 2 ? '#b3eef2' : '#6fbccd';
+      c.beginPath(); c.ellipse(38 + p * 24 + (n % 3) * 2, -58 + p * 43, .9, 1.9, -.38, 0, TAU); c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+  if (o.pose === 'harvest') {
+    for (let n = 0; n < 3; n++) {
+      const p = (t * .85 + n / 3) % 1;
+      c.globalAlpha = Math.sin(p * Math.PI) * .8;
+      c.fillStyle = '#d9f0a3';
+      const x = 23 + Math.sin(n * 3) * 12, y = -68 - p * 21;
+      c.beginPath(); c.moveTo(x, y - 3); c.lineTo(x + 1, y - 1); c.lineTo(x + 3, y); c.lineTo(x + 1, y + 1); c.lineTo(x, y + 3); c.lineTo(x - 1, y + 1); c.lineTo(x - 3, y); c.lineTo(x - 1, y - 1); c.closePath(); c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+  if (o.pose === 'chop' && impulse > .6) {
+    c.save(); c.globalAlpha = (impulse - .6) * 1.6; c.strokeStyle = '#ffefbe'; c.lineWidth = 2.4;
+    c.beginPath(); c.arc(19, -63, 41, -.9, .65); c.stroke();
+    for (let n = 0; n < 5; n++) {
+      const p = (t * 1.6 + n * .19) % 1;
+      c.fillStyle = n % 2 ? '#dfa56c' : '#8b6647'; c.fillRect(30 + p * 20, -20 - Math.sin(p * Math.PI) * 13 + n, 2.5, 1.5);
+    }
+    c.restore();
+  }
+  if (combat && impulse > .3) {
+    c.save(); c.globalAlpha = impulse * .75;
+    c.strokeStyle = o.pose === 'skill' ? '#b2ffe8' : '#fff1bd';
+    c.lineWidth = o.pose === 'skill' ? 5 : 2.7;
+    c.shadowBlur = o.pose === 'skill' ? 10 : 0; c.shadowColor = '#a0ffdf';
+    c.beginPath(); c.ellipse(18, -67, 49, 37, -.4, -1.1, 1.2); c.stroke();
+    c.lineWidth = 1.2; c.strokeStyle = '#fffbe5';
+    c.beginPath(); c.ellipse(18, -67, 55, 42, -.4, -.9, 1); c.stroke(); c.restore();
   }
   c.restore();
 }

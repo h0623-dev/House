@@ -27,6 +27,7 @@ export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$repo_dir/../.gradle}"
 export APP_VERSION_CODE="${APP_VERSION_CODE:-$(node -p "JSON.parse(require('fs').readFileSync('release-version.json','utf8')).versionCode")}"
 export VITE_APP_VERSION_CODE="$APP_VERSION_CODE"
 export VITE_APP_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+export VITE_UPDATE_MANIFEST_URL="${VITE_UPDATE_MANIFEST_URL:-https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json}"
 
 node --input-type=module -e '
   const raw = process.env.APP_VERSION_CODE;

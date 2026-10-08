@@ -1,10 +1,12 @@
 # 로드헤이븐: 트럭 위의 우리집
 
-2187년 대한민국, 좀비로 가득한 도로에서 거대한 트럭을 집으로 가꾸는 모바일 생존·생활 게임입니다. 기존 게임의 자산이나 코드를 사용하지 않은 독자적인 첫 플레이 버전입니다.
+2187년 대한민국, 좀비로 가득한 도로에서 거대한 트럭을 집으로 가꾸는 모바일 생존·생활 게임입니다. 기존 게임의 자산이나 코드를 사용하지 않은 독자적인 모바일 플레이 버전입니다.
 
-## 0.2.0에서 할 수 있는 일
+## 0.3.0에서 할 수 있는 일
 
-- 애니메이션풍 남녀 생존자, 움직이는 머리카락·표정·의상과 이름 변경
+- 원본 애니메이션 일러스트로 제작한 남녀 생존자, 작업·이동·전투 포즈와 이름 변경
+- 화면 안의 큰 아이콘 버튼과 작은 행동 제목, 밭 선택 후 바로 심기·급수·수확
+- 휴대폰 화면에 맞춘 자원·체력 표시와 하단 메뉴, 작업 중 중복 입력 방지
 - 도로 위 트럭 집, 서울 표지판, 움직이는 캐릭터와 반려견 **보리**
 - 캐릭터가 직접 밭으로 걸어가 당근 심기 → 물 주기 → 성장 → 수확
 - 도로 옆 벌목장에서 직접 나무 베기, 도로 탐색, 식량·물·목재·고철·씨앗 관리
@@ -21,9 +23,9 @@
 
 ## Android에서 플레이
 
-업데이트 APK: `artifacts/road-haven-0.2.0-debug.apk` (Android 버전 코드 2).
+업데이트 APK: `artifacts/road-haven-0.3.0-debug.apk` (Android 버전 코드 3).
 
-기존 0.1.0을 삭제하지 말고 새 APK를 열어 업데이트 설치하세요. 동일한 앱 ID와 서명 키를 사용하며 기존 저장 데이터를 자동 호환합니다.
+기존 0.1.0 또는 0.2.0을 삭제하지 말고 새 APK를 열어 업데이트 설치하세요. 동일한 앱 ID와 서명 키를 사용하며 기존 저장 데이터를 자동 호환합니다.
 
 Android 6.0 이상과 최신 Android System WebView가 필요합니다. APK를 휴대폰에 옮겨 파일 앱에서 열고 설치를 승인합니다. 사용자가 해당 파일 앱/브라우저의 ‘알 수 없는 앱 설치’를 허용해야 할 수 있습니다. 테스트 버전은 개발용 서명이며 공개 스토어에 게시하지 않았습니다.
 
@@ -50,11 +52,11 @@ npm run android:debug
 
 ## APK 업데이트
 
-`main` 푸시마다 GitHub Actions가 테스트와 APK 빌드를 실행하고 결과를 artifact로 제공합니다. GitHub에 소스를 올린 뒤에 작동하며, 현재 저장소에서 외부 게시나 원격 푸시는 수행하지 않았습니다.
+`main` 푸시마다 GitHub Actions가 테스트와 APK 빌드를 실행하고 결과를 artifact로 제공합니다. 소스는 `h0623-dev/House`의 `main`, 웹 배포 파일은 `gh-pages`에 게시합니다. Pages 활성화와 공개 접속 확인은 별도입니다.
 
 앱은 시작·복귀 시 설정된 HTTPS 버전 파일을 확인합니다. 새 버전이 있으면 알리고, 플레이어가 ‘새 APK 다운로드’를 누르면 Android 브라우저로 다운로드를 엽니다. **Android의 설치 확인은 사용자가 해야 합니다.**
 
-현재 첫 APK에는 실제 업데이트 서버가 연결되어 있지 않습니다. [Android 배포 안내](docs/ANDROID.md)에 따라 HTTPS 서버 또는 GitHub Releases에 배포하는 절차를 사용할 수 있습니다. 같은 앱 ID·서명 키와 증가하는 `versionCode`를 유지해야 합니다.
+0.3.0 Android APK부터 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json`에서 새 버전을 확인합니다. 같은 서명으로 만든 APK와 버전 정보를 `gh-pages`에 게시하면 앱 시작·복귀 때 업데이트를 알립니다. 기존 0.1/0.2 앱에는 주소가 없으므로 0.3 APK를 한 번 직접 설치해야 합니다. [Android 배포 안내](docs/ANDROID.md)에 절차를 기록했습니다.
 
 - `VITE_UPDATE_MANIFEST_URL`: 공개 HTTPS 버전 파일 주소
 - `release-version.json`: 기본 Android 버전 코드
@@ -69,7 +71,7 @@ npm run android:debug
 | --- | --- |
 | `src/game.ts` | 순수 게임 상태·행동·저장 검증 |
 | `src/scene.ts` | 아이소메트릭 트럭·벌목장, 이동/작업 연출, 확장 기하 |
-| `src/actors.ts` | 남녀 캐릭터의 애니메이션풍 그림과 관절 동작 |
+| `src/actors.ts`, `src/character-art.ts`, `src/assets/` | 남녀 캐릭터의 애니메이션 일러스트와 작업·전투 포즈 |
 | `src/battle.ts`, `src/battle-view.ts` | 전투 시뮬레이션과 모바일 전투 화면 |
 | `src/main.ts` | 반응형 UI·자동 저장·플레이 흐름 |
 | `src/update.ts` | 버전 파일 검사와 다운로드 연결 |
@@ -79,4 +81,4 @@ npm run android:debug
 
 검증: 게임·전투·업데이트 단위 테스트 36개, TypeScript/배포 빌드. 모바일 검사는 작업 완료 전 자원 미지급, 농사·벌목·확장, 3웨이브 전투·기술·일시정지·승리·철수, 구 저장 호환과 중단된 원정 복구를 포함합니다. APK 서명 및 패키지 정보는 Android 빌드 도구로 검사합니다. 실제 휴대폰 설치 및 기존 앱 위 업데이트는 별도 기기 검증이 필요합니다.
 
-글꼴은 SIL Open Font License의 Noto Sans KR / DM Sans를 앱에 포함합니다. Noto Sans KR 라이선스는 `public/fonts/OFL-NotoSansKR.txt`, DM Sans 라이선스는 해당 npm 패키지의 `LICENSE`에 있습니다.
+글꼴은 SIL Open Font License의 Noto Sans KR / DM Sans를 앱에 포함합니다. Noto Sans KR 라이선스는 `public/fonts/OFL-NotoSansKR.txt`, DM Sans 라이선스는 `public/fonts/OFL-DMSans.txt`에 있습니다.

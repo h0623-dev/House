@@ -4,7 +4,7 @@
 
 ## 이번 테스트 APK
 
-`artifacts/road-haven-0.2.0-debug.apk`는 Android 버전 코드 2의 플레이 테스트 빌드입니다. 이전 0.1.0 APK와 같은 패키지 ID와 서명 키를 사용합니다. 기존 앱을 삭제하지 않고 새 APK를 열어 업데이트하면 로컬 저장을 유지할 수 있습니다. Android 파일 앱에서 APK를 열고 설치를 승인하면 됩니다. 해당 파일 앱/브라우저의 “알 수 없는 앱 설치” 허용이 필요할 수 있습니다. 이 설정은 기기에서 사용자가 직접 결정합니다.
+`artifacts/road-haven-0.3.0-debug.apk`는 Android 버전 코드 3의 플레이 테스트 빌드입니다. 이전 0.1.0 및 0.2.0 APK와 같은 패키지 ID와 서명 키를 사용합니다. 기존 앱을 삭제하지 않고 새 APK를 열어 업데이트하면 로컬 저장을 유지할 수 있습니다. Android 파일 앱에서 APK를 열고 설치를 승인하면 됩니다. 해당 파일 앱/브라우저의 “알 수 없는 앱 설치” 허용이 필요할 수 있습니다. 이 설정은 기기에서 사용자가 직접 결정합니다.
 
 클라우드의 테스트 서명 키는 저장소 밖 `../.road-haven-signing/debug.keystore`에 보관됩니다. 다음 테스트 빌드도 이 파일을 재사용해야 기존 앱에 덮어 설치할 수 있습니다. 테스트 키는 정식 배포에 사용하지 마세요. CI에서 키 없이 만든 테스트 APK는 실행마다 서명이 달라질 수 있어 지속 업데이트 배포용이 아닙니다.
 
@@ -31,11 +31,11 @@ bash scripts/build-android.sh debug
 설치된 앱을 업데이트하는 APK는 이전 파일과 호환성 검사를 함께 수행하세요. 아래 명령은 새 APK를 내보내기 전에 두 APK의 유효한 서명, 동일한 서명 인증서와 패키지 ID, 증가한 버전 코드를 검사합니다. 기존 테스트 APK가 있는데 원래 키 파일이 없으면 빌드는 새 키를 만들지 않고 복구를 요청합니다.
 
 ```bash
-PREVIOUS_APK_PATH=artifacts/road-haven-0.1.0-debug.apk \
+PREVIOUS_APK_PATH=artifacts/road-haven-0.2.0-debug.apk \
   bash scripts/build-android.sh debug
 # 이미 생성한 두 APK만 검사할 수도 있습니다.
-node scripts/verify-android-update.mjs artifacts/road-haven-0.1.0-debug.apk \
-  artifacts/road-haven-0.2.0-debug.apk
+node scripts/verify-android-update.mjs artifacts/road-haven-0.2.0-debug.apk \
+  artifacts/road-haven-0.3.0-debug.apk
 ```
 
 ## 정식 서명
@@ -59,13 +59,15 @@ bash scripts/build-android.sh release
 
 앱은 설정된 HTTPS 매니페스트를 확인하고 현재 Android `versionCode`보다 클 때 업데이트를 알립니다. 플레이어가 다운로드를 누르면 Android의 브라우저가 HTTPS APK 주소를 엽니다. 다운로드한 APK는 사용자가 설치를 승인해야 합니다. 백그라운드 자동 설치나 무인 설치는 하지 않습니다.
 
-`VITE_UPDATE_MANIFEST_URL`이 설정되지 않은 빌드에는 업데이트 서버 미연결 상태가 표시됩니다. 이 저장소에 실제 배포 URL이나 정식 서명 비밀값은 포함되어 있지 않으며 아직 공개 게시를 수행하지 않았습니다. 알림을 운영하려면 소유한 HTTPS 정적 호스팅에 APK와 아래 매니페스트를 게시해야 합니다. 웹 확인에 사용할 매니페스트 응답은 `Access-Control-Allow-Origin: *` 또는 `https://localhost`/해당 웹 앱 도메인을 허용하고, `Cache-Control: no-cache`를 사용하세요.
+0.3.0 Android 빌드의 기본 업데이트 주소는 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json`입니다. 이 공개 GitHub 브랜치의 `downloads/`에 같은 서명의 버전별 APK를 두고, `update.json`에는 해당 APK 주소·체크섬·증가하는 버전 코드를 기록합니다. 기존 0.1/0.2 APK는 이 주소를 포함하지 않으므로 0.3 APK를 한 번 직접 설치해야 합니다.
+
+공개 파일 응답의 CORS 허용과 실제 APK·매니페스트 내용을 확인한 뒤 사용합니다. raw GitHub 캐시로 새 매니페스트가 보이기까지 약 5분 걸릴 수 있습니다. 웹 개발 및 단일 오프라인 HTML은 별도 환경 값이 없으면 업데이트 서버 미연결 상태를 표시합니다. `VITE_UPDATE_MANIFEST_URL`로 다른 소유한 HTTPS 서버를 지정할 수 있으며, 자체 호스팅에는 적절한 CORS와 `Cache-Control: no-cache` 설정을 권장합니다.
 
 ```json
 {
-  "version": "0.2.1",
-  "versionCode": 3,
-  "apkUrl": "https://your-download-host.example/road-haven-0.2.1-release.apk",
+  "version": "0.4.0",
+  "versionCode": 4,
+  "apkUrl": "https://your-download-host.example/road-haven-0.4.0-release.apk",
   "sha256": "서명된 APK의 64자리 SHA-256 값",
   "notes": "업데이트 내용",
   "publishedAt": "2026-10-08T00:00:00.000Z"
@@ -75,13 +77,13 @@ bash scripts/build-android.sh release
 실제 APK에서 유효한 매니페스트를 생성합니다.
 
 ```bash
-node scripts/create-update-manifest.mjs artifacts/road-haven-0.2.1-release.apk \
-  https://your-download-host.example/road-haven-0.2.1-release.apk 3
+node scripts/create-update-manifest.mjs artifacts/road-haven-0.4.0-release.apk \
+  https://your-download-host.example/road-haven-0.4.0-release.apk 4
 ```
 
 APK를 먼저 업로드한 뒤 고정 주소의 `update.json`을 교체하세요. 버전마다 다른 APK 주소를 권장합니다. 제공된 SHA-256은 배포 파일 검증용이며 브라우저에서 내려받는 파일을 앱이 직접 검증하지는 않습니다. Android 설치기는 기존 앱과 서명 일치를 검증합니다. 동일한 패키지 ID, 동일한 정식 서명 키, 더 큰 `versionCode`를 계속 유지해야 합니다.
 
-공개 GitHub 저장소를 사용할 경우 APK는 GitHub Releases의 `https://github.com/OWNER/REPO/releases/download/v0.2.1/road-haven-0.2.1-release.apk` 같은 주소에 올리고, 고정 매니페스트는 `https://raw.githubusercontent.com/OWNER/REPO/main/releases/update.json` 같은 주소에서 제공할 수 있습니다. `OWNER/REPO`는 실제 소유한 공개 저장소로 바꾸고, 앱의 `VITE_UPDATE_MANIFEST_URL`에는 이 고정 매니페스트 주소를 설정합니다. raw GitHub 응답의 CORS 허용과 실제 기기에서의 접근을 확인하세요. GitHub Actions artifact 주소는 로그인/만료가 있으므로 일반 플레이어용 APK 배포 주소로 쓰지 않습니다. 비공개 저장소에는 앱에 GitHub 토큰을 넣는 대신 별도의 공개 배포 저장소 또는 공개 HTTPS 호스팅을 사용하세요. 위 주소는 설명용이며 현재 앱에 설정된 주소가 아닙니다.
+공개 GitHub 저장소를 사용할 경우 APK는 GitHub Releases의 `https://github.com/OWNER/REPO/releases/download/v0.4.0/road-haven-0.4.0-release.apk` 같은 주소에 올리고, 고정 매니페스트는 `https://raw.githubusercontent.com/OWNER/REPO/main/releases/update.json` 같은 주소에서 제공할 수 있습니다. `OWNER/REPO`는 실제 소유한 공개 저장소로 바꾸고, 앱의 `VITE_UPDATE_MANIFEST_URL`에는 이 고정 매니페스트 주소를 설정합니다. raw GitHub 응답의 CORS 허용과 실제 기기에서의 접근을 확인하세요. GitHub Actions artifact 주소는 로그인/만료가 있으므로 일반 플레이어용 APK 배포 주소로 쓰지 않습니다. 비공개 저장소에는 앱에 GitHub 토큰을 넣는 대신 별도의 공개 배포 저장소 또는 공개 HTTPS 호스팅을 사용하세요. 위 주소는 설명용이며 현재 앱에 설정된 주소가 아닙니다.
 
 ## 매 업데이트 APK 생성
 

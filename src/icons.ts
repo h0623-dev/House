@@ -1,3 +1,5 @@
+import { portraitCrops, survivorAtlasUrl } from './character-art';
+
 const paths: Record<string,string> = {
  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
  leaf: '<path d="M20 3c-8-1-16 3-16 9a7 7 0 0 0 7 7c6 0 10-8 9-16Z"/><path d="M4 21 15 10M8 17v-5m0 5h5"/>',
@@ -39,39 +41,8 @@ const paths: Record<string,string> = {
 };
 export function icon(name:string, cls=''):string { return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]??paths.sparkle}</svg>`; }
 export function portrait(gender: 'male' | 'female', cls = ''): string {
-  const female = gender === 'female';
-  const id = `hero-${gender}-${Math.random().toString(36).slice(2, 9)}`;
-  const hair = female ? '#774736' : '#2e4663', hairLight = female ? '#bd7a51' : '#7796b3';
-  const coat = female ? '#448b82' : '#536d9e', coatLight = female ? '#96cbb0' : '#a0bad7';
-  const eyes = [39, 63].map((x, i) => `<g transform="translate(${x} ${47 + i})"><path d="M-7-5Q0-10 7-4L7 4Q1 9-6 5Z" fill="#fffbee" stroke="#765a58" stroke-width=".8"/><ellipse cy="1" rx="5.3" ry="7" fill="url(#${id}-iris)"/><ellipse cy="0" rx="2.4" ry="5" fill="#30364c"/><ellipse cx="-2" cy="-3" rx="2.5" ry="2.6" fill="#fffdf1"/><circle cx="2.4" cy="3.7" r="1.4" fill="#fff7d7"/><path d="M-8-4Q0-11 7-4M-7-5l-3-3" fill="none" stroke="#343848" stroke-width="2.1" stroke-linecap="round"/></g>`).join('');
-  return `<svg class="portrait ${cls}" viewBox="0 0 100 100" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="${id}-bg" x2=".7" y2="1"><stop stop-color="${female ? '#f4e4bd' : '#dae9df'}"/><stop offset="1" stop-color="${female ? '#e3b898' : '#9fc5c6'}"/></linearGradient>
-    <linearGradient id="${id}-hair" x2=".7" y2="1"><stop stop-color="${hairLight}"/><stop offset="1" stop-color="${hair}"/></linearGradient>
-    <linearGradient id="${id}-skin" x2=".3" y2="1"><stop stop-color="#fff0d4"/><stop offset="1" stop-color="#f4c4a8"/></linearGradient>
-    <linearGradient id="${id}-coat" x2=".7" y2="1"><stop stop-color="${coatLight}"/><stop offset="1" stop-color="${coat}"/></linearGradient>
-    <linearGradient id="${id}-iris" x2="0" y2="1"><stop stop-color="${female ? '#7d5338' : '#244e75'}"/><stop offset="1" stop-color="${female ? '#e9b866' : '#79d3d3'}"/></linearGradient>
-    <radialGradient id="${id}-blush"><stop stop-color="#e48b83" stop-opacity=".7"/><stop offset="1" stop-color="#e48b83" stop-opacity="0"/></radialGradient>
-    <clipPath id="${id}-clip"><circle cx="50" cy="50" r="49"/></clipPath>
-  </defs>
-  <g clip-path="url(#${id}-clip)" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="50" cy="50" r="49" fill="url(#${id}-bg)"/>
-    <circle cx="78" cy="17" r="16" fill="#fff5d9" opacity=".38"/><path d="m13 42 2-5 2 5 5 2-5 2-2 5-2-5-5-2Z" fill="#fff7db" opacity=".85"/><circle cx="85" cy="69" r="3" fill="#fff7db" opacity=".7"/>
-    ${female ? `<path d="M25 29Q11 48 20 78L14 88 28 85Q28 94 40 87L73 88Q89 74 78 35Z" fill="url(#${id}-hair)" stroke="${hair}" stroke-width="1.6"/><g fill="#a46b47" stroke="#744735" stroke-width="1.2"><ellipse cx="24" cy="60" rx="7" ry="8"/><ellipse cx="23" cy="69" rx="6.5" ry="7"/><ellipse cx="24" cy="78" rx="5.5" ry="6"/></g><path d="M19 80 12 87 21 89 25 85 31 90 34 83 27 81Z" fill="#ffc36b" stroke="#9c7250" stroke-width="1"/>` : ''}
-    <path d="M14 108Q13 78 37 76L66 76Q87 81 89 108Z" fill="url(#${id}-coat)" stroke="#42566a" stroke-width="1.6"/>
-    <path d="M40 76H62L65 104H35Z" fill="#f9edd1"/><path d="m35 78 9 1 1 11-6 5 4 12H22l2-21Zm31 0-8 3-2 10 6 5-2 11h23l-7-21Z" fill="${coat}" stroke="#446178" stroke-width="1"/>
-    <path d="m29 80 38 30" stroke="#70584b" stroke-width="7"/><path d="m29 80 38 30" stroke="#c19864" stroke-width="3.5"/>
-    <path d="M39 66h23v14Q49 90 38 78Z" fill="#efbd9e" stroke="#ac7c68" stroke-width="1"/>
-    <path d="M25 44Q17 13 43 7L39 4Q54 3 60 9L67 5 71 13 82 17 78 27Q85 37 77 58L65 70 30 62Z" fill="url(#${id}-hair)" stroke="${hair}" stroke-width="1.5"/>
-    <ellipse cx="25" cy="50" rx="5" ry="8" fill="#edb99f" stroke="#9d7063" stroke-width="1"/><ellipse cx="77" cy="50" rx="4.5" ry="7" fill="#edb99f" stroke="#9d7063" stroke-width="1"/>
-    <path d="M25 34Q34 20 52 21Q76 24 77 43L75 58Q68 75 52 77Q34 76 27 60Z" fill="url(#${id}-skin)" stroke="#a77a68" stroke-width="1.1"/>
-    <ellipse cx="31" cy="59" rx="9" ry="5.8" fill="url(#${id}-blush)"/><ellipse cx="72" cy="59" rx="8" ry="5.5" fill="url(#${id}-blush)"/>
-    <path d="M32 37q6-3 13-1M57 37q7-2 12 2" fill="none" stroke="${hair}" stroke-width="1.5"/>
-    ${eyes}
-    <path d="m53 57 2 2-3 1" fill="none" stroke="#d29a85" stroke-width="1"/>
-    <path d="M46 65q7 5 14-1" fill="none" stroke="#ac6a67" stroke-width="1.7"/><path d="M49 70h6" stroke="#ffe1c7" stroke-width="1.5"/>
-    ${female ? `<path d="M23 48Q17 32 27 18Q43 0 65 13Q83 22 79 47L71 42 65 29Q59 42 50 43L52 29Q45 42 37 45L39 29Q33 38 27 42L28 53 23 55Z" fill="url(#${id}-hair)" stroke="${hair}" stroke-width="1.5"/><path d="M28 28Q36 15 48 14M55 15q10 1 16 12" fill="none" stroke="#e1a679" stroke-width="3"/><path d="m34 30 7-8m17 2-3 10" stroke="#d99866" stroke-width="1.7"/><path d="m22 32-10-7 2 13 9 1 3 9 7-9-5-7Z" fill="#84c4a8" stroke="#527b6d" stroke-width="1.2"/><circle cx="23" cy="36" r="3.3" fill="#f6d286" stroke="#a18155" stroke-width="1"/><path d="m69 29 7 2m-7 1 7 2" stroke="#f9d899" stroke-width="2"/>` : `<path d="M23 49 20 33 24 23 20 21 36 14 34 9 48 13 57 7 65 14 78 11 76 22 84 24 78 34 79 44 69 46 63 31 56 43 53 29 40 43 40 28 30 43 28 54Z" fill="url(#${id}-hair)" stroke="${hair}" stroke-width="1.5"/><path d="m30 24 12-6m7 0 7 2m6 0 9-2" fill="none" stroke="#b3c9d6" stroke-width="2.8"/><path d="m29 32 8-4m11 2 5-7m13 5 6-1" stroke="#86a9c2" stroke-width="1.7"/><path d="m25 39 3 10 4-1-3-10Z" fill="#c5c6a0" stroke="#677e8c" stroke-width="1"/>`}
-    <path d="M35 76Q50 85 65 76L68 83Q52 96 33 84Z" fill="${female ? '#ffc476' : '#87d8c2'}" stroke="${female ? '#b98553' : '#529b91'}" stroke-width="1.2"/><path d="M39 82q12 7 23-1" fill="none" stroke="${female ? '#e5a059' : '#5cb9a8'}" stroke-width="1.7"/><path d="m56 84 8-2 9 13-7 9-7-8Z" fill="${female ? '#efaa61' : '#67bdae'}" stroke="${female ? '#b98553' : '#529b91'}" stroke-width="1"/><circle cx="68" cy="91" r="2.7" fill="#ffdf97" stroke="#8b8065" stroke-width="1"/>
-    <path d="M23 98h11m38 1h7" stroke="${coatLight}" stroke-width="1.5"/>
-  </g></svg>`;
+  const crop = portraitCrops[gender];
+  // Inline SVG preserves the existing responsive portrait API while cropping
+  // the full-resolution illustration without extra requests or raster edits.
+  return `<svg class="portrait ${cls}" viewBox="${crop.x} ${crop.y} ${crop.size} ${crop.size}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="border-radius:20%;overflow:hidden"><rect x="${crop.x}" y="${crop.y}" width="${crop.size}" height="${crop.size}" rx="${crop.size*.2}" fill="${crop.backdrop}"/><circle cx="${crop.x+crop.size*.74}" cy="${crop.y+crop.size*.2}" r="${crop.size*.38}" fill="#fff9e5" opacity=".52"/><image href="${survivorAtlasUrl}" x="0" y="0" width="1536" height="1024"/></svg>`;
 }
