@@ -1,8 +1,8 @@
 {
-  "version": "0.6.0",
-  "versionCode": 6,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.6.0-debug.apk",
-  "sha256": "2030fd0e20939bfb8da0bf0262f91146cde045acce64896bc096bfd4ecd9bfec",
-  "notes": "당근·감자·토마토·옥수수·딸기·호박 6종 씨앗 인벤토리를 추가했습니다. 씨앗을 한 번 고른 뒤 원하는 빈 밭을 연달아 누르거나 모두 심기로 순서대로 심을 수 있습니다. 작물마다 성장 시간과 수확 보상이 다르며, 탐색·벌목·수확으로 다양한 씨앗을 모을 수 있습니다. 기존 씨앗과 밭의 저장 데이터는 유지됩니다.",
-  "publishedAt": "2026-10-08T05:53:04.025Z"
+  "version": "0.7.0",
+  "versionCode": 7,
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.7.0-debug.apk",
+  "sha256": "f4b4116b504cb439df0fcaba3d9cbfa1314e1f6d264dce20c52881d23db0d07a",
+  "notes": "심기·물 주기·수확 도구를 유지하고 밭을 연속 터치하거나 드래그할 수 있어요. 물 주기와 수확은 한 번 누르면 가능한 밭을 모두 처리해요. 고른 씨앗을 기억하며 탐색·벌목에서 씨앗 3개씩 얻어요. 기존 저장을 유지하는 업데이트입니다.",
+  "publishedAt": "2026-10-08T06:25:14.094Z"
 }
