@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.playwright/
+*.log
+.DS_Store
+android/.gradle/
+android/local.properties
+android/**/build/
+*.jks
+*.keystore
+.env
+.env.local
+artifacts/

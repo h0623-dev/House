@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">로드헤이븐</string>
+    <string name="title_activity_main">로드헤이븐</string>
+    <string name="package_name">com.roadhaven.game</string>
+    <string name="custom_url_scheme">com.roadhaven.game</string>
+</resources>
