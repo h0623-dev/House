@@ -1,5 +1,6 @@
 import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
-import { getSettlement, validateSettlement, type Settlement } from './settlement';
+import { getSettlement, validateSettlement, validateFacilityHistory, type Settlement, type FacilityHistory } from './settlement';
+import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 export { CROPS, CROP_IDS, type CropId } from './crops';
 
 export type Resource = 'wood' | 'scrap' | 'food' | 'water' | 'seeds';
@@ -30,6 +31,10 @@ export interface GameState {
   seedInventory?: Record<CropId, number>;
   /** Missing in saves created before truck settlement facilities. */
   settlement?: Settlement;
+  /** Lifetime construction records stay separate from legacy settlement schemas. */
+  facilityHistory?: FacilityHistory;
+  /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
+  growthQuests?: GrowthQuestProgress;
   plots: Plot[];
   deckLevel: number;
   truckHealth: number;
@@ -40,7 +45,7 @@ export interface GameState {
   log: string[];
   lastSaved: number;
   totalMinutes: number;
-  stats: { harvests: number; gathers: number; hunts: number; expansions: number; chops: number; battlesWon: number; defeatedEnemies: number };
+  stats: { harvests: number; gathers: number; hunts: number; expansions: number; chops: number; battlesWon: number; defeatedEnemies: number; plantings?: number; waterings?: number };
   expedition: Expedition | null;
 }
 export interface Quest {
@@ -82,6 +87,7 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
     resources: { wood: 24, scrap: 12, food: 8, water: 16, seeds: 23 },
     seedInventory: { carrot: 8, potato: 3, tomato: 3, corn: 3, strawberry: 3, pumpkin: 3 },
     settlement: { buildings: [], nextBuildingId: 1, stats: { productions: 0, collections: 0 } },
+    growthQuests: { claimed: [] },
     plots: [
       { id: 1, plantedAt: 240, watered: true, cropId: 'carrot' },
       { id: 2, plantedAt: 420, watered: false, cropId: 'carrot' },
@@ -95,7 +101,7 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
     quests: [],
     log: ['2187년, 서울 외곽. 도로 위에서 우리의 작은 일상이 시작됐다.'],
     lastSaved: 0,
-    stats: { harvests: 0, gathers: 0, hunts: 0, expansions: 0, chops: 0, battlesWon: 0, defeatedEnemies: 0 },
+    stats: { harvests: 0, gathers: 0, hunts: 0, expansions: 0, chops: 0, battlesWon: 0, defeatedEnemies: 0, plantings: 0, waterings: 0 },
     expedition: null,
   };
 }
@@ -104,6 +110,8 @@ function copy(state: GameState): GameState {
   return {
     ...state, resources: { ...state.resources }, seedInventory: getSeedInventory(state),
     ...(state.settlement ? { settlement: getSettlement(state) } : {}),
+    ...(state.facilityHistory ? { facilityHistory: { builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
+    ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     plots: state.plots.map(plot => plot.plantedAt === null ? { ...plot } : { ...plot, cropId: getPlotCropId(plot) }),
     quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
     expedition: state.expedition ? { ...state.expedition } : null,
@@ -306,10 +314,12 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       if (!plot) return fail('빈 텃밭이 없어요. 작물을 수확하거나 트럭을 확장해 주세요.');
       if (plot.plantedAt !== null) return fail('이미 작물이 자라는 텃밭이에요.');
       if (getSeedCount(next, cropId) < 1) return fail(`${CROPS[cropId].seedName}이 부족해요. 다른 씨앗을 고르거나 도로를 탐색해 주세요.`);
+      if ((next.stats.plantings ?? 0) >= 100_000_000) return fail('농사 기록이 가득해요. 저장 상태를 확인해 주세요.');
       addSeeds(next, cropId, -1);
       plot.plantedAt = next.totalMinutes;
       plot.watered = false;
       plot.cropId = cropId;
+      next.stats.plantings = (next.stats.plantings ?? 0) + 1;
       message = `${CROPS[cropId].seedName}을 심었어요. 물을 주면 더 잘 자라요!`;
       duration = 10;
       xp = 5;
@@ -319,8 +329,10 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       const plots = next.plots.filter(plot => plot.plantedAt !== null && !plot.watered && (plotId === undefined || plot.id === plotId));
       if (!plots.length) return fail('물을 줄 작물이 없어요. 빈 텃밭에 씨앗부터 심어 주세요.');
       if (next.resources.water < plots.length) return fail(`물을 ${plots.length}개 모아 주세요. 도로 탐색으로 보급할 수 있어요.`);
+      if ((next.stats.waterings ?? 0) + plots.length > 100_000_000) return fail('농사 기록이 가득해요. 저장 상태를 확인해 주세요.');
       next.resources.water -= plots.length;
       plots.forEach(plot => { plot.watered = true; });
+      next.stats.waterings = (next.stats.waterings ?? 0) + plots.length;
       message = `텃밭 ${plots.length}곳에 물을 주었어요. ${plots.length === 1 ? CROPS[getPlotCropId(plots[0])].name : '작물'}이 쑥쑥 자라고 있어요!`;
       duration = 10;
       xp = 4;
@@ -431,6 +443,7 @@ function validateSave(value: unknown): value is GameState {
     ids.add(plot.id);
   }
   if (!isRecord(value.stats) || !['harvests', 'gathers', 'hunts', 'expansions', 'chops', 'battlesWon', 'defeatedEnemies'].every(key => isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
+  if (!['plantings', 'waterings'].every(key => !Object.hasOwn(value.stats as object, key) || isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
   if (value.stats.expansions !== value.deckLevel - 1) return false;
   if (Number(value.stats.battlesWon) > Number(value.stats.hunts)) return false;
   if (value.expedition !== null) {
@@ -442,6 +455,8 @@ function validateSave(value: unknown): value is GameState {
   if (!value.quests.every(id => ['first-harvest', 'road-scout', 'bigger-home'].includes(id))) return false;
   if (!Array.isArray(value.log) || value.log.length > 30 || !value.log.every(entry => isText(entry, 400))) return false;
   const candidate = value as unknown as GameState;
+  if (Object.hasOwn(value, 'facilityHistory') && !validateFacilityHistory(value.facilityHistory, candidate)) return false;
+  if (Object.hasOwn(value, 'growthQuests') && !validateGrowthQuests(value.growthQuests, candidate)) return false;
   if (candidate.quests.some(id => !questList(candidate).find(quest => quest.id === id)?.complete)) return false;
   return true;
 }
@@ -482,7 +497,7 @@ export function loadGame(storage?: SaveStorage): GameState | null {
     // Only missing fields receive defaults; present but malformed fields must still be rejected.
     if (isRecord(value) && value.version === 1 && isRecord(value.stats)) {
       const stats = { ...value.stats };
-      for (const key of ['chops', 'battlesWon', 'defeatedEnemies']) {
+      for (const key of ['chops', 'battlesWon', 'defeatedEnemies', 'plantings', 'waterings']) {
         if (!Object.hasOwn(stats, key)) stats[key] = 0;
       }
       value = { ...value, stats, expedition: Object.hasOwn(value, 'expedition') ? value.expedition : null };

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, createGame, loadGame, performAction, SAVE_KEY, saveGame, tick, type GameState, type SaveStorage } from '../src/game.ts';
-import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getProductionCost, getSettlement, getSettlementGoals, getUnlockedSlots, getUpgradeCost, moveFacility, startProduction, upgradeFacility, validateSettlement, type BuildingType } from '../src/settlement.ts';
+import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getBuiltTypes, getUpgradedFacilityRecord, getFacilityHistory, validateFacilityHistory, getProductionCost, getSettlement, getSettlementGoals, getUnlockedSlots, getUpgradeCost, moveFacility, replaceFacility, startProduction, upgradeFacility, validateSettlement, type BuildingType } from '../src/settlement.ts';
 
 function memoryStorage(): SaveStorage {
   const values = new Map<string, string>();
@@ -28,6 +28,85 @@ test('new settlements have two independent building slots per deck level and rea
   snapshot.nextBuildingId = 8; snapshot.stats!.productions = 20;
   assert.equal(getSettlement(state).nextBuildingId, 1);
   assert.equal(getSettlement(state).stats!.productions, 0);
+});
+
+test('paid replacement keeps its slot and identity, resets level, and charges only the new facility cost', () => {
+  let original = withBuilding();
+  original = upgradeFacility(original, 1).state;
+  const before = JSON.stringify(original), result = replaceFacility(original, 1, 'kitchen');
+  assert.equal(result.ok, true);
+  assert.deepEqual(getSettlement(result.state).buildings, [{ id: 1, slot: 0, type: 'kitchen', level: 1, startedAt: null, readyAt: null }]);
+  assert.equal(result.state.settlement!.nextBuildingId, original.settlement!.nextBuildingId);
+  assert.equal(result.state.resources.wood, original.resources.wood - BUILDINGS.kitchen.wood);
+  assert.equal(result.state.resources.scrap, original.resources.scrap - BUILDINGS.kitchen.scrap);
+  assert.deepEqual(getBuiltTypes(result.state), ['waterworks', 'kitchen']);
+  assert.equal(getUpgradedFacilityRecord(result.state), 1);
+  assert.equal(JSON.stringify(original), before);
+  const duplicate = replaceFacility(result.state, 1, 'kitchen');
+  assert.equal(duplicate.ok, false); assert.equal(duplicate.state, result.state);
+  const storage = memoryStorage(); assert.equal(saveGame(result.state, storage), true);
+  const loaded = loadGame(storage)!;
+  assert.deepEqual(getBuiltTypes(loaded), ['waterworks', 'kitchen']);
+  assert.equal(getUpgradedFacilityRecord(loaded), 1);
+});
+
+test('replacement rejects locked types, missing facilities, insufficient materials and uncollected batches without mutation', () => {
+  const original = withBuilding(), states = [startProduction(original, 1).state];
+  states.push(advanceTime(states[0], BUILDINGS.waterworks.minutes));
+  for (const state of states) {
+    const before = JSON.stringify(state), result = replaceFacility(state, 1, 'kitchen');
+    assert.equal(result.ok, false); assert.equal(result.state, state); assert.equal(JSON.stringify(state), before);
+  }
+  const empty = { ...original, resources: { ...original.resources, wood: 0, scrap: 0 } };
+  for (const [state, id, type] of [[original, 1, 'workshop'], [original, 2, 'kitchen'], [original, 1, 'unknown'], [empty, 1, 'kitchen']] as const) {
+    const before = JSON.stringify(state), result = replaceFacility(state, id, type as BuildingType);
+    assert.equal(result.ok, false); assert.equal(result.state, state); assert.equal(JSON.stringify(state), before);
+  }
+  const collected = collectProduction(states[1], 1).state;
+  assert.equal(replaceFacility(collected, 1, 'kitchen').ok, true);
+});
+
+test('a full legacy deck can recover every facility type without new slots or losing past upgrades', () => {
+  let state = fundedGame(6);
+  for (let slot = 0; slot < 12; slot++) state = buildFacility(state, 'waterworks', slot).state;
+  for (let id = 1; id <= 3; id++) state = upgradeFacility(state, id).state;
+  delete state.facilityHistory;
+  const storage = memoryStorage(); assert.equal(saveGame(state, storage), true);
+  state = loadGame(storage)!;
+  const legacyResources = { ...state.resources };
+  assert.equal(state.facilityHistory, undefined);
+  assert.deepEqual(state.resources, legacyResources);
+  for (let index = 1; index < BUILDING_TYPES.length; index++) {
+    const replaced = replaceFacility(state, index, BUILDING_TYPES[index]);
+    assert.equal(replaced.ok, true); state = replaced.state;
+  }
+  assert.equal(state.settlement!.buildings.length, 12);
+  assert.equal(state.settlement!.nextBuildingId, 13);
+  assert.equal(getBuiltTypes(state).length, 6);
+  assert.equal(getUpgradedFacilityRecord(state), 3);
+  assert.equal(saveGame(state, storage), true);
+  assert.equal(getUpgradedFacilityRecord(loadGame(storage)!), 3);
+});
+
+test('lifetime facility history is deep copied and rejects contradictory or forged fields', () => {
+  const original = upgradeFacility(withBuilding(), 1).state;
+  const snapshot = getFacilityHistory(original);
+  snapshot.builtTypes.push('kitchen'); snapshot.upgradedFacilityIds.push(2);
+  assert.deepEqual(getBuiltTypes(original), ['waterworks']);
+  assert.equal(getUpgradedFacilityRecord(original), 1);
+  const mutations: Array<(state: GameState) => void> = [
+    state => { (state.facilityHistory! as unknown as Record<string, unknown>).extra = 1; },
+    state => { state.facilityHistory!.builtTypes = ['waterworks', 'waterworks']; },
+    state => { state.facilityHistory!.builtTypes = ['waterworks', 'greenhouse']; },
+    state => { (state.facilityHistory! as unknown as Record<string, unknown>).builtTypes = null; },
+    state => { state.facilityHistory!.upgradedFacilityIds = [1, 1]; },
+    state => { state.facilityHistory!.upgradedFacilityIds = [1, 2]; },
+  ];
+  for (const mutate of mutations) {
+    const bad = structuredClone(original); mutate(bad);
+    assert.equal(validateFacilityHistory(bad.facilityHistory, bad), false);
+    assert.equal(saveGame(bad, memoryStorage()), false);
+  }
 });
 
 test('a first rainwater facility is affordable, charges its exact cost once, and preserves input state', () => {

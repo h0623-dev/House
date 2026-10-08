@@ -8,12 +8,14 @@
 
 ## 배포
 
+0.9.0 성장 퀘스트는 콘텐츠 버전 9, 네이티브 호환 범위 8–9로 배포합니다. 기존 0.8 앱은 새 APK 설치 없이 호환 콘텐츠를 받을 수 있습니다. 보상 수령 기록과 기존 마을 저장은 같은 로컬 주소에서 유지됩니다.
+
 `release-version.json`의 증가하는 버전 코드를 콘텐츠 버전으로 사용합니다. `content-release.json`은 해당 코드가 지원하는 네이티브 앱 코드의 최소·최대값입니다. 네이티브 기능을 바꾸면 최소값도 새 앱 코드로 올립니다. 게임 코드만 바꾸는 경우 기존 엔진을 지원하는 최소값을 유지합니다. `update.json.minimumNativeVersionCode`는 이 최소값을 사용하므로 호환되는 엔진에는 불필요한 APK 설치를 요청하지 않습니다.
 
 ```bash
 npm run build
 node scripts/create-content-release.mjs dist \
-  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.8.0-content.zip
+  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.9.0-content.zip
 ```
 
 도구는 `artifacts/game-update.json`, 콘텐츠 ZIP, SHA-256 파일을 만듭니다. ZIP에는 검증된 웹 빌드만 들어가며 새 서명이 앱에 고정된 공개 키와 맞는지 확인합니다. ZIP을 `gh-pages/content/`에 올린 뒤 마지막에 같은 브랜치의 루트 `game-update.json`을 게시합니다. 미리 테스트하는 미래 버전 정보는 공개하지 않습니다.

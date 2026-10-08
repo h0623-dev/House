@@ -17,6 +17,8 @@ export interface Settlement {
   /** Missing in early facility states; materialized as zero without granting resources. */
   stats?: { productions: number; collections: number };
 }
+/** Kept at GameState's top level so the original Android8 fallback preserves it. */
+export interface FacilityHistory { builtTypes: BuildingType[]; upgradedFacilityIds: number[] }
 export type SettlementResult = ActionResult;
 export interface BuildingDefinition {
   name: string;
@@ -61,6 +63,35 @@ export function getSettlement(state: Pick<GameState, 'settlement'>): Settlement 
   } : { buildings: [], nextBuildingId: 1, stats: { productions: 0, collections: 0 } };
 }
 
+export function getBuiltTypes(state: Pick<GameState, 'settlement' | 'facilityHistory'>): BuildingType[] {
+  return [...new Set([
+    ...(state.facilityHistory?.builtTypes ?? []),
+    ...(state.settlement?.buildings.map(building => building.type) ?? []),
+  ])];
+}
+export function getFacilityHistory(state: Pick<GameState, 'settlement' | 'facilityHistory'>): FacilityHistory {
+  return { builtTypes: getBuiltTypes(state), upgradedFacilityIds: [...new Set([
+    ...(state.facilityHistory?.upgradedFacilityIds ?? []),
+    ...(state.settlement?.buildings.filter(building => building.level >= 2).map(building => building.id) ?? []),
+  ])] };
+}
+export function getUpgradedFacilityRecord(state: Pick<GameState, 'settlement' | 'facilityHistory'>): number {
+  return getFacilityHistory(state).upgradedFacilityIds.length;
+}
+function recordFacilityProgress(state: GameState) {
+  state.facilityHistory = getFacilityHistory(state);
+}
+export function validateFacilityHistory(value: unknown, state: Pick<GameState, 'deckLevel' | 'settlement'>): value is FacilityHistory {
+  if (!isRecord(value) || Object.keys(value).length !== 2 || !Array.isArray(value.builtTypes)
+    || !Array.isArray(value.upgradedFacilityIds)) return false;
+  const types = value.builtTypes, upgradedIds = value.upgradedFacilityIds;
+  const ids = new Set(state.settlement?.buildings.map(building => building.id) ?? []);
+  return types.length <= BUILDING_TYPES.length && new Set(types).size === types.length
+    && types.every(type => isBuildingType(type) && BUILDINGS[type].unlockLevel <= state.deckLevel)
+    && upgradedIds.length <= ids.size && new Set(upgradedIds).size === upgradedIds.length
+    && upgradedIds.every(id => isInteger(id, 1, MAX_SLOTS) && ids.has(id));
+}
+
 /** Validate optional saved facilities without repairing paid costs or inventing production. */
 export function validateSettlement(value: unknown, state: Pick<GameState, 'deckLevel' | 'totalMinutes'>): value is Settlement {
   if (!isRecord(value) || !Array.isArray(value.buildings) || value.buildings.length > getUnlockedSlots(state)) return false;
@@ -87,6 +118,8 @@ function copy(state: GameState): GameState {
     ...state, resources: { ...state.resources }, plots: state.plots.map(plot => ({ ...plot })),
     ...(state.seedInventory ? { seedInventory: { ...state.seedInventory } } : {}),
     quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
+    ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
+    ...(state.facilityHistory ? { facilityHistory: getFacilityHistory(state) } : {}),
     expedition: state.expedition ? { ...state.expedition } : null,
     settlement: getSettlement(state),
   };
@@ -99,6 +132,7 @@ function success(state: GameState, message: string): SettlementResult {
 function blocked(state: GameState): SettlementResult | null {
   if (state.expedition) return fail(state, '사냥을 마친 뒤 트럭의 생활 시설을 돌봐 주세요.');
   if (Object.hasOwn(state, 'settlement') && !validateSettlement(state.settlement, state)) return fail(state, '생활 시설 정보를 확인할 수 없어요. 저장 상태를 확인해 주세요.');
+  if (Object.hasOwn(state, 'facilityHistory') && !validateFacilityHistory(state.facilityHistory, state)) return fail(state, '시설 성장 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   return null;
 }
 function slotAvailable(state: GameState, slot: number, exceptId?: number): boolean {
@@ -125,7 +159,26 @@ export function buildFacility(state: GameState, type: BuildingType, slot: number
   const next = copy(state), settlement = next.settlement!;
   next.resources.wood -= definition.wood; next.resources.scrap -= definition.scrap;
   settlement.buildings.push({ id: settlement.nextBuildingId++, type, slot, level: 1, startedAt: null, readyAt: null });
+  recordFacilityProgress(next);
   return success(next, `${definition.name}을 건설했어요. 생산을 시작해 우리집의 생활 물자를 모아 보세요!`);
+}
+/** Paid same-slot replacement keeps lifetime quest progress and never discards an active batch. */
+export function replaceFacility(state: GameState, id: number, type: BuildingType): SettlementResult {
+  const unavailable = blocked(state); if (unavailable) return unavailable;
+  const building = getSettlement(state).buildings.find(item => item.id === id);
+  if (!building || !isBuildingType(type)) return fail(state, '교체할 시설과 새 생활 시설을 선택해 주세요.');
+  if (building.type === type) return fail(state, '이미 같은 시설이에요. 다른 종류를 선택해 주세요.');
+  const definition = BUILDINGS[type];
+  if (definition.unlockLevel > state.deckLevel) return fail(state, `${definition.name}은 트럭 데크 ${definition.unlockLevel}단계부터 사용할 수 있어요.`);
+  if (building.readyAt !== null) return fail(state, '생산 중인 물자를 먼저 수령한 뒤 시설을 교체해 주세요.');
+  if (state.resources.wood < definition.wood || state.resources.scrap < definition.scrap) return fail(state, `시설 교체에 목재 ${definition.wood} · 고철 ${definition.scrap}이 필요해요.`);
+  const next = copy(state);
+  recordFacilityProgress(next);
+  const target = next.settlement!.buildings.find(item => item.id === id)!;
+  next.resources.wood -= definition.wood; next.resources.scrap -= definition.scrap;
+  target.type = type; target.level = 1;
+  recordFacilityProgress(next);
+  return success(next, `${BUILDINGS[building.type].name} 자리에 ${definition.name} Lv.1을 새로 지었어요. 이전 마을 성장 실적은 유지돼요.`);
 }
 export function moveFacility(state: GameState, id: number, slot: number): SettlementResult {
   const unavailable = blocked(state); if (unavailable) return unavailable;
@@ -147,6 +200,7 @@ export function upgradeFacility(state: GameState, id: number): SettlementResult 
   if (state.resources.wood < cost.wood || state.resources.scrap < cost.scrap) return fail(state, `시설 개선에 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
   const next = copy(state); next.resources.wood -= cost.wood; next.resources.scrap -= cost.scrap;
   next.settlement!.buildings.find(item => item.id === id)!.level += 1;
+  recordFacilityProgress(next);
   return success(next, `${definition.name}을 ${building.level + 1}단계로 개선했어요. 한 번에 더 많은 물자를 생산해요!`);
 }
 export function startProduction(state: GameState, id: number): SettlementResult {

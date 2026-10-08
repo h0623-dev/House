@@ -15,7 +15,7 @@ const assert = new Proxy(strictAssert, { get(target, key) { const value = Reflec
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
 const errors = [], failedAssets = [], canceledImages = [], screenshots = [], timings = [], cases = [];
 const successfulImages = new Set();
-let page;
+let page, previousEngineSave;
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-haven-save-v1')));
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const buildings = state => state.settlement?.buildings || [];
@@ -99,14 +99,17 @@ async function claim(id, resource, amount) {
 
 // This deliberately private browser bridge fixture verifies UI decisions only.
 // It does not download an APK, apply a signed bundle or invoke Android itself.
-async function updateFixture(contentOnly = false, web = false, failActivation = false) {
+async function updateFixture(contentOnly = false, web = false, failActivation = false, previousEngine = false) {
  const current = { version, versionCode, minimumNativeVersionCode: versionCode, apkUrl: 'https://example.invalid/private-current.apk', sha256: 'a'.repeat(64), notes: 'Private current-version QA fixture', publishedAt: '2026-10-08T00:00:00Z' };
- const future = { ...current, version: '0.9.0', versionCode: versionCode + 1, minimumNativeVersionCode: contentOnly ? versionCode : versionCode + 1, apkUrl: 'https://example.invalid/private-future.apk', notes: 'PRIVATE QA ONLY: future release is not published' };
+ if (previousEngine) current.minimumNativeVersionCode = versionCode - 1;
+ const [major, minor] = version.split('.').map(Number), futureVersion = `${major}.${minor + 1}.0`;
+ const future = { ...current, version: futureVersion, versionCode: versionCode + 1, minimumNativeVersionCode: contentOnly ? versionCode : versionCode + 1, apkUrl: 'https://example.invalid/private-future.apk', notes: 'PRIVATE QA ONLY: future release is not published' };
  const result = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
  const manifest = release => route => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(release) });
  await result.route('**/update.json*', manifest(contentOnly ? future : current));
- if (!web) await result.addInitScript(({ version, versionCode, failActivation }) => {
-  const calls = [], listeners = {}, state = { native: { status: 'idle', progress: 0, revision: 0, message: 'Private fixture idle' }, content: { status: 'idle', progress: 0, message: 'Private content fixture idle' } };
+ if (!web) await result.addInitScript(({ version, versionCode, contentVersion, contentCode, failActivation, legacy }) => {
+  if (legacy) localStorage.setItem('road-haven-save-v1', JSON.stringify(legacy));
+  const calls = [], listeners = {}, state = { native: { status: 'idle', progress: 0, revision: 0, message: 'Private fixture idle' }, content: { status: 'idle', progress: 0, version: contentVersion, contentVersion: contentCode, message: 'Private content fixture idle' } };
   window.__updateFixture = { calls, state, emit(plugin, value) { state[plugin === 'Updater' ? 'native' : 'content'] = value; listeners[plugin]?.(value); } };
   window.CapacitorCustomPlatform = { name: 'android' };
   window.Capacitor = {
@@ -121,13 +124,23 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
     return state.native;
    },
   };
- }, { version, versionCode, failActivation });
+ }, { version: previousEngine ? '0.8.0' : version, versionCode: previousEngine ? versionCode - 1 : versionCode, contentVersion: version, contentCode: versionCode, failActivation, legacy: previousEngine ? previousEngineSave : null });
  page = await result.newPage(); attachErrors(page); await page.goto(updateUrl); await page.waitForLoadState('networkidle');
- await touch(page.locator('[data-start]')); await pauseWorld();
+ const emit = (plugin, state) => page.evaluate(({ plugin, state }) => window.__updateFixture.emit(plugin, state), { plugin, state });
+ if (await page.locator('[data-start]').count()) await touch(page.locator('[data-start]')); await pauseWorld();
+ if (previousEngine) {
+  await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.plugin === 'Updater' && call.method === 'getVersion'));
+  assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'prepareUpdate').length), 0, 'new content on the previous compatible native engine does not request an APK');
+  assert.equal(await page.evaluate(() => window.__updateFixture.state.content.contentVersion), versionCode);
+  const legacyLoaded = await saved(); assert.equal(legacyLoaded.name, previousEngineSave.name); assert.deepEqual(legacyLoaded.resources, previousEngineSave.resources); assert.deepEqual(legacyLoaded.seedInventory, previousEngineSave.seedInventory); assert.equal(legacyLoaded.xp, previousEngineSave.xp); assert.equal(legacyLoaded.level, previousEngineSave.level);
+  await touch(page.locator('[data-next-goal]')); assert.equal(await page.locator('[data-quest-chapter]').count(), 6); assert.equal(await page.locator('[data-growth-quest]').count(), 4); assert.deepEqual((await saved()).resources, previousEngineSave.resources); assert.equal((await saved()).growthQuests?.claimed.length ?? 0, 0);
+  cases.push(`Private loaded content${versionCode} on native engine${versionCode - 1}: minimum native${versionCode - 1} skips APK, new quest UI renders and previous save gains no resource/XP/seed gifts`);
+  await result.close(); return;
+ }
  if (web) {
   await touch(nav('settings')); await touch(page.locator('[data-update]')); assert.match(await page.locator('[data-native-update-message]').innerText(), /최신/);
   await result.unroute('**/update.json*'); await result.route('**/update.json*', manifest(future));
-  await touch(page.locator('[data-update]')); await page.locator('[data-download]').waitFor(); assert.match(await page.locator('[data-native-update-message]').innerText(), /0\.9\.0/); assert.equal(await page.locator('[data-install-update]').isVisible(), false);
+  await touch(page.locator('[data-update]')); await page.locator('[data-download]').waitFor(); assert.equal((await page.locator('[data-native-update-message]').innerText()).includes(future.version), true); assert.equal(await page.locator('[data-install-update]').isVisible(), false);
   await shot('private-web-future-release'); await result.close(); return;
  }
  await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.plugin === 'ContentUpdater' && call.method === 'acknowledge'));
@@ -137,7 +150,7 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'prepareUpdate').length), 0, 'compatible content updates do not force an APK download');
   await touch(page.getByRole('button', { name: '시간 계속', exact: true }));
   if (failActivation) {
-   await page.evaluate(() => window.__updateFixture.emit('ContentUpdater', { status: 'ready', progress: 100, contentVersion: 9, version: '0.9.0', message: 'Private failure fixture ready' }));
+   await emit('ContentUpdater', { status: 'ready', progress: 100, contentVersion: future.versionCode, version: future.version, message: 'Private failure fixture ready' });
    await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.method === 'activate'));
    assert.equal(await page.locator('#app').evaluate(app => app.inert), true); await page.locator('.content-applying-notice').waitFor();
    await page.waitForFunction(() => !document.querySelector('#app').inert, null, { timeout: 6000 });
@@ -149,9 +162,9 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   await touch(nav('farm')); await touch(page.locator('[data-quick="plant"]')); await touch(page.locator('[data-select-seed="potato"]')); await page.waitForTimeout(1100);
   const point = await page.locator('#world').evaluate(canvas => { const g = JSON.parse(canvas.dataset.sceneGeometry), r = canvas.getBoundingClientRect(); const u = 85, v = 78; return { x: r.left + g.dx + (480 + u * .91 - v * .67) * g.scale, y: r.top + g.dy + (420 + u * .34 + v * .47 - 112) * g.scale }; });
   await page.touchscreen.tap(point.x, point.y); await page.waitForFunction(() => document.querySelector('#app').hasAttribute('aria-busy'));
-  await page.evaluate(() => window.__updateFixture.emit('ContentUpdater', { status: 'downloading', progress: 45, contentVersion: 9, version: '0.9.0', message: 'Private content 45%' }));
+  await emit('ContentUpdater', { status: 'downloading', progress: 45, contentVersion: future.versionCode, version: future.version, message: 'Private content 45%' });
   assert.match(await page.locator('#update-badge strong').innerText(), /45%/);
-  await page.evaluate(() => window.__updateFixture.emit('ContentUpdater', { status: 'ready', progress: 100, contentVersion: 9, version: '0.9.0', message: 'Private content ready' }));
+  await emit('ContentUpdater', { status: 'ready', progress: 100, contentVersion: future.versionCode, version: future.version, message: 'Private content ready' });
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'activate').length), 0, 'content waits while the character is working');
   await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 9000 });
   assert.equal((await saved()).plots[2].cropId, 'potato'); assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'activate').length), 0, 'persistent farm mode also holds activation');
@@ -161,7 +174,7 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   await touch(page.locator('[data-battle="finish"]')); await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.method === 'activate'));
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'activate').length), 1); assert.equal(await page.evaluate(() => window.__updateFixture.calls.find(call => call.method === 'activate').saved), true, 'progress is saved before activation');
   assert.equal(await page.locator('#app').evaluate(app => app.inert), true); assert.equal(await page.locator('.content-applying-notice').isVisible(), true);
-  await page.setViewportSize({ width: 360, height: 740 }); await page.screenshot({ path: 'artifacts/v08-ui-update-applying-360.png', fullPage: true }); screenshots.push('artifacts/v08-ui-update-applying-360.png'); await page.setViewportSize({ width: 390, height: 844 });
+  const applyingScreenshot = `artifacts/v${version}-ui-update-applying-360.png`; await page.setViewportSize({ width: 360, height: 740 }); await page.screenshot({ path: applyingScreenshot, fullPage: true }); screenshots.push(applyingScreenshot); await page.setViewportSize({ width: 390, height: 844 });
   const lockedClock = await page.locator('#clock').innerText(), lockedSave = await saved();
   for (const selector of ['[data-nav="farm"]', '[data-nav="hunt"]', '[data-open="build"]', '[data-farm-toggle]']) { const box = await page.locator(selector).boundingBox(); assert.ok(box); await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2); }
   const lockedCanvas = await page.locator('#world').boundingBox(); await page.touchscreen.tap(lockedCanvas.x + lockedCanvas.width / 2, lockedCanvas.y + lockedCanvas.height / 2);
@@ -172,12 +185,12 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   await result.unroute('**/update.json*'); await result.route('**/update.json*', manifest(future));
   await touch(nav('settings')); await touch(page.locator('[data-update]')); await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.method === 'prepareUpdate'));
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'prepareUpdate').length), 1);
-  await page.evaluate(() => window.__updateFixture.emit('Updater', { status: 'downloading', progress: 25, revision: 2, version: '0.9.0', versionCode: 9, message: 'Private fixture 25%' }));
+  await emit('Updater', { status: 'downloading', progress: 25, revision: 2, version: future.version, versionCode: future.versionCode, message: 'Private fixture 25%' });
   assert.equal(await page.locator('[data-native-update-progress]').isVisible(), true); assert.equal(await page.locator('[data-native-update-progress] i').evaluate(element => element.style.width), '25%');
   assert.equal(await page.locator('[data-install-update]').isVisible(), false);
   await page.evaluate(() => window.__updateFixture.emit('Updater', { status: 'error', progress: 0, revision: 3, message: 'Private fixture recoverable failure' }));
   await touch(page.locator('[data-retry-native-update]')); assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'prepareUpdate').length), 2);
-  await page.evaluate(() => window.__updateFixture.emit('Updater', { status: 'ready', progress: 100, revision: 5, version: '0.9.0', versionCode: 9, message: 'Private fixture verified and ready' }));
+  await emit('Updater', { status: 'ready', progress: 100, revision: 5, version: future.version, versionCode: future.versionCode, message: 'Private fixture verified and ready' });
   await page.locator('[data-install-update]').waitFor(); await shot('private-native-install-ready');
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'installUpdate').length), 0);
   await touch(page.locator('[data-install-update]')); assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'installUpdate').length), 1);
@@ -239,7 +252,7 @@ try {
    await touch(page.locator('[data-facility-upgrade="1"]')); await page.locator('[data-upgrade-confirm="1"]').waitFor(); await touch(page.locator('#modal-root [data-close]').first()); assert.deepEqual((await saved()).resources, beforeUpgrade.resources);
    await touch(page.locator('[data-facility-upgrade="1"]')); await touch(page.locator('[data-upgrade-confirm="1"]')); state = await saved(); assert.equal(buildings(state)[0].level, 2); assert.equal(state.resources.wood, beforeUpgrade.resources.wood - 24); assert.equal(state.resources.scrap, beforeUpgrade.resources.scrap - 8);
    await touch(page.locator('[data-facility-start="1"]')); await reload(matureProduction(await saved())); await claim(1, 'water', 8);
-   await home(); const beforeGoals = await saved(); await touch(page.locator('[data-open="settlement-goals"]')); assert.equal(await page.locator('#modal-root .quest-row').count(), 6); assert.deepEqual((await saved()).resources, beforeGoals.resources); await touch(page.locator('#modal-root [data-close]').first());
+   await home(); const beforeGoals = await saved(); await touch(page.locator('[data-open="settlement-goals"]')); assert.equal(await page.locator('[data-quest-chapter]').count(), 6); assert.equal(await page.locator('[data-growth-quest]').count(), 4); assert.equal(await page.locator('[data-growth-legacy]').count(), 3); assert.deepEqual((await saved()).resources, beforeGoals.resources, 'opening the growth board and legacy records grants no reward'); await touch(page.locator('#modal-root [data-close]').first());
    cases.push('360px real-touch placement/cancel/cost once/occupied rejection, natural production, active timer-preserving relocation, normal resource gathering and animated expansion, kitchen/workshop inputs and claims, confirmed level-two upgrade and scaled yield');
   } else {
    const all = structuredClone(fresh); all.name = '여섯 시설 검사'; all.deckLevel = 3; all.stats.expansions = 2; all.plots.push({ id: 4, plantedAt: null, watered: false }, { id: 5, plantedAt: null, watered: false });
@@ -247,13 +260,13 @@ try {
    const dryKitchen = structuredClone(all); dryKitchen.name = '생산 재료 부족 검사'; dryKitchen.resources.water = 0; await reload(dryKitchen); await selectFacility(2); await touch(page.locator('[data-facility-start="2"]')); assert.deepEqual((await saved()).resources, dryKitchen.resources); assert.equal(buildings(await saved())[1].readyAt, null); assert.equal((await saved()).settlement.stats.productions, 1, 'missing recipe resources cannot start a batch or consume anything');
    await reload(all); await home(); assert.equal((await slots()).filter(slot => slot.unlocked).length, 6); assert.equal((await slots()).filter(slot => slot.buildingId !== null).length, 6); assert.deepEqual((await saved()).resources, all.resources, 'ready facilities do not grant a load reward'); await shot('all-six-facilities');
    for (const building of all.settlement.buildings) { await selectFacility(building.id); assert.equal(await page.locator('#facility-sheet').getAttribute('data-facility'), String(building.id)); await touch(page.locator('[data-facility-close]')); }
-   const legacy = structuredClone(fresh); legacy.name = '기존 저장 검사'; delete legacy.settlement; await reload(legacy); assert.equal(buildings(await saved()).length, 0); assert.deepEqual((await saved()).resources, legacy.resources); assert.deepEqual((await saved()).plots, legacy.plots); await reload(); assert.deepEqual((await saved()).resources, legacy.resources);
+   const legacy = structuredClone(fresh); legacy.name = '기존 저장 검사'; delete legacy.settlement; delete legacy.growthQuests; delete legacy.stats.plantings; delete legacy.stats.waterings; previousEngineSave = structuredClone(legacy); await reload(legacy); assert.equal(buildings(await saved()).length, 0); assert.deepEqual((await saved()).resources, legacy.resources); assert.deepEqual((await saved()).plots, legacy.plots); await reload(); assert.deepEqual((await saved()).resources, legacy.resources);
    await page.setViewportSize({ width: 844, height: 390 }); await home(); await fit(844, 390, ['[data-nav="home"]', '[data-nav="build"]', '[data-farm-toggle]']); await build('kitchen', 0, 16, 6); await fit(844, 390, ['[data-facility-start="1"]', '[data-facility-move="1"]', '[data-facility-close]']); await shot('landscape-facility');
    cases.push('390px real-touch facility preview/build/move/start/ready/claim persistence, unchanged legacy save resources and crops, landscape facility controls');
   }
   await mobile.close();
  }
- if (updateUrl) { await updateFixture(false, true); await updateFixture(false); await updateFixture(true); await updateFixture(true, false, true); }
+ if (updateUrl) { await updateFixture(false, true); await updateFixture(false); await updateFixture(true); await updateFixture(true, false, true); await updateFixture(false, false, false, true); }
  assert.equal(canceledImages.every(url => successfulImages.has(url)), true, 'every redundant canceled SVG image has a successful matching request');
  const verify = await browser.newContext(), imagePage = await verify.newPage(); await imagePage.goto(baseUrl);
  const decodedCanceledImages = await imagePage.evaluate(async sources => Promise.all(sources.map(async source => { const image = new Image(); image.src = source; await image.decode(); return { source, width: image.naturalWidth, height: image.naturalHeight }; })), [...new Set(canceledImages)]);

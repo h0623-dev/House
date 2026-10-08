@@ -1,6 +1,6 @@
 {
   "name": "road-haven",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,7 +15,8 @@
     "test:mobile": "node tests/mobile-touch-real-time.mjs",
     "test:seeds": "node tests/seed-inventory-mobile.mjs",
     "test:farm": "node tests/farm-tools-mobile.mjs",
-    "test:settlement": "node tests/settlement-mobile.mjs"
+    "test:settlement": "node tests/settlement-mobile.mjs",
+    "test:growth": "node tests/growth-quests-mobile.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.4.3",
