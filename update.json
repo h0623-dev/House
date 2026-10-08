@@ -1,9 +1,9 @@
 {
-  "version": "0.8.0",
-  "versionCode": 8,
+  "version": "0.9.0",
+  "versionCode": 9,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.8.0-debug.apk",
-  "sha256": "99afde7364c33e84c02dffc2df102f6ab816197432e8dee5d95790906df2419b",
-  "notes": "트럭 위 시설 6종을 배치·생산·개선하며 마을을 키워요. 이번 버전 설치 후 호환되는 게임 콘텐츠는 앱에서 자동 적용돼요. 기존 저장을 유지합니다.",
-  "publishedAt": "2026-10-08T07:30:13.582Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.9.0-debug.apk",
+  "sha256": "5cf3195a4005e129a7165e2f318391a1920052c9e8338c5276b72e8805a8ef31",
+  "notes": "6챕터 24개 성장 퀘스트를 따라 보상을 받고 트럭 마을을 키워요. 시설 교체로 가득 찬 마을도 계속 성장할 수 있어요. v0.8 앱에는 호환 콘텐츠가 자동 적용됩니다.",
+  "publishedAt": "2026-10-08T08:29:51.125Z"
 }
