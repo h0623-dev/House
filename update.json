@@ -1,8 +1,8 @@
 {
-  "version": "0.4.0",
-  "versionCode": 4,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.4.0-debug.apk",
-  "sha256": "6a355f73425d6bf4f9d5fe457e1d4c89ed4f9e7987bfc734c5447bc665579c54",
-  "notes": "캐릭터와 같은 애니메이션 화풍으로 트럭·집·도로·텃밭·나무·보리·좀비와 전투 배경을 바꾸었습니다. 아이템 그림과 생활·전투 메뉴, 앱 아이콘도 같은 색감으로 통일했습니다. 기존 진행 정보는 그대로 이어집니다.",
-  "publishedAt": "2026-10-08T05:02:10.177Z"
+  "version": "0.5.0",
+  "versionCode": 5,
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.5.0-debug.apk",
+  "sha256": "9957ce3136665659e8ad8a029fd0431a8903ce74a94d4067b47bd5642d6f7fba",
+  "notes": "주인공을 트럭과 맵에 맞게 32% 작게 조정했습니다. 벌목장의 나무를 누르면 바로 나무를 베고 목재를 얻습니다. 기력·체력·재료가 부족하면 회복과 탐색 방법을 안내하며, 느린 기기의 작업 지연과 텃밭·배낭 버튼 교체도 수정했습니다.",
+  "publishedAt": "2026-10-08T05:28:15.900Z"
 }
