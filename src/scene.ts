@@ -5,6 +5,8 @@ import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWor
 import { drawCropSprite } from './crop-art';
 import { BUILDINGS, getSettlement, getUnlockedSlots, type BuildingType } from './settlement';
 import { drawFacility, facilityArtReady } from './settlement-art';
+import { createMotionRoute, sampleMotionRoute, type MotionRoute } from './scene-motion';
+import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
 
 type Point = [number, number];
 type Selectable = 'farm' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'build-slot';
@@ -14,7 +16,7 @@ type FarmAction = 'plant' | 'water' | 'harvest';
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean; placing: boolean };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; plotIndex: number; cropId: CropId; resolve: () => void };
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; plotIndex: number; cropId: CropId; resolve: () => void };
 // The hero belongs to the truck's scale: a person fits comfortably beside its house and planters.
 // Compact painted residents sit between the crops and miniature buildings.
 const WORLD_HERO_SCALE = .64;
@@ -51,6 +53,9 @@ export class Scene {
   private cancelledMapPointer: number | null = null;
   private mapPan: Point = [0, 0];
   private mapZoom = 1;
+  private pinch = new MapPinchGesture();
+  private cancelledGesturePointers = new Set<number>();
+  private pendingFarmTouch: { pointerId: number; point: Point; timer: number } | null = null;
   private mapPanLimit: Point = [500, 400];
   private constructionMode: BuildingType | null = null;
   private selectedSlot: number | null = null;
@@ -60,6 +65,8 @@ export class Scene {
   private plantingCropId: CropId = 'carrot';
   private camera = { x: 480, y: 350, zoom: 1 };
   private treeCutAt = -100;
+  private heroDrawn = false;
+  private actionEventState = '';
   private disposed = false;
   private suspended = false;
   private animate = (timestamp: number) => {
@@ -80,17 +87,22 @@ export class Scene {
     this.render();
   };
   private visibility = () => {
-    if (document.hidden) { this.endFarmStroke(); this.endMapGesture(); cancelAnimationFrame(this.frame); this.frame = 0; }
+    if (document.hidden) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); cancelAnimationFrame(this.frame); this.frame = 0; }
     else if (!this.frame && !this.suspended) { this.lastFrame = 0; this.frame = requestAnimationFrame(this.animate); }
   };
-  private blur = () => { this.endFarmStroke(); this.endMapGesture(); };
+  private blur = () => { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); };
   private pointerDown = (event: PointerEvent) => {
-    if (!event.isPrimary || event.button !== 0) return;
+    if (event.button !== 0 || this.suspended) return;
+    this.cancelledGesturePointers.delete(event.pointerId);
+    if (this.pinch.down(event.pointerId, { x: event.clientX, y: event.clientY })) {
+      this.endFarmStroke(true, false); this.endMapGesture(true, false);
+      for (const pointerId of this.pinch.pointerIds) this.canvas.setPointerCapture(pointerId);
+      event.preventDefault(); return;
+    }
+    if (!event.isPrimary) return;
     this.cancelledFarmPointer = null;
     this.cancelledMapPointer = null;
-    if (this.suspended) return;
     if (!this.farmMode) {
-      if (this.action || this.zone !== 'home') return;
       this.endMapGesture(); this.cancelledMapPointer = null;
       this.mapGesture = { pointerId: event.pointerId, start: [event.clientX, event.clientY], last: [event.clientX, event.clientY], moved: false, placing: this.constructionMode !== null };
       this.canvas.setPointerCapture(event.pointerId); return;
@@ -101,9 +113,20 @@ export class Scene {
     this.farmStroke = { pointerId: event.pointerId, last: [event.clientX, event.clientY], visited: new Set() };
     this.canvas.setPointerCapture(event.pointerId);
     event.preventDefault();
-    this.paintFarmPoint(event.clientX, event.clientY, false);
+    if (event.pointerType === 'touch') {
+      // The second finger must have time to land before a pinch can plant or harvest a plot.
+      this.pendingFarmTouch = { pointerId: event.pointerId, point: [event.clientX, event.clientY],
+        timer: window.setTimeout(() => this.flushFarmTouch(), 120) };
+    } else this.paintFarmPoint(event.clientX, event.clientY, false);
   };
   private pointerMove = (event: PointerEvent) => {
+    if (this.suspended || this.cancelledGesturePointers.has(event.pointerId)) return;
+    const pinch = this.pinch.move(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinch.consumed) {
+      event.preventDefault();
+      if (pinch.change) this.zoomAt(this.mapZoom * pinch.change.ratio, pinch.change.from, pinch.change.to);
+      return;
+    }
     const gesture = this.mapGesture;
     if (gesture && gesture.pointerId === event.pointerId) {
       const distance = Math.hypot(event.clientX - gesture.start[0], event.clientY - gesture.start[1]);
@@ -120,6 +143,10 @@ export class Scene {
     const stroke = this.farmStroke;
     if (!stroke || event.pointerId !== stroke.pointerId || !this.farmMode) return;
     event.preventDefault();
+    if (this.pendingFarmTouch?.pointerId === event.pointerId) {
+      if (Math.hypot(event.clientX - stroke.last[0], event.clientY - stroke.last[1]) <= 7) return;
+      this.flushFarmTouch();
+    }
     const [fromX, fromY] = stroke.last;
     const steps = Math.max(1, Math.ceil(Math.hypot(event.clientX - fromX, event.clientY - fromY) / 10));
     stroke.last = [event.clientX, event.clientY];
@@ -131,16 +158,22 @@ export class Scene {
   };
   private pointerCancel = (event: PointerEvent) => {
     if (event.type === 'lostpointercapture') {
+      if (this.pinch.active) return;
+      this.pinch.up(event.pointerId);
       if (event.pointerId === this.farmStroke?.pointerId) this.endFarmStroke();
       if (event.pointerId === this.mapGesture?.pointerId) this.endMapGesture();
       return;
     }
+    this.pinch.up(event.pointerId);
+    this.cancelledGesturePointers.delete(event.pointerId);
     if (event.pointerId === this.farmStroke?.pointerId) this.endFarmStroke(false);
     if (event.pointerId === this.mapGesture?.pointerId) this.endMapGesture(false);
     if (event.pointerId === this.cancelledFarmPointer) this.cancelledFarmPointer = null;
     if (event.pointerId === this.cancelledMapPointer) this.cancelledMapPointer = null;
   };
   private pointer = (event: PointerEvent) => {
+    const pinched = this.pinch.up(event.pointerId);
+    if (this.cancelledGesturePointers.delete(event.pointerId) || pinched || this.suspended) { event.preventDefault(); return; }
     if (!event.isPrimary || event.button !== 0) return;
     if (event.pointerId === this.cancelledFarmPointer) { this.cancelledFarmPointer = null; return; }
     if (event.pointerId === this.cancelledMapPointer) { this.cancelledMapPointer = null; return; }
@@ -148,7 +181,7 @@ export class Scene {
       this.pointerMove(event); const moved = this.mapGesture?.moved;
       this.endMapGesture(false); if (moved) return;
     }
-    if (event.pointerId === this.farmStroke?.pointerId) { this.pointerMove(event); this.endFarmStroke(false); return; }
+    if (event.pointerId === this.farmStroke?.pointerId) { this.flushFarmTouch(); this.pointerMove(event); this.endFarmStroke(false); return; }
     if (this.action || this.farmMode) return;
     const { candidates, plots, x, y } = this.pointerHits(event.clientX, event.clientY);
     const foreground = [...candidates].reverse().find(item => (item.kind === 'pet' || item.kind === 'character') && Math.hypot(item.x - x, item.y - y) < item.radius);
@@ -157,6 +190,14 @@ export class Scene {
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const hit = this.constructionMode ? slots[0] : foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
     if (hit) { this.focus(hit.kind); this.onSelect(hit.kind, hit.plotId); }
+  };
+  private wheelInput = (event: WheelEvent) => {
+    if (this.suspended) return;
+    event.preventDefault();
+    this.endFarmStroke(); this.endMapGesture();
+    const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.height : 1;
+    const amount = Math.max(-300, Math.min(300, event.deltaY * units));
+    this.zoomAt(this.mapZoom * Math.exp(-amount * .002), { x: event.clientX, y: event.clientY });
   };
 
   constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable, plotId?: number) => void) {
@@ -168,6 +209,7 @@ export class Scene {
     canvas.addEventListener('pointerup', this.pointer);
     canvas.addEventListener('pointercancel', this.pointerCancel);
     canvas.addEventListener('lostpointercapture', this.pointerCancel);
+    canvas.addEventListener('wheel', this.wheelInput, { passive: false });
     document.addEventListener('visibilitychange', this.visibility);
     window.addEventListener('blur', this.blur);
     this.observer = new ResizeObserver(() => this.resize());
@@ -182,10 +224,10 @@ export class Scene {
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
-  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; }
+  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; } this.farmFocus = enabled; }
   /** A farming tool stays selected while taps or a finger swipe queue further plots. */
   setFarmMode(mode: FarmAction | null, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
-    if (mode !== this.farmMode) { this.endFarmStroke(); this.endMapGesture(); }
+    if (mode !== this.farmMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; }
     this.farmMode = mode;
     this.canvas.style.touchAction = 'none';
     this.queuedPlotIds = mode ? [...queuedPlotIds] : [];
@@ -194,7 +236,7 @@ export class Scene {
   }
   setPlantingMode(enabled: boolean, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') { this.setFarmMode(enabled ? 'plant' : null, queuedPlotIds, selectedSeed); }
   setConstructionMode(type: BuildingType | null, selectedSlot?: number, movingId?: number) {
-    if (type !== this.constructionMode) { this.endFarmStroke(); this.endMapGesture(); }
+    if (type !== this.constructionMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; }
     this.constructionMode = type;
     this.selectedSlot = type && selectedSlot !== undefined ? selectedSlot : null;
     this.movingBuildingId = type && movingId !== undefined ? movingId : null;
@@ -204,15 +246,19 @@ export class Scene {
     if (id !== this.selectedFacilityId) { this.endFarmStroke(); this.endMapGesture(); if (id !== null) this.mapPan = [0, 0]; }
     this.selectedFacilityId = id;
   }
-  setMapZoom(zoom: number) { this.endFarmStroke(); this.endMapGesture(); this.mapZoom = Number.isFinite(zoom) ? Math.max(1, Math.min(2.6, zoom)) : 1; }
+  setMapZoom(zoom: number) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zoomAt(zoom); }
   getMapZoom() { return this.mapZoom; }
-  resetMapView() { this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; }
+  resetMapView() {
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1;
+    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
+    this.render();
+  }
   setSuspended(value: boolean) {
     this.suspended = value;
-    if (value) { this.endFarmStroke(); this.endMapGesture(); cancelAnimationFrame(this.frame); this.frame = 0; }
+    if (value) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); cancelAnimationFrame(this.frame); this.frame = 0; }
     else this.visibility();
   }
-  setZone(zone: 'home' | 'grove') { if (!this.action && zone !== this.zone) { this.endFarmStroke(); this.endMapGesture(); this.zone = zone; } }
+  setZone(zone: 'home' | 'grove') { if (!this.action && zone !== this.zone) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.zone = zone; } }
   /** Resolves only after the visible walk, work and return have finished. */
   playAction(kind: SceneAction, plotId?: number, selectedCropId?: CropId): Promise<void> {
     if (this.disposed) return Promise.resolve();
@@ -224,22 +270,27 @@ export class Scene {
     const cropId = kind === 'plant' ? selectedCropId ?? this.plantingCropId : getPlotCropId(state?.plots[plotIndex] ?? { id: 0, plantedAt: null, watered: false });
     const home = this.p(-74, 14, 95), [u, v] = this.plotPosition(plotIndex);
     let path: Point[] = [home, this.p(u - 9, 12, 95), this.p(u - 9, v + 39, 95)];
-    let walk = .7, work = 1.7;
+    let work = kind === 'water' ? 2.1 : kind === 'harvest' ? 2.2 : 1.9;
+    let climbSegments: number[] = [];
     if (kind === 'chop' || kind === 'gather') {
       const front = this.deckBounds().front;
-      path = [home, this.p(-168, 16, 95), this.p(-176, front - 13, 95), this.rampTop(), this.rampBottom(), [146, 560], [142, 590]];
-      walk = .9; work = kind === 'chop' ? 1.9 : 1.45;
+      path = [home, this.p(-168, 16, 95), this.p(-176, front - 13, 95), this.rampTop(), this.rampBottom(),
+        ...(kind === 'chop' ? [[146, 560], [142, 590]] as Point[] : [[181, 549], [211, 578]] as Point[])];
+      climbSegments = [3];
+      work = kind === 'chop' ? 4 : 3.8;
       if (kind === 'chop') this.treeCutAt = -100;
     } else if (kind === 'expand') {
       path = [home, this.p(-156, 16, 95), this.p(-157, this.deckBounds().front - 19, 95)];
-      walk = .7; work = 1.85;
+      work = 2.4;
     }
+    const route = createMotionRoute(path, climbSegments), walk = route.duration;
     this.zone = 'home';
     this.lastFrame = performance.now();
-    return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk * 2 + work, walk, work, path, plotIndex, cropId, resolve }; });
+    return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk * 2 + work, walk, work, path, route, plotIndex, cropId, resolve }; });
   }
   focus(kind: string) { this.focused = kind; this.focusedUntil = performance.now() + 2400; }
   resize() {
+    this.cancelCameraGesture();
     this.endFarmStroke();
     this.endMapGesture();
     const bounds = this.canvas.getBoundingClientRect();
@@ -252,6 +303,7 @@ export class Scene {
   }
   destroy() {
     this.disposed = true;
+    this.cancelCameraGesture();
     this.endFarmStroke(false);
     this.endMapGesture(false);
     this.action?.resolve(); this.action = null;
@@ -262,22 +314,53 @@ export class Scene {
     this.canvas.removeEventListener('pointerup', this.pointer);
     this.canvas.removeEventListener('pointercancel', this.pointerCancel);
     this.canvas.removeEventListener('lostpointercapture', this.pointerCancel);
+    this.canvas.removeEventListener('wheel', this.wheelInput);
     document.removeEventListener('visibilitychange', this.visibility);
     window.removeEventListener('blur', this.blur);
   }
 
-  private endFarmStroke(suppressUp = true) {
+  private endFarmStroke(suppressUp = true, releaseCapture = true) {
+    if (this.pendingFarmTouch) window.clearTimeout(this.pendingFarmTouch.timer);
+    this.pendingFarmTouch = null;
     const stroke = this.farmStroke;
     this.farmStroke = null;
     if (!stroke) return;
     this.cancelledFarmPointer = suppressUp ? stroke.pointerId : null;
-    if (this.canvas.hasPointerCapture(stroke.pointerId)) this.canvas.releasePointerCapture(stroke.pointerId);
+    if (releaseCapture && this.canvas.hasPointerCapture(stroke.pointerId)) this.canvas.releasePointerCapture(stroke.pointerId);
   }
-  private endMapGesture(suppressUp = true) {
+  private endMapGesture(suppressUp = true, releaseCapture = true) {
     const gesture = this.mapGesture; this.mapGesture = null;
     if (!gesture) return;
     this.cancelledMapPointer = suppressUp ? gesture.pointerId : null;
-    if (this.canvas.hasPointerCapture(gesture.pointerId)) this.canvas.releasePointerCapture(gesture.pointerId);
+    if (releaseCapture && this.canvas.hasPointerCapture(gesture.pointerId)) this.canvas.releasePointerCapture(gesture.pointerId);
+  }
+  private flushFarmTouch() {
+    const pending = this.pendingFarmTouch;
+    if (!pending) return;
+    window.clearTimeout(pending.timer); this.pendingFarmTouch = null;
+    if (this.farmStroke?.pointerId === pending.pointerId && !this.pinch.active && !this.suspended) this.paintFarmPoint(...pending.point, false);
+  }
+  private cancelCameraGesture() {
+    const pointers = this.pinch.pointerIds;
+    this.pinch.reset();
+    for (const pointerId of pointers) {
+      this.cancelledGesturePointers.add(pointerId);
+      if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
+    }
+  }
+  private zoomAt(zoom: number, from?: { x: number; y: number }, to = from) {
+    const rect = this.canvas.getBoundingClientRect();
+    const center = { x: this.dx + this.camera.x * this.scale, y: this.dy + this.camera.y * this.scale };
+    const local = (point?: { x: number; y: number }) => point ? { x: point.x - rect.left, y: point.y - rect.top } : center;
+    const change = anchoredCameraChange({ camera: this.camera, scale: this.scale, zoom: this.mapZoom,
+      nextZoom: clampMapZoom(zoom), origin: { x: this.dx, y: this.dy }, center, from: local(from), to: local(to) });
+    const nextPan: Point = [Math.max(-this.mapPanLimit[0], Math.min(this.mapPanLimit[0], this.mapPan[0] + change.delta.x)),
+      Math.max(-this.mapPanLimit[1], Math.min(this.mapPanLimit[1], this.mapPan[1] + change.delta.y))];
+    this.camera.x += nextPan[0] - this.mapPan[0]; this.camera.y += nextPan[1] - this.mapPan[1];
+    this.camera.zoom *= change.ratio;
+    this.mapPan = nextPan; this.mapZoom = change.zoom;
+    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
+    this.render();
   }
   private pointerHits(clientX: number, clientY: number) {
     const rect = this.canvas.getBoundingClientRect();
@@ -370,6 +453,25 @@ export class Scene {
 
   private ease(value: number) { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }
   private actionProgress() { return this.action ? Math.max(0, Math.min(1, (this.action.elapsed - this.action.walk) / this.action.work)) : 0; }
+  private publishAction() {
+    const action = this.action, hero = this.heroState();
+    const round = (value: number) => Math.round(value * 1000) / 1000;
+    const phase = !action ? 'idle' : action.elapsed < action.walk ? 'outbound'
+      : action.elapsed < action.walk + action.work ? 'working' : 'returning';
+    // Read-only scene telemetry also makes pauses, stairs and completion observable.
+    this.canvas.dataset.sceneAction = JSON.stringify({ kind: action?.kind ?? null, phase,
+      elapsed: round(action?.elapsed ?? 0), total: round(action?.duration ?? 0),
+      walk: round(action?.walk ?? 0), work: round(action?.work ?? 0),
+      pose: hero.pose, climbing: hero.climbing ?? null, progress: round(hero.progress),
+      x: round(hero.point[0]), y: round(hero.point[1]), gaitTime: round(hero.time) });
+    const progress = action ? Math.min(100, Math.floor(action.elapsed / action.duration * 100)) : 0;
+    const detail = { kind: action?.kind ?? null, phase, progress, climbing: hero.climbing ?? null, pose: hero.pose };
+    const eventState = JSON.stringify(detail);
+    if (eventState !== this.actionEventState) {
+      this.actionEventState = eventState;
+      this.canvas.dispatchEvent(new CustomEvent('sceneactionchange', { detail }));
+    }
+  }
   private deckBounds() {
     let level = this.state?.deckLevel ?? 1;
     if (this.action?.kind === 'expand') level += this.ease(this.actionProgress());
@@ -384,25 +486,26 @@ export class Scene {
   }
   private rampTop(): Point { return this.p(-225, this.deckBounds().front - 3, 95); }
   private rampBottom(): Point { return [140, 527]; }
-  private followPath(path: Point[], progress: number): { point: Point; facing: 1 | -1 } {
-    const lengths = path.slice(1).map((point, i) => Math.hypot(point[0] - path[i][0], point[1] - path[i][1]));
-    let remaining = lengths.reduce((a, b) => a + b, 0) * Math.max(0, Math.min(1, progress));
-    for (let i = 0; i < lengths.length; i++) {
-      if (remaining <= lengths[i] || i === lengths.length - 1) {
-        const t = lengths[i] ? Math.min(1, remaining / lengths[i]) : 1;
-        return { point: [path[i][0] + (path[i + 1][0] - path[i][0]) * t, path[i][1] + (path[i + 1][1] - path[i][1]) * t], facing: path[i + 1][0] >= path[i][0] ? 1 : -1 };
-      }
-      remaining -= lengths[i];
-    }
-    return { point: path[0], facing: 1 };
-  }
-  private heroState(): { point: Point; pose: HeroPose; facing: 1 | -1; progress: number } {
+  private heroState(): { point: Point; pose: HeroPose; facing: 1 | -1; progress: number; time: number; climbing?: 'up' | 'down' } {
     const action = this.action;
-    if (!action) return { point: this.p(-74, 14, 95), pose: 'idle', facing: 1, progress: 0 };
-    if (action.elapsed < action.walk) return { ...this.followPath(action.path, action.elapsed / action.walk), pose: 'walk', progress: 0 };
-    if (action.elapsed > action.walk + action.work) return { ...this.followPath([...action.path].reverse(), (action.elapsed - action.walk - action.work) / action.walk), pose: 'walk', progress: 1 };
-    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', gather: 'sow' };
-    return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1, progress: this.actionProgress() };
+    if (!action) return { point: this.p(-74, 14, 95), pose: 'idle', facing: 1, progress: 0, time: this.reducedMotion ? 0 : this.time };
+    if (action.elapsed < action.walk) {
+      const motion = sampleMotionRoute(action.route, action.elapsed);
+      return { ...motion, time: motion.distance / 86 };
+    }
+    if (action.elapsed > action.walk + action.work) {
+      const motion = sampleMotionRoute(action.route, action.elapsed - action.walk - action.work, true);
+      return { ...motion, time: motion.distance / 86 };
+    }
+    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', gather: 'gather' };
+    return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
+      progress: this.actionProgress(), time: action.elapsed - action.walk };
+  }
+  private heroOnDeck() {
+    const action = this.action;
+    if (!action || action.kind !== 'chop' && action.kind !== 'gather') return true;
+    const stairEntry = action.route.rampSeconds / 2 + action.route.segments.slice(0, 3).reduce((seconds, segment) => seconds + segment.seconds, 0);
+    return action.elapsed < stairEntry || action.elapsed > action.duration - stairEntry;
   }
   private updateCamera() {
     const { level, left, end, back, front } = this.deckBounds();
@@ -439,18 +542,25 @@ export class Scene {
       let minViewX = Math.min(...xs) - 32, maxViewX = Math.max(...xs) + 24;
       let minViewY = Math.min(...ys) - 98, maxViewY = Math.max(...ys) + 28;
       viewWidth = maxViewX - minViewX; viewHeight = maxViewY - minViewY;
-      this.mapPanLimit = [viewWidth * .6, viewHeight * .6];
       const center: Point = [(minViewX + maxViewX) / 2, (minViewY + maxViewY) / 2];
       const facility = this.selectedFacilityId === null || this.constructionMode || !this.state ? undefined : getSettlement(this.state).buildings.find(building => building.id === this.selectedFacilityId);
       const selectedPoint = facility ? this.p(...SETTLEMENT_SLOTS[facility.slot], 95) : null;
-      const targetX = this.constructionMode ? center[0] : (selectedPoint?.[0] ?? center[0]) + this.mapPan[0];
-      const targetY = this.constructionMode ? center[1] : (selectedPoint ? selectedPoint[1] - 52 : center[1]) + this.mapPan[1];
-      const desiredZoom = this.constructionMode ? 1 : Math.max(this.mapZoom, facility ? 1.35 : 1);
+      const targetX = this.constructionMode ? center[0] : selectedPoint?.[0] ?? center[0];
+      const targetY = this.constructionMode ? center[1] : selectedPoint ? selectedPoint[1] - 52 : center[1];
+      const desiredZoom = facility ? 1.35 : 1;
       target = { x: targetX, y: targetY, zoom: desiredZoom };
     }
-    this.camera.x += (target.x - this.camera.x) * blend;
-    this.camera.y += (target.y - this.camera.y) * blend;
-    this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
+    // One user-controlled magnification works on the truck, farm, grove and during chores.
+    this.mapPanLimit = [viewWidth * .6, viewHeight * .6];
+    this.mapPan = [Math.max(-this.mapPanLimit[0], Math.min(this.mapPanLimit[0], this.mapPan[0])),
+      Math.max(-this.mapPanLimit[1], Math.min(this.mapPanLimit[1], this.mapPan[1]))];
+    target.x += this.mapPan[0]; target.y += this.mapPan[1]; target.zoom *= this.mapZoom;
+    // Automatic focus waits while two fingers are steering the camera, so it cannot pull the anchor away.
+    if (!this.pinch.active) {
+      this.camera.x += (target.x - this.camera.x) * blend;
+      this.camera.y += (target.y - this.camera.y) * blend;
+      this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
+    }
     this.scale = Math.min(this.width / viewWidth, availableHeight / viewHeight) * this.camera.zoom;
     this.dx = this.width / 2 - this.camera.x * this.scale;
     this.dy = safeTop + availableHeight / 2 - this.camera.y * this.scale;
@@ -465,6 +575,7 @@ export class Scene {
     this.updateCamera();
     c.translate(this.dx, this.dy); c.scale(this.scale, this.scale);
     this.hits = [];
+    this.heroDrawn = false;
     this.environment();
     this.truck();
     this.foreground();
@@ -473,6 +584,7 @@ export class Scene {
     this.workEffects();
     this.fireflies();
     this.publishGeometry();
+    this.publishAction();
     // Assets are cached before the next frame; the fallback never hides interactions.
     if (!worldArtReady()) this.label('그림을 불러오는 중…', 470, 45, 13, '#fff2d0');
   }
@@ -549,6 +661,7 @@ export class Scene {
     this.railing(left + 1, back + 4, end, back + 4, 94, false);
     this.railing(left + 2, back + 4, left + 2, deckFront - 2, 94, false);
     this.bunting(); this.settlement(); this.house(); this.farm();
+    if (this.heroOnDeck()) this.hero();
     drawWorldSprite(this.ctx, 'crate', ...this.p(-207, -53, 96), 26, 27);
     const dogU = 90 + Math.sin(this.time * .37) * 55;
     const dogV = -14 + Math.cos(this.time * .37) * 15;
@@ -665,6 +778,8 @@ export class Scene {
     for (let i = 0; i < count; i++) {
       const [u, v] = this.plotPosition(i), plot = plots[i];
       const mid = this.p(u + 35, v + 36, 112);
+      // A resident behind a planter belongs behind its wood and leaves as well.
+      if (!this.heroDrawn && this.heroOnDeck() && this.heroState().point[1] <= mid[1] + 31) this.hero();
       // A painted empty planter provides warm woodgrain and rich detailed soil.
       drawWorldSprite(this.ctx, 'planter', mid[0], mid[1] + 31, 109, 71);
       const soil: [Point, Point, Point, Point] = [this.p(u + 6, v + 6, 106), this.p(u + 63, v + 6, 106), this.p(u + 63, v + 62, 106), this.p(u + 6, v + 62, 106)];
@@ -771,15 +886,17 @@ export class Scene {
   }
 
   private hero() {
+    if (this.heroDrawn) return;
+    this.heroDrawn = true;
     const hero = this.heroState(), [x, y] = hero.point;
     let progress = hero.progress;
     if (hero.pose === 'chop') progress = (progress * 3) % 1;
-    drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: this.reducedMotion && !this.action ? 0 : this.time, progress });
+    drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: hero.time, progress, climbing: hero.climbing });
     this.hits.push({ kind: 'character', x, y: y - 64 * WORLD_HERO_SCALE, radius: 60 * WORLD_HERO_SCALE });
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
-    if (this.action && hero.pose !== 'walk') {
+    if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
       const cropName = CROPS[this.action.cropId].name;
-      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', gather: '쓸 만한 재료 발견!' };
+      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡' };
       const label = labels[this.action.kind];
       const top = y - 128 * WORLD_HERO_SCALE - 32;
       this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
@@ -789,7 +906,8 @@ export class Scene {
 
   private ramp() {
     const top = this.rampTop(), bottom = this.rampBottom();
-    drawWorldStairs(this.ctx, top, bottom);
+    // The atlas anchors run along the right edge; the route follows tread centers.
+    drawWorldStairs(this.ctx, [top[0] + 16.5, top[1] + 6], [bottom[0] + 16.5, bottom[1] + 6]);
     this.ctx.save(); this.ctx.setLineDash([5, 9]);
     this.line([[bottom[0], bottom[1] + 9], [157, 552], [151, 571], [130, 590]], '#e8c987', 2); this.ctx.restore();
   }
@@ -807,6 +925,10 @@ export class Scene {
       c.rotate(swing); drawWorldSprite(c, 'tree', 0, 0, 131, 178); c.restore();
     }
     drawWorldSprite(c, 'stump', 183, 629, 70, 49);
+    // A separate roadside supply pile gives the gathering motion a visible target.
+    drawWorldSprite(c, 'crate', 184, 576, 43, 39);
+    this.line([[173, 568], [184, 564], [191, 568]], '#809087', 3);
+    this.sprig(197, 579, .45);
     this.line([[69, 629], [69, 650]], '#8a693d', 3);
     this.line([[134, 629], [134, 650]], '#8a693d', 3);
     this.round(48, 622, 108, 30, 7, '#f4e4b7', '#8f6b3d');
@@ -887,14 +1009,24 @@ export class Scene {
         this.label('목재 +18', 152, 532 - (progress - .8) * 55, 12, '#617947', 800);
       }
     } else if (action.kind === 'gather') {
-      c.save(); c.translate(hx, hy); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE);
-      this.round(-25, -57, 18, 16, 3, '#d6b17a', '#a1875c');
-      this.line([[-25, -49], [-7, -49]], '#f2d598', 2); c.restore();
+      // The recovered bundle travels from the roadside pile to the survivor's bag.
+      // It never appears as a completed reward before the return journey finishes.
+      const pickedUp = Math.max(0, Math.min(1, (progress - .38) / .24));
+      const stowed = Math.max(0, Math.min(1, (progress - .64) / .25));
+      if (pickedUp > 0 && stowed < 1) {
+        const handX = hx - 26 * WORLD_HERO_SCALE, handY = hy - 37 * WORLD_HERO_SCALE;
+        const packX = hx + 6 * WORLD_HERO_SCALE, packY = hy - 52 * WORLD_HERO_SCALE;
+        const x = 184 + (handX - 184) * pickedUp + (packX - handX) * stowed;
+        const y = 568 + (handY - 568) * pickedUp + (packY - handY) * stowed;
+        c.save(); c.globalAlpha = Math.min(1, pickedUp * 4) * (1 - stowed * stowed);
+        this.round(x - 4, y - 4, 9, 7, 2, '#ad9b78', '#796c52');
+        this.line([[x - 2, y - 3], [x - 2, y + 2]], '#d9c69a', 1); c.restore();
+      }
     } else if (action.kind === 'expand' && progress < .83) {
       c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE); c.rotate(-.8 + Math.sin(progress * Math.PI * 10) * .9);
       this.line([[0, 0], [0, -29]], '#9e7750', 5); this.round(-12, -34, 25, 10, 3, '#8faaa0', '#617e75'); c.restore();
     }
-    if (action.kind !== 'expand' && action.kind !== 'chop' && progress > .78) {
+    if (isFarmAction(action.kind) && progress > .78) {
       for (let i = 0; i < 6; i++) {
         const x = target[0] + Math.cos(i) * 32, y = target[1] - 12 + Math.sin(i) * 22;
         this.line([[x - 3, y], [x + 3, y]], '#fff4b0', 2); this.line([[x, y - 3], [x, y + 3]], '#fff4b0', 2);

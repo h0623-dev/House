@@ -1,12 +1,14 @@
 import '@fontsource-variable/dm-sans';
 import './style.css';
 import './gameplay.css';
+import './growth-quests.css';
+import './map-controls.css';
 import { createGame, performAction, tick, saveGame, loadGame, expansionCost, questList, getCropProgress, resourceLabels, MAX_DECK_LEVEL, beginHunt, finishHunt, cancelHunt, type Action, type Gender, type Resource, type CropId, CROPS, CROP_IDS, getSeedInventory, getSeedCount, getPlotCropId } from './game';
 import { Scene } from './scene';
 import { BUILDINGS, BUILDING_TYPES, getSettlement, getUnlockedSlots, buildFacility, moveFacility, replaceFacility, upgradeFacility, startProduction, collectProduction, getBuiltTypes, type BuildingType } from './settlement';
 import { buildingCatalog, facilitySheet, productionState } from './settlement-ui';
 import { GROWTH_CHAPTERS, getGrowthQuests, getActiveGrowthQuest, claimGrowthQuest } from './growth-quests';
-import { renderGrowthQuestBoard, growthQuestStatusLabel } from './growth-quests-ui';
+import { renderGrowthQuestBoard, updateGrowthQuestBoard } from './growth-quests-ui';
 import { facilityIcon } from './settlement-art';
 import { BattleView } from './battle-view';
 import { STAGE_NAMES, type BattleResult } from './battle';
@@ -43,6 +45,7 @@ let farmTrayOpen=false;
 let selectedFacilityId:number|null=null;
 let placement:{type:BuildingType;slot:number|null;movingId?:number}|null=null;
 let selectedGrowthChapter:number|undefined;
+let questAdvanceGuardUntil=0;
 let questSeedHint:CropId|null=null;
 let paused = false;
 let sound = false;
@@ -82,7 +85,7 @@ app.innerHTML=`
     <div class="scene-weather"><span id="weather-icon">${icon('sun')}</span><div><strong id="clock">08:00</strong><small id="weather-text">기분 좋은 아침</small></div><button data-pause class="time-button" aria-label="시간 일시정지">${icon('pause')}</button></div>
     <div class="scene-tools"><button class="game-tool" data-open="build" aria-label="시설 건설"><span>${icon('hammer')}</span><small>건설</small></button><button class="game-tool" data-open="expand" aria-label="트럭 확장"><span>${icon('expand')}</span><small>확장</small></button><button class="game-tool growth-goals-tool" data-open="settlement-goals" aria-label="마을 성장 목표"><span>${icon('flag')}<b data-growth-ready hidden>!</b></span><small>성장 목표</small></button></div>
     <button class="update-badge" id="update-badge" hidden data-update-notice aria-live="polite"><span>${icon('download')}</span><div><strong></strong><small></small></div></button>
-    <div class="map-controls"><button data-map-zoom="1" aria-label="지도 확대">+</button><button data-map-zoom="-1" aria-label="지도 축소">−</button><button data-farm-toggle aria-label="농사 도구 펼치기"><span>${icon('seeds')}</span><small>농사 도구</small></button></div>
+    <div class="map-controls" role="group" aria-label="지도 확대와 축소"><button data-map-zoom="1" aria-label="지도 확대"><span>+</span><small>확대</small></button><button data-map-reset aria-label="지도 기본 크기로 보기"><strong data-map-percent>100%</strong><small>기본 보기</small></button><button data-map-zoom="-1" aria-label="지도 축소"><span>−</span><small>축소</small></button><button data-farm-toggle aria-label="농사 도구 펼치기"><span>${icon('seeds')}</span><small>농사 도구</small></button></div>
     <button class="settlement-objective" id="settlement-objective" data-next-goal aria-label="마을 성장 목표 확인"><span>${icon('flag')}</span><div><small id="objective-chapter">도로 위 우리 마을</small><strong id="objective-title">첫 목표를 확인해 보세요</strong><p id="objective-detail">작은 목표를 따라 우리 마을을 키워요</p><div class="objective-progress" aria-hidden="true"><i></i></div></div>${icon('chevron')}</button>
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
@@ -122,6 +125,23 @@ const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number)=>{
  if(kind==='grove'){setZone('grove');renderControls();}
  if(kind==='grove-work'){setZone('grove');renderControls();void action('chop');}
 });
+function updateZoomControls(){
+ const zoom=scene.getMapZoom();
+ document.querySelector('[data-map-percent]')!.textContent=`${Math.round(zoom*100)}%`;
+ document.querySelector<HTMLButtonElement>('[data-map-zoom="1"]')!.disabled=zoom>=2.5-.001;
+ document.querySelector<HTMLButtonElement>('[data-map-zoom="-1"]')!.disabled=zoom<=.75+.001;
+ document.querySelector('[data-map-reset]')!.setAttribute('aria-label',`현재 지도 ${Math.round(zoom*100)}%, 기본 크기로 보기`);
+}
+document.querySelector('#world')!.addEventListener('scenezoomchange',updateZoomControls);
+document.querySelector('#world')!.addEventListener('sceneactionchange',event=>{
+ const detail=(event as CustomEvent<{phase:string;progress:number;climbing:'up'|'down'|null}>).detail;
+ const status=document.querySelector<HTMLElement>('.chore-status')!;if(status.hidden)return;
+ const phase=status.querySelector('[data-chore-phase]'),track=status.querySelector<HTMLElement>('.chore-track');
+ const text=detail.climbing==='down'?'사다리 내려가는 중':detail.climbing==='up'?'사다리 올라가는 중':detail.phase==='working'?'작업 중':detail.phase==='returning'?'돌아오는 중':'이동 중';
+ if(phase&&phase.textContent!==text)phase.textContent=text;
+ if(track){track.setAttribute('aria-valuenow',String(detail.progress));track.querySelector<HTMLElement>('i')!.style.width=`${detail.progress}%`;}
+});
+updateZoomControls();
 function setFarmTray(open:boolean){
  farmTrayOpen=open;document.querySelector<HTMLElement>('#farm-tray')!.hidden=!open;
  document.querySelector('.scene-card')!.classList.toggle('farm-tray-open',open);
@@ -202,34 +222,18 @@ function openGrowthBoard(chapter?:number){
 }
 function renderGrowthBoard(){
  const board=document.querySelector<HTMLElement>('[data-growth-board]');if(!board||currentModal!=='settlement-goals')return;
- const quests=getGrowthQuests(state),claimed=quests.filter(q=>q.status==='claimed').length;
- board.querySelector('[data-growth-claimed-count]')!.textContent=String(claimed);
- board.querySelector('[data-growth-overview-title]')!.textContent=claimed===quests.length?'우리 마을의 모든 이야기를 완성했어요':'목표를 달성하고 보상을 받아요';
- const chapter=Number(board.dataset.selectedChapter),items=quests.filter(q=>q.chapter===chapter);
- board.querySelector('[data-growth-chapter-count]')!.textContent=`${items.filter(q=>q.status==='claimed').length} / ${items.length}`;
- board.querySelectorAll<HTMLButtonElement>('[data-quest-chapter]').forEach(button=>{
-  const chapterQuests=quests.filter(q=>q.chapter===Number(button.dataset.questChapter)),complete=chapterQuests.every(q=>q.status==='claimed'),locked=chapterQuests.every(q=>q.status==='locked');
-  button.classList.toggle('completed',complete);button.classList.toggle('locked',locked);button.classList.toggle('unlocked',!locked&&!complete);
-  button.querySelector('[data-growth-chapter-status]')!.textContent=complete?'완료':locked?'미리 보기':'진행 중';
-  const number=button.querySelector<HTMLElement>('.growth-chapter-number')!;if(number.dataset.completed!==String(complete)){number.innerHTML=complete?icon('check'):String(button.dataset.questChapter).padStart(2,'0');number.dataset.completed=String(complete);}
- });
- items.forEach(quest=>{
-  const card=board.querySelector<HTMLElement>(`[data-growth-quest="${quest.id}"]`);if(!card)return;
-  if(card.dataset.questState!==quest.status){card.classList.remove('active','ready','claimed','locked');card.classList.add(quest.status);card.dataset.questState=quest.status;}
-  card.querySelector('[data-quest-status]')!.textContent=growthQuestStatusLabel(quest.status);
-  card.querySelector('[data-quest-count]')!.textContent=`${Math.min(quest.current,quest.target)} / ${quest.target}`;
-  const progress=card.querySelector<HTMLElement>('[data-quest-progress]')!;progress.setAttribute('aria-valuenow',String(Math.min(quest.current,quest.target)));progress.querySelector<HTMLElement>('span')!.style.width=`${Math.min(100,quest.current/quest.target*100)}%`;
-  (['hint','goto','claim','locked','claimed'] as const).forEach(part=>{card.querySelector<HTMLElement>(`[data-quest-${part}]`)!.hidden=part==='goto'||part==='hint'?quest.status!=='active':part==='claim'?quest.status!=='ready':part==='locked'?quest.status!=='locked':quest.status!=='claimed';});
- });
+ updateGrowthQuestBoard(board,state);
 }
 function claimGrowthReward(id:string){
- if(actionBusy||battleView||contentActivationPending)return;
+ if(actionBusy||battleView||contentActivationPending||performance.now()<questAdvanceGuardUntil)return;
  const result=claimGrowthQuest(state,id);if(!result.ok){toast(result.message);return;}
- state=result.state;persist();render();ping();toast(result.message);
- const active=getActiveGrowthQuest(state);
- if(active&&active.chapter!==selectedGrowthChapter){selectedGrowthChapter=active.chapter;const modal=document.querySelector<HTMLElement>('[data-growth-board]');if(modal){modal.outerHTML=renderGrowthQuestBoard(state,selectedGrowthChapter);document.querySelector<HTMLElement>('#modal-root .modal')!.scrollTop=0;}}
- else if(active)requestAnimationFrame(()=>document.querySelector<HTMLElement>(`[data-growth-quest="${active.id}"]`)?.scrollIntoView({block:'nearest',behavior:'smooth'}));
+ questAdvanceGuardUntil=performance.now()+450;
+ state=result.state;persist();render();ping();toast(getActiveGrowthQuest(state)?'보상을 받았어요. 다음 목표를 확인해 주세요.':'모든 성장 목표를 완성했어요!');
+ selectedGrowthChapter=getActiveGrowthQuest(state)?.chapter??GROWTH_CHAPTERS.at(-1)!.id;
+ const modal=document.querySelector<HTMLElement>('#modal-root .modal');if(modal)modal.scrollTop=0;
+ requestAnimationFrame(()=>document.querySelector<HTMLElement>('[data-growth-current] [data-quest-goto]:not([hidden]),[data-growth-current] [data-quest-claim]:not([hidden])')?.focus({preventScroll:true}));
 }
+
 function showQuestBuild(type?:BuildingType){
  if(type&&state.deckLevel<BUILDINGS[type].unlockLevel){openModal('expand');toast(`${BUILDINGS[type].name}을 지으려면 데크 Lv.${BUILDINGS[type].unlockLevel}이 필요해요.`);return;}
  if(getSettlement(state).buildings.length>=getUnlockedSlots(state)){openReplacementTargets(type);return;}
@@ -561,7 +565,7 @@ async function action(a:Action,plotId?:number,cropId:CropId=selectedCropId,queue
   setZone(a==='chop'?'grove':'home',['plant','water','harvest'].includes(a));renderControls();
   const status=document.querySelector<HTMLElement>('.chore-status')!;
   const cropLabel=a==='plant'?`${CROPS[cropId].name} 씨앗을 ${plotId}번 밭에 심고 있어요`:a==='harvest'?`${CROPS[getPlotCropId(state.plots.find(p=>p.id===plotId)??state.plots[0])].name}을 바구니에 담고 있어요`:choreLabels[a as ChoreAction];
-  status.innerHTML=`<span class="chore-pulse">${a==='plant'?cropIcon(cropId,'seed'):icon(a==='chop'?'wood':a==='expand'?'hammer':'seeds')}</span><div><strong>${escape(state.name)}의 작은 일상</strong><span>${cropLabel}</span><div class="chore-track"><i></i></div></div>`;
+  status.innerHTML=`<span class="chore-pulse">${a==='plant'?cropIcon(cropId,'seed'):icon(a==='chop'?'wood':a==='expand'?'hammer':'seeds')}</span><div><strong>${escape(state.name)}의 작은 일상<small data-chore-phase>이동 중</small></strong><span>${cropLabel}</span><div class="chore-track" role="progressbar" aria-label="이동과 작업 진행" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-live="off"><i style="width:0%"></i></div></div>`;
   status.hidden=false;
   try { await scene.playAction(a as ChoreAction,plotId,cropId); }
   catch {toast('작업을 마치지 못했어요. 다시 시도해 주세요.');status.hidden=true;actionBusy=false;app.removeAttribute('aria-busy');renderControls();return false;}
@@ -626,7 +630,7 @@ function renderBag(){
 }
 function openModal(kind:string){if(kind==='seeds'){openSeedInventory();return;}if(actionBusy||battleView)return;document.querySelector('#toast')!.classList.remove('visible');clearTimeout(toastTimer);cancelConstruction();closeFacility();stopFarmMode();currentModal=kind;updateNav();
  if(kind==='build'){setZone('home');setFarmTray(false);closeFacility();modalShell('BUILD OUR TRUCK VILLAGE','트럭 위 마을 건설',buildingCatalog(state),true);}
- if(kind==='settlement-goals'){selectedGrowthChapter??=getActiveGrowthQuest(state)?.chapter;modalShell('OUR VILLAGE GROWS ONE STEP AT A TIME','트럭 마을 성장 이야기',renderGrowthQuestBoard(state,selectedGrowthChapter),true);}
+ if(kind==='settlement-goals'){selectedGrowthChapter??=getActiveGrowthQuest(state)?.chapter;modalShell('CURRENT QUEST','마을 성장 목표',renderGrowthQuestBoard(state,selectedGrowthChapter),true);}
  if(kind==='farm')modalShell('LITTLE GARDEN','트럭 위 작은 텃밭',`<div id="farm-content">${farmContent()}</div>`,true);
  if(kind==='bag')modalShell('THINGS WE FOUND','우리의 배낭',`<div id="bag-content">${bagContent()}</div>`,true);
  if(kind==='expand'){const cost=expansionCost(state);modalShell('A LITTLE MORE ROOM','우리집을 넓혀 볼까요?',`<div class="expansion-art">${icon('truck')}<span>Lv.${state.deckLevel}</span>${icon('arrow')}<span>${state.deckLevel>=MAX_DECK_LEVEL?'MAX':`Lv.${state.deckLevel+1}`}</span></div><p class="modal-description">옆으로 펼쳐지는 새 데크와 넓어진 통로를 직접 확인해 보세요.<br>확장할 때마다 울타리와 새 텃밭도 함께 늘어나요.</p><div class="cost-row"><span class="${state.resources.wood>=cost.wood?'':'insufficient'}">${icon('wood')} 목재 <strong>${state.resources.wood} / ${cost.wood}</strong></span><span class="${state.resources.scrap>=cost.scrap?'':'insufficient'}">${icon('scrap')} 고철 <strong>${state.resources.scrap} / ${cost.scrap}</strong></span></div><button class="button full-width" data-action="expand" ${state.deckLevel>=MAX_DECK_LEVEL?'disabled':''}>${icon('hammer')} ${state.deckLevel>=MAX_DECK_LEVEL?'최대 크기의 우리집이에요':'데크 확장하기'}</button><button class="text-button full-width" data-action="repair">${icon('shield')} 트럭 수리 · 현재 내구도 ${state.truckHealth}%</button>`);}
@@ -715,6 +719,7 @@ document.addEventListener('click',e=>{
  if(t.hasAttribute('data-construction-cancel')){cancelConstruction();renderSettlement();return;}
  if(t.hasAttribute('data-construction-confirm')){confirmConstruction();return;}
  if(t.hasAttribute('data-facility-close')){closeFacility();return;}
+ if(t.hasAttribute('data-map-reset')){scene.resetMapView();return;}
  if(t.dataset.mapZoom){scene.setMapZoom(scene.getMapZoom()*(Number(t.dataset.mapZoom)>0?1.25:.8));return;}
  if(t.hasAttribute('data-farm-toggle')){
   const toggle=()=>{cancelConstruction();closeFacility();if(farmTrayOpen){afterFarm=null;stopFarmMode();setFarmTray(false);}else setFarmTray(true);};
@@ -729,7 +734,7 @@ document.addEventListener('click',e=>{
  if(t.hasAttribute('data-next-goal')){if(runningFarm&&actionBusy)afterCurrentFarm(()=>openGrowthBoard());else if(!actionBusy)openGrowthBoard();return;}
  if(t.dataset.questChapter){openGrowthBoard(Number(t.dataset.questChapter));return;}
  if(t.dataset.questClaim){claimGrowthReward(t.dataset.questClaim);return;}
- if(t.dataset.questGoto){goToGrowthQuest(t.dataset.questGoto);return;}
+ if(t.dataset.questGoto){if(performance.now()>=questAdvanceGuardUntil)goToGrowthQuest(t.dataset.questGoto);return;}
  if(t.dataset.replacementTarget){openFacilityReplacement(Number(t.dataset.replacementTarget),t.dataset.replacementType as BuildingType|undefined);return;}
  if(t.dataset.facilityReplace){openFacilityReplacement(Number(t.dataset.facilityReplace));return;}
  if(t.dataset.replaceType&&BUILDING_TYPES.includes(t.dataset.replaceType as BuildingType)){confirmFacilityReplacement(Number(t.dataset.replaceFacility),t.dataset.replaceType as BuildingType);return;}

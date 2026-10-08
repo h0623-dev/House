@@ -221,7 +221,7 @@ try {
  assert.deepEqual(stableSave(await saved()), stableSave(originalSave));
  await touch(page.locator('[data-nav="farm"]')); await touch(page.locator('[data-quick="gather"]'));
  await page.waitForFunction(() => document.querySelector('#app').hasAttribute('aria-busy'));
- await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 10000 });
+ await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 30000 });
  assert.equal((await saved()).stats.gathers, originalSave.stats.gathers + 1, 'ordinary animated work remains usable after startup activation failure');
  await record('A rejected startup activation restores the existing game without an immediate retry loop; actual animated gathering persists normally'); await context.close();
 

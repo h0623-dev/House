@@ -1,0 +1,15 @@
+.map-controls>button[data-map-zoom],.map-controls>button[data-map-reset]{flex-direction:column;gap:0;min-width:44px;min-height:48px;width:48px;height:48px;line-height:1}
+.map-controls>button[data-map-zoom]>span{font-size:24px;line-height:26px}
+.map-controls>button[data-map-reset]>strong{font-size:12px;line-height:23px;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.map-controls>button[data-map-zoom]>small,.map-controls>button[data-map-reset]>small{font-size:9px;line-height:13px;font-weight:700}
+.map-controls>button:disabled{opacity:.5;cursor:default}
+.map-controls>button[data-farm-toggle]{width:48px}
+.work-view .map-controls>button[data-map-zoom],.construction-mode .map-controls>button[data-map-zoom]{display:flex}
+.farm-tray-open .map-controls,.construction-mode .map-controls,.facility-selected .map-controls{flex-direction:row;align-items:center}
+.map-controls>button:focus-visible{outline:3px solid #456b3f;outline-offset:2px}
+.chore-status{left:12px;transform:none;width:min(calc(100% - 82px),360px)}
+.chore-status strong{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.chore-status [data-chore-phase]{font-size:9px;font-weight:600;color:#53694d}
+.chore-track i{animation:none;transition:width .15s linear}
+.farm-tray-open .chore-status{bottom:212px}
+@media(orientation:landscape) and (max-height:600px){.map-controls>button[data-map-zoom],.map-controls>button[data-map-reset]{min-height:44px;height:44px}.map-controls>button[data-farm-toggle]{width:55px}.farm-tray-open .chore-status{bottom:115px}}

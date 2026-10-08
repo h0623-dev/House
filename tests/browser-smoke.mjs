@@ -173,8 +173,9 @@ async function chore(button, assertNotApplied, { workScreenshot, repeatTap = fal
  await page.clock.runFor(1300);
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true', 'the character must visibly work before resources change');
  if (workScreenshot) await screenshot(workScreenshot);
- await page.clock.runFor(5000);
- assert.equal(await page.locator('#app').getAttribute('aria-busy'), null);
+ // Travel now follows physical distance, including the complete ladder trip.
+ for (let elapsed = 0; elapsed < 30000 && await page.locator('#app').getAttribute('aria-busy'); elapsed += 500) await page.clock.runFor(500);
+ assert.equal(await page.locator('#app').getAttribute('aria-busy'), null, 'the distance-based chore completes within the bounded route time');
 }
 
 async function enterBattle(stage = 1) {

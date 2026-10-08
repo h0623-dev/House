@@ -1,13 +1,14 @@
 import { heroFrame, heroImages, type SurvivorFrame } from './character-art';
 
 /** The village and expeditions share one compact, painted survivor. */
-export type HeroPose = 'idle' | 'walk' | 'sow' | 'water' | 'harvest' | 'chop' | 'attack' | 'skill' | 'hurt' | 'celebrate';
+export type HeroPose = 'idle' | 'walk' | 'climb' | 'gather' | 'sow' | 'water' | 'harvest' | 'chop' | 'attack' | 'skill' | 'hurt' | 'celebrate';
 export interface HeroOptions {
   x: number; y: number; scale: number; time: number;
   gender: 'female' | 'male'; pose: HeroPose; facing: 1 | -1; progress?: number;
+  climbing?: 'up' | 'down';
 }
 const TAU = Math.PI * 2;
-const WORK_POSES = new Set<HeroPose>(['sow', 'water', 'harvest', 'chop']);
+const WORK_POSES = new Set<HeroPose>(['gather', 'sow', 'water', 'harvest', 'chop']);
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 
 /** A stationary, warm contact shadow keeps the boots on the painted deck. */
@@ -59,6 +60,14 @@ function drawIllustration(c: CanvasRenderingContext2D, frame: SurvivorFrame): vo
   // height made the old working poses visibly inflate their heads and bodies.
   const unit = 128 / (frame.referenceHeight ?? frame.footY - frame.y);
   c.save();
+  if (frame.clip) {
+    c.beginPath();
+    frame.clip.forEach(([x, y], index) => {
+      const cx = (x - frame.footX) * unit, cy = (y - frame.footY) * unit;
+      if (index === 0) c.moveTo(cx, cy); else c.lineTo(cx, cy);
+    });
+    c.closePath(); c.clip();
+  }
   c.drawImage(image, frame.x, frame.y, frame.width, frame.height,
     (frame.x - frame.footX) * unit, (frame.y - frame.footY) * unit,
     frame.width * unit, frame.height * unit);
@@ -67,26 +76,26 @@ function drawIllustration(c: CanvasRenderingContext2D, frame: SurvivorFrame): vo
 
 /** x/y are the soles; a standing survivor is 128 world pixels at scale 1. */
 export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
-  const frame = heroFrame(o.gender, o.pose, o.time);
+  const frame = heroFrame(o.gender, o.pose, o.time, o.progress, o.climbing);
   const image = heroImages[frame.sheet];
   if (!image.complete || !image.naturalWidth) {
     drawLoadingHero(c, o);
     return;
   }
-  const t = o.time, walking = o.pose === 'walk', working = WORK_POSES.has(o.pose);
+  const t = o.time, walking = o.pose === 'walk', climbing = o.pose === 'climb', working = WORK_POSES.has(o.pose);
   const combat = o.pose === 'attack' || o.pose === 'skill';
   const phase = o.progress === undefined ? (t * (o.pose === 'chop' ? 1.45 : 1.1)) % 1 : clamp(o.progress);
   const impulse = Math.sin(phase * Math.PI), stride = Math.sin(t * 9);
-  const bob = walking ? -Math.abs(stride) * 1.35
+  const bob = walking ? -Math.abs(stride) * .8
     : o.pose === 'celebrate' ? -Math.abs(Math.sin(t * 6)) * 4 : 0;
-  const lean = walking ? stride * .009
-    : o.pose === 'chop' ? -.035 + impulse * .075
+  const lean = o.pose === 'chop' ? -.035 + impulse * .075
     : o.pose === 'sow' || o.pose === 'harvest' ? Math.sin(t * 4.4) * .011
     : combat ? -.022 + impulse * .055 : o.pose === 'hurt' ? -.045 : 0;
-  const breath = walking || combat ? 0 : Math.sin(t * 2.2) * .0025;
+  const breath = walking || climbing || combat ? 0 : Math.sin(t * 2.2) * .0025;
   const press = working ? Math.sin(phase * TAU) * .006 : combat ? -impulse * .012 : 0;
   c.save(); c.translate(o.x, o.y); c.scale(o.scale * o.facing, o.scale);
-  drawContactShadow(c, combat || o.pose === 'chop' ? 1.08 : 1);
+  // Climbing feet grip ladder rungs; a ground shadow here looked detached.
+  if (!climbing) drawContactShadow(c, combat || o.pose === 'chop' ? 1.08 : o.pose === 'gather' ? .9 : 1);
   // Breathing scales around the soles instead of lifting a flat cutout off the ground.
   c.translate(0, bob); c.rotate(lean); c.scale(1 - breath * .35, 1 + breath + press);
   if (o.pose === 'hurt') c.globalAlpha *= .72 + Math.abs(Math.sin(t * 16)) * .28;

@@ -68,7 +68,7 @@ async function waitBusy() {
  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'true', null, { timeout: 1500 });
  assert.equal(await page.locator('.chore-status').isVisible(), true, 'a character visibly performs the farming work');
 }
-async function waitIdle(name, started, timeout = 32000) {
+async function waitIdle(name, started, timeout = 70000) {
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout });
  timings.push({ name, elapsedMs: Date.now() - started });
  assert.ok(Date.now() - started < timeout, `${name} finishes in bounded real browser time`);
@@ -128,6 +128,10 @@ async function assertFits(width, height) {
   const box = await quick(action).boundingBox();
   assert.ok(box && box.width >= 44 && box.height >= 44 && box.y >= 0 && box.y + box.height <= height + 1, `${action} keeps a finger-sized target`);
  }
+ for (const selector of ['[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-open="settlement-goals"]']) {
+  const control = page.locator(selector), box = await control.boundingBox(); assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${selector} stays visible beside the open farming tools`);
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }; assert.equal(await control.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, `${selector} is not covered by another farming HUD control`);
+ }
  for (const selector of ['[data-plant-all]', '[data-plant-cancel]']) {
   const box = await toolbar().locator(selector).boundingBox();
   assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${selector} stays reachable`);
@@ -166,14 +170,14 @@ try {
   const height = width === 360 ? 740 : 844, context = await createContext(width, height), fresh = await save();
   assert.equal(fresh.seedInventory.potato, 3, 'a normal new game can plant a chosen non-carrot variety repeatedly');
   await chooseSeed('potato');
-  let start = Date.now(); await touchPlot(3); await waitBusy(); await waitIdle(`normal-potato-first-${width}`, start, 8500);
+  let start = Date.now(); await touchPlot(3); await waitBusy(); await waitIdle(`normal-potato-first-${width}`, start, 14000);
   assert.equal((await save()).seedInventory.potato, 2); await mode('plant'); await stop();
-  start = Date.now(); await touch(quick('harvest')); await waitBusy(); await waitIdle(`normal-carrot-harvest-${width}`, start, 8500); await stop();
+  start = Date.now(); await touch(quick('harvest')); await waitBusy(); await waitIdle(`normal-carrot-harvest-${width}`, start, 14000); await stop();
   await page.reload(); await page.locator('#resident-name').getByText(fresh.name, { exact: true }).waitFor(); await pauseWorld();
   await touch(quick('plant')); await mode('plant');
   assert.equal(await page.locator('#modal-root').isVisible(), false, 'reusing the remembered seed avoids another inventory selection');
   assert.match(await page.locator('#planting-seed-name').innerText(), /감자/);
-  await page.waitForTimeout(1300); start = Date.now(); await touchPlot(1); await waitBusy(); await waitIdle(`remembered-potato-second-${width}`, start, 8500);
+  await page.waitForTimeout(1300); start = Date.now(); await touchPlot(1); await waitBusy(); await waitIdle(`remembered-potato-second-${width}`, start, 14000);
   assert.equal((await save()).plots[0].cropId, 'potato'); assert.equal((await save()).seedInventory.potato, 1); await stop();
   cases.push(`Normal starter potato stock supports repeated sowing; cancel and reload retain selected seed at ${width}×${height}`);
 
@@ -212,7 +216,7 @@ try {
 
    const empty = lateFixture(fresh); await fixture(empty); await chooseSeed('tomato');
    start = Date.now(); await touchPlot(1); await waitBusy(); await touchPlot(2); await touch(quick('water'));
-   await waitIdle('plant-to-water-switch-includes-current-plant', start, 14000); state = await save();
+   await waitIdle('plant-to-water-switch-includes-current-plant', start, 25000); state = await save();
    assert.equal(state.plots[0].cropId, 'tomato'); assert.equal(state.plots[0].watered, true, 'deferred global water includes the just-finished planting');
    assert.equal(state.plots[1].plantedAt, null, 'switching tools cancels future planting');
    assert.equal(state.seedInventory.tomato, 3); assert.equal(state.resources.water, empty.resources.water - 1); assert.equal(state.energy, 93);
@@ -220,27 +224,27 @@ try {
 
    const canceled = lateFixture(fresh, 'dry'); await fixture(canceled); start = Date.now();
    await touch(quick('water')); await waitBusy(); await touch(toolbar().locator('[data-plant-cancel]'));
-   await waitIdle('cancel-global-water-after-current', start, 8500); state = await save();
+   await waitIdle('cancel-global-water-after-current', start, 25000); state = await save();
    assert.equal(state.plots.filter(plot => plot.watered).length, 1); assert.equal(state.resources.water, canceled.resources.water - 1); assert.equal(state.energy, 97);
    assert.equal(await toolbar().isVisible(), false, 'cancel ends the tool after completing only its current job');
 
    const tired = lateFixture(fresh, 'dry'); tired.energy = 0; await fixture(tired); await selectPlot(1);
    await touch(page.locator('#plot-action')); assert.match(await page.locator('.activity-block-reason').innerText(), /기력|기운/);
    assert.equal((await save()).resources.water, tired.resources.water); assert.equal((await save()).plots[0].watered, false);
-   start = Date.now(); await touch(page.locator('[data-rest-retry="water"]')); await waitBusy(); await waitIdle('rest-retry-context-water-single', start, 8500);
+   start = Date.now(); await touch(page.locator('[data-rest-retry="water"]')); await waitBusy(); await waitIdle('rest-retry-context-water-single', start, 14000);
    state = await save(); assert.equal(state.plots.filter(plot => plot.watered).length, 1); assert.equal(state.energy, 52);
    assert.equal(state.resources.water, tired.resources.water - 2); assert.equal(state.resources.food, tired.resources.food - 1); await mode('water');
-   await page.waitForTimeout(1300); start = Date.now(); await touchPlot(2); await waitBusy(); await waitIdle('continue-water-after-recovery', start, 8500);
+   await page.waitForTimeout(1300); start = Date.now(); await touchPlot(2); await waitBusy(); await waitIdle('continue-water-after-recovery', start, 14000);
    assert.equal((await save()).plots.filter(plot => plot.watered).length, 2); assert.equal((await save()).energy, 49); await stop();
 
    const existing = lateFixture(fresh); existing.seedInventory = { carrot: 3, potato: 1, tomato: 1, corn: 1, strawberry: 1, pumpkin: 1 }; existing.resources.seeds = 8;
    await fixture(existing); assert.equal((await save()).seedInventory.potato, 1, 'a v0.6 save receives no unsolicited inventory grant');
-   await chooseSeed('potato'); start = Date.now(); await touchPlot(1); await waitBusy(); await touchPlot(2); await waitIdle('existing-one-potato-seed-respects-stock', start, 8500);
+   await chooseSeed('potato'); start = Date.now(); await touchPlot(1); await waitBusy(); await touchPlot(2); await waitIdle('existing-one-potato-seed-respects-stock', start, 14000);
    assert.equal((await save()).seedInventory.potato, 0); assert.equal((await save()).plots[1].plantedAt, null);
    await page.waitForTimeout(1300); await touchPlot(2); assert.match(await page.locator('.activity-block-reason').innerText(), /감자 씨앗/);
-   start = Date.now(); await touch(page.locator('#modal-root [data-action="gather"]')); await waitBusy(); await waitIdle('existing-player-discovers-three-potato-seeds', start, 8500);
+   start = Date.now(); await touch(page.locator('#modal-root [data-action="gather"]')); await waitBusy(); await waitIdle('existing-player-discovers-three-potato-seeds', start, 30000);
    assert.equal((await save()).seedInventory.potato, 3); await chooseSeed('potato');
-   start = Date.now(); await touch(quick('plant')); await waitBusy(); await touch(quick('plant')); await waitIdle('remembered-plant-all-uses-three-seed-pack-once', start, 15000);
+   start = Date.now(); await touch(quick('plant')); await waitBusy(); await touch(quick('plant')); await waitIdle('remembered-plant-all-uses-three-seed-pack-once', start, 30000);
    state = await save(); assert.equal(state.plots.filter(plot => plot.cropId === 'potato').length, 4); assert.equal(state.seedInventory.potato, 0);
    assert.equal(state.resources.seeds, 7); assert.equal(state.energy, 74); await mode('plant'); await stop();
    cases.push('Actual touch drag adds distinct dry plots once; context tools remain selected; tool switching finishes the current planting and then waters it; cancel drops future work; explicit rest resumes a persistent water tool');
@@ -250,10 +254,10 @@ try {
    state = await save(); assert.equal(state.plots.filter(plot => plot.watered).length, 2); assert.equal(state.resources.water, 0); assert.equal(state.energy, 94); await mode('water');
    await page.waitForTimeout(1300); await touchPlot(3); assert.match(await page.locator('.activity-block-reason').innerText(), /물/);
    assert.equal((await save()).energy, 94); assert.equal((await save()).plots[2].watered, false);
-   start = Date.now(); await touch(page.locator('#modal-root [data-action="gather"]')); await waitBusy(); await waitIdle('gather-water-and-three-seed-pack', start, 8500);
+   start = Date.now(); await touch(page.locator('#modal-root [data-action="gather"]')); await waitBusy(); await waitIdle('gather-water-and-three-seed-pack', start, 30000);
    state = await save(); assert.equal(state.resources.water, 4); assert.equal(state.resources.seeds, limited.resources.seeds + 3);
    assert.equal(state.seedInventory.potato, limited.seedInventory.potato + 3);
-   start = Date.now(); await touch(quick('water')); await waitBusy(); await waitIdle('continue-global-water-after-resupply', start, 20000);
+   start = Date.now(); await touch(quick('water')); await waitBusy(); await waitIdle('continue-global-water-after-resupply', start, 45000);
    state = await save(); assert.equal(state.plots.filter(plot => plot.watered).length, 6); assert.equal(state.resources.water, 0); assert.equal(state.energy, 72); await mode('water'); await stop();
 
    await page.setViewportSize({ width: 844, height: 390 }); const landscape = lateFixture(fresh, 'dry', 2); await fixture(landscape);
@@ -270,7 +274,7 @@ try {
   await context.close();
  }
  const slowContext = await createContext(360, 740, true), fresh = await save(), slow = lateFixture(fresh, 'dry', 3); await fixture(slow);
- const slowStart = Date.now(); await touch(quick('water')); await waitBusy(); await waitIdle('three-watering-jobs-at-350ms-visible-frames', slowStart, 17000);
+ const slowStart = Date.now(); await touch(quick('water')); await waitBusy(); await waitIdle('three-watering-jobs-at-350ms-visible-frames', slowStart, 35000);
  const state = await save(); assert.equal(state.plots.filter(plot => plot.watered).length, 3); assert.equal(state.resources.water, slow.resources.water - 3); assert.equal(state.energy, 91);
  await slowContext.close();
  assert.equal(canceledImageRequests.every(url => successfulImages.has(url)), true, 'every canceled redundant SVG image also loaded successfully');

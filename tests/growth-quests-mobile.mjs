@@ -21,6 +21,7 @@ let page;
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-haven-save-v1')));
 const quest = id => GROWTH_QUESTS.find(quest => quest.id === id);
 const card = id => page.locator(`[data-growth-quest="${id}"]`);
+const history = id => page.locator(`[data-growth-history="${id}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const claimed = state => state.growthQuests?.claimed ?? [];
 const facilities = state => state.settlement?.buildings ?? [];
@@ -55,13 +56,21 @@ async function makeContext(width, height) {
  await page.goto(baseUrl); await page.waitForLoadState('networkidle'); await touch(page.locator('[data-start]')); await pauseWorld();
  return context;
 }
+async function touchSummary(locator) {
+ await locator.scrollIntoViewIfNeeded(); const box = await locator.boundingBox(); assert.ok(box && box.width >= 44 && box.height >= 44, 'optional detail controls remain finger sized');
+ const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+ assert.equal(await locator.evaluate((summary, point) => document.elementFromPoint(point.x, point.y)?.closest('summary') === summary, point), true);
+ await page.touchscreen.tap(point.x, point.y);
+}
 async function openBoard(id) {
  if (!await page.locator('[data-growth-board]').isVisible()) await touch(page.locator('[data-open="settlement-goals"]'));
  await page.locator('[data-growth-board]').waitFor();
- if (id && await page.locator('[data-growth-board]').getAttribute('data-selected-chapter') !== String(quest(id).chapter)) await touch(page.locator(`[data-quest-chapter="${quest(id).chapter}"]`));
- if (id) await card(id).waitFor();
+ if (id && !await card(id).count()) {
+  const all = page.locator('[data-growth-all-goals]'); if (!await all.evaluate(element => element.open)) await touchSummary(all.locator(':scope > summary'));
+  const row = history(id); if (!await row.evaluate(element => element.open)) await touchSummary(row.locator(':scope > summary'));
+ }
 }
-async function uiStatus(id, status) { await openBoard(id); assert.equal(await card(id).getAttribute('data-quest-state'), status); }
+async function uiStatus(id, status) { await openBoard(id); assert.equal(await (await card(id).count() ? card(id) : history(id)).getAttribute('data-quest-state'), status); }
 async function go(id, { works = false } = {}) {
  await openBoard(id); assert.equal(await card(id).getAttribute('data-quest-state'), 'active');
  const before = await saved(); await touch(card(id).locator(`[data-quest-goto="${id}"]`));
@@ -71,7 +80,7 @@ async function go(id, { works = false } = {}) {
  return before;
 }
 async function waitBusy() { await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'true', null, { timeout: 1500 }); assert.equal(await page.locator('.chore-status').isVisible(), true); }
-async function waitIdle(name, started = Date.now(), timeout = 18000) {
+async function waitIdle(name, started = Date.now(), timeout = 30000) {
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout });
  timings.push({ name, elapsedMs: Date.now() - started }); assert.ok(Date.now() - started < timeout, `${name} ends in bounded real browser time`); assert.equal(await page.locator('.chore-status').isVisible(), false);
 }
@@ -91,6 +100,9 @@ async function claim(id, { repeat = false, reloadAfter = false } = {}) {
  const after = await saved(); assertReward(before, after, definition);
  if (repeat) assert.equal(await page.locator('#app').getAttribute('aria-busy'), null, 'duplicate claim taps do not start a phantom activity');
  if (reloadAfter) { await reload(); assert.deepEqual((await saved()).resources, after.resources); assert.deepEqual(claimed(await saved()), claimed(after)); assert.equal((await saved()).xp, after.xp); }
+ // A deliberate next action follows the UI's 450 ms double-tap guard; the
+ // duplicate taps above still occur immediately and must never pay twice.
+ await page.waitForTimeout(500);
  return after;
 }
 async function tapPlot(id) {
@@ -113,11 +125,25 @@ async function buildForQuest(id, slot) {
 }
 async function inspectBoard(expectedStates) {
  const before = await saved(), seen = [];
- await openBoard(); assert.equal(await page.locator('[data-quest-chapter]').count(), 6);
- for (let chapter = 1; chapter <= 6; chapter++) {
-  const tab = page.locator(`[data-quest-chapter="${chapter}"]`); await touch(tab); const tabBox = await tab.boundingBox(); assert.ok(tabBox.width >= 44 && tabBox.height >= 44, 'chapter previews stay finger sized'); const items = GROWTH_QUESTS.filter(quest => quest.chapter === chapter); assert.equal(await page.locator('[data-growth-quest]').count(), 4);
-  for (const definition of items) { seen.push(definition.id); assert.equal(await card(definition.id).getAttribute('data-quest-state'), expectedStates[definition.id]); assert.equal(await card(definition.id).locator('[data-quest-claim]').isVisible(), expectedStates[definition.id] === 'ready'); assert.equal(await card(definition.id).locator('[data-quest-goto]').isVisible(), expectedStates[definition.id] === 'active'); assert.equal(await card(definition.id).locator('[data-quest-progress]').getAttribute('aria-valuemax'), String(definition.target)); const text = await card(definition.id).locator('.growth-rewards').innerText(); assert.ok(text.includes(String(definition.reward.xp)), 'each quest displays its XP reward'); }
+ await openBoard(); assert.equal(await page.locator('[data-quest-chapter]').count(), 0, 'the main board has no six-tile chapter selector');
+ const current = GROWTH_QUESTS.find(quest => ['active', 'ready'].includes(expectedStates[quest.id]));
+ assert.equal(await page.locator('[data-growth-quest]').count(), current ? 1 : 0, 'only the next actionable objective gets a full card');
+ assert.equal(await page.locator('[data-growth-board]').getAttribute('data-current-quest'), current?.id ?? '');
+ if (current) {
+  const button = card(current.id).locator(expectedStates[current.id] === 'ready' ? '[data-quest-claim]' : '[data-quest-goto]');
+  assert.equal(await button.isVisible(), true); const box = await button.boundingBox(); assert.ok(box.width >= 44 && box.height >= 44, 'the single primary action is finger sized');
  }
+ const all = page.locator('[data-growth-all-goals]'); if (!await all.evaluate(element => element.open)) await touchSummary(all.locator(':scope > summary'));
+ assert.equal(await page.locator('[data-growth-history]').count(), 24); assert.equal(await page.locator('[data-growth-history-chapter]').count(), 6);
+ for (const definition of GROWTH_QUESTS) {
+  seen.push(definition.id); const row = history(definition.id); assert.equal(await row.getAttribute('data-quest-state'), expectedStates[definition.id]);
+  if (!await row.evaluate(element => element.open)) await touchSummary(row.locator(':scope > summary'));
+  const countText = await row.locator('[data-history-count]').innerText(); assert.ok(countText.endsWith(` / ${definition.target}`));
+  const text = await row.locator('.growth-rewards').innerText(); assert.ok(text.includes(String(definition.reward.xp)), 'every hidden-by-default objective still exposes its real XP reward on request');
+  assert.equal(await row.locator('[data-quest-claim], [data-quest-goto]').count(), 0, 'history has no duplicate or locked action controls');
+  await touchSummary(row.locator(':scope > summary'));
+ }
+ await touchSummary(all.locator(':scope > summary')); assert.equal(await all.evaluate(element => element.open), false);
  assert.deepEqual(seen, GROWTH_QUESTS.map(quest => quest.id)); assert.deepEqual((await saved()).resources, before.resources); assert.equal((await saved()).xp, before.xp); assert.deepEqual(claimed(await saved()), claimed(before));
 }
 function lateState(name, duplicate = false) {
@@ -150,7 +176,7 @@ try {
   if (width === 360) { start = Date.now(); await touch(page.getByRole('button', { name: '시간 계속', exact: true })); await page.locator(`[data-facility-collect="${waterworks}"]`).waitFor({ state: 'visible', timeout: 55000 }); await pauseWorld(); timings.push({ name: 'quest-first-production-natural-90-minutes', elapsedMs: Date.now() - start }); assert.ok(Date.now() - start >= 42000); }
   else { state = await saved(); state.name = '390 생산 시간 경과'; state.totalMinutes = facilities(state)[0].readyAt; state.day = Math.floor(state.totalMinutes / 1440) + 1; state.minutes = state.totalMinutes % 1440; await reload(state); await go('first-delivery'); }
   await touch(page.locator(`[data-facility-collect="${waterworks}"]`)); state = await saved(); assert.equal(state.resources.water, before.resources.water + 4); assert.equal(state.settlement.stats.collections, 1); await claim('first-delivery');
-  assert.equal(await page.locator('[data-growth-board]').getAttribute('data-selected-chapter'), '2', 'claiming the chapter finale unlocks and selects the next chapter');
+  assert.equal(await page.locator('[data-growth-board]').getAttribute('data-current-quest'), 'new-seeds', 'claiming the chapter finale directly displays the next task');
   await sowTwo(); await claim('new-seeds'); start = Date.now(); before = await go('tender-watering', { works: true }); const dry = before.plots.filter(plot => plot.plantedAt !== null && !plot.watered).length; await waitIdle(`quest-continued-watering-${width}`, start); state = await saved(); assert.equal(state.stats.waterings, dry); assert.equal(state.resources.water, before.resources.water - dry); await claim('tender-watering');
   await buildForQuest('warm-kitchen', 1); await claim('warm-kitchen'); before = await go('wider-deck'); await page.locator('#modal-root [data-action="expand"]').waitFor(); start = Date.now(); await touch(page.locator('#modal-root [data-action="expand"]')); await waitBusy(); await waitIdle(`quest-animated-expansion-${width}`, start); state = await saved(); assert.equal(state.deckLevel, 2); assert.equal(state.plots.length, 4); assert.equal(state.resources.wood, before.resources.wood - 24); assert.equal(state.resources.scrap, before.resources.scrap - 12); await claim('wider-deck', { reloadAfter: true });
   start = Date.now(); await go('forest-logs', { works: true }); assert.equal(await page.locator('#zone-name').innerText(), '도로 옆 벌목장'); await waitIdle(`quest-forest-shortcut-${width}`, start); assert.equal((await saved()).stats.chops, 1); await uiStatus('forest-logs', 'active'); assert.equal(await card('forest-logs').locator('[data-quest-count]').innerText(), '1 / 3'); await shot(`chapter-three-${width}`);
@@ -162,7 +188,7 @@ try {
    await page.setViewportSize({ width: 844, height: 390 }); await openBoard('safe-road'); await card('safe-road').locator('[data-quest-goto]').scrollIntoViewIfNeeded(); const gotoBox = await card('safe-road').locator('[data-quest-goto]').boundingBox(); assert.ok(gotoBox.width >= 44 && gotoBox.height >= 44); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await shot('landscape-board'); await page.setViewportSize({ width: 390, height: 844 });
    const legacy = lateState('v8 중복 시설 12곳 복구 fixture', true); delete legacy.growthQuests; delete legacy.stats.plantings; delete legacy.stats.waterings; await reload(legacy); state = await saved(); assert.deepEqual(state.resources, legacy.resources); assert.equal(state.xp, legacy.xp); assert.equal(state.level, legacy.level); assert.deepEqual(state.seedInventory, legacy.seedInventory); assert.equal(Object.hasOwn(state.stats, 'plantings'), false, 'loading does not force newly normalized counters into the original legacy JSON'); assert.equal(Object.hasOwn(state.stats, 'waterings'), false); assert.deepEqual(claimed(state), []);
    await inspectBoard(Object.fromEntries(GROWTH_QUESTS.map((quest, index) => [quest.id, index === 0 ? 'ready' : 'locked'])));
-   for (const id of ['new-seeds', 'tender-watering']) { await openBoard(id); assert.equal(await card(id).locator('[data-quest-progress]').getAttribute('aria-valuenow'), '0', 'in-memory legacy progress starts at zero'); assert.equal(await card(id).locator('[data-quest-count]').innerText(), '0 / 2'); }
+   for (const id of ['new-seeds', 'tender-watering']) { await openBoard(id); assert.equal(await history(id).locator('[data-history-count]').innerText(), '0 / 2', 'in-memory legacy progress starts at zero'); }
    await reload(); assert.deepEqual((await saved()).resources, legacy.resources); assert.equal((await saved()).xp, legacy.xp);
    for (let index = 0; index < GROWTH_QUESTS.length; index++) {
     const definition = GROWTH_QUESTS[index], current = getGrowthQuests(await saved())[index];
@@ -177,7 +203,7 @@ try {
     assert.equal(claimed(state).length, index + 1);
    }
    assert.equal(getBuiltTypes(await saved()).length, 6, 'paid replacement retains all six distinct construction experiences'); assert.equal(facilities(await saved()).length, 12);
-   await inspectBoard(Object.fromEntries(GROWTH_QUESTS.map(quest => [quest.id, 'claimed']))); assert.equal(await page.locator('[data-quest-chapter].completed').count(), 6); assert.match(await page.locator('[data-growth-overview-title]').innerText(), /모든 이야기를 완성/); await shot('all-24-claimed');
+   await inspectBoard(Object.fromEntries(GROWTH_QUESTS.map(quest => [quest.id, 'claimed']))); assert.equal(await page.locator('[data-growth-history][data-quest-state="claimed"]').count(), 24); assert.equal(await page.locator('[data-growth-complete]').isVisible(), true); assert.match(await page.locator('[data-growth-overview-title]').innerText(), /성장 완료/); await shot('all-24-claimed');
    cases.push('Explicit validated later-chapter fixtures cover actual upgrade, ready production and stage-one battle controls; legacy v8 full12 duplicate facility save gets no automatic gifts, records only actual plant/water, recovers all missing types through paid same-slot replacement, and claims all24 rewards in order with persistent prefixes/XP/level/seed consistency');
   }
   await context.close();

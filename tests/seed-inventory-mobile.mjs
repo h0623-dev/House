@@ -107,7 +107,7 @@ async function waitBusy() {
  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'true', null, { timeout: 1500 });
  assert.equal(await page.locator('.chore-status').isVisible(), true, 'the character visibly performs planting');
 }
-async function waitIdle(label, started, timeout = 16000) {
+async function waitIdle(label, started, timeout = 30000) {
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout });
  const elapsedMs = Date.now() - started;
  timings.push({ name: label, elapsedMs });
@@ -214,7 +214,7 @@ try {
   const continueStart = Date.now();
   await touchPlot(8);
   await waitBusy();
-  await waitIdle(`continued-plot-eight-${width}`, continueStart, 8500);
+  await waitIdle(`continued-plot-eight-${width}`, continueStart, 14000);
   state = await saved();
   assert.equal(state.plots[7].cropId, 'corn', 'the eighth painted plot accepts a continuous-mode touch');
   assert.equal(state.seedInventory.corn, 0);
@@ -248,7 +248,7 @@ try {
   await touchPlot(2);
   await touchPlot(3);
   await touch(page.locator('[data-plant-cancel]'));
-  await waitIdle(`cancel-only-future-work-${width}`, cancelStart, 8500);
+  await waitIdle(`cancel-only-future-work-${width}`, cancelStart, 14000);
   state = await saved();
   assert.equal(state.plots[0].cropId, 'potato');
   assert.equal(state.plots.slice(1).every(plot => plot.plantedAt === null), true, 'cancel discards every queued planting after the current visible job');
@@ -286,7 +286,7 @@ try {
    await waitBusy();
    await touchPlot(2);
    await touch(nav('home'));
-   await waitIdle('navigation-stops-future-planting', navStart, 8500);
+   await waitIdle('navigation-stops-future-planting', navStart, 14000);
    state = await saved();
    assert.equal(state.plots[0].cropId, 'tomato');
    assert.equal(state.plots[1].plantedAt, null);
@@ -305,7 +305,7 @@ try {
    const recoveryStart = Date.now();
    await touch(page.locator('[data-rest-retry="plant"]'));
    await waitBusy();
-   await waitIdle('rest-and-plant-selected-pumpkin', recoveryStart, 8500);
+   await waitIdle('rest-and-plant-selected-pumpkin', recoveryStart, 14000);
    state = await saved();
    assert.equal(state.plots[0].cropId, 'pumpkin', 'recovery keeps the user-selected seed');
    assert.equal(state.seedInventory.pumpkin, 3);
@@ -323,7 +323,7 @@ try {
    await touch(page.locator('[data-plant-all]'));
    await waitBusy();
    await touch(page.locator('[data-plant-all]'));
-   await waitIdle('plant-all-reserves-only-available-seeds', allStart, 18000);
+   await waitIdle('plant-all-reserves-only-available-seeds', allStart, 60000);
    state = await saved();
    assert.equal(state.plots.filter(plot => plot.cropId === 'carrot').length, 4);
    assert.equal(state.plots.slice(4).every(plot => plot.plantedAt === null), true);
@@ -374,7 +374,7 @@ try {
     await waitBusy();
     await page.waitForTimeout(250);
     assert.equal((await saved()).resources.food, before.resources.food, 'harvest waits for visible work before awarding food');
-    await waitIdle(`harvest-${crop.id}`, harvestStart, 8500);
+    await waitIdle(`harvest-${crop.id}`, harvestStart, 14000);
     state = await saved();
     assert.equal(state.resources.food, before.resources.food + crop.food, `${crop.name} awards its documented food amount`);
     assert.equal(state.seedInventory[crop.id], before.seedInventory[crop.id] + 2, `${crop.name} returns its own seeds`);
