@@ -1,6 +1,6 @@
 {
   "name": "road-haven",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,8 @@
     "test:browser": "node tests/browser-smoke.mjs",
     "android:debug": "bash scripts/build-android.sh debug",
     "android:release": "bash scripts/build-android.sh release",
-    "test:mobile": "node tests/mobile-touch-real-time.mjs"
+    "test:mobile": "node tests/mobile-touch-real-time.mjs",
+    "test:seeds": "node tests/seed-inventory-mobile.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.4.3",

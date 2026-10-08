@@ -1,7 +1,10 @@
+import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
+export { CROPS, CROP_IDS, type CropId } from './crops';
+
 export type Resource = 'wood' | 'scrap' | 'food' | 'water' | 'seeds';
 export type Gender = 'female' | 'male';
 export type Action = 'gather' | 'chop' | 'hunt' | 'water' | 'plant' | 'harvest' | 'expand' | 'rest' | 'pet' | 'repair';
-export interface Plot { id: number; plantedAt: number | null; watered: boolean }
+export interface Plot { id: number; plantedAt: number | null; watered: boolean; cropId?: CropId }
 export interface Expedition { id: number; stage: number }
 export interface HuntResult {
   outcome: 'victory' | 'defeat' | 'retreat';
@@ -22,6 +25,8 @@ export interface GameState {
   energy: number;
   morale: number;
   resources: Record<Resource, number>;
+  /** Missing only in older saves. resources.seeds remains the inventory total. */
+  seedInventory?: Record<CropId, number>;
   plots: Plot[];
   deckLevel: number;
   truckHealth: number;
@@ -50,7 +55,7 @@ export interface SaveStorage {
 }
 
 export const SAVE_KEY = 'road-haven-save-v1';
-export const CROP_MINUTES = 180;
+export const CROP_MINUTES = CROPS.carrot.growMinutes;
 export const MAX_DECK_LEVEL = 6;
 export const resourceLabels: Record<Resource, string> = {
   wood: '목재', scrap: '고철', food: '식량', water: '물', seeds: '씨앗',
@@ -70,9 +75,10 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
     energy: 85,
     morale: 90,
     resources: { wood: 24, scrap: 12, food: 8, water: 16, seeds: 8 },
+    seedInventory: { carrot: 3, potato: 1, tomato: 1, corn: 1, strawberry: 1, pumpkin: 1 },
     plots: [
-      { id: 1, plantedAt: 240, watered: true },
-      { id: 2, plantedAt: 420, watered: false },
+      { id: 1, plantedAt: 240, watered: true, cropId: 'carrot' },
+      { id: 2, plantedAt: 420, watered: false, cropId: 'carrot' },
       { id: 3, plantedAt: null, watered: false },
     ],
     deckLevel: 1,
@@ -90,10 +96,35 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
 
 function copy(state: GameState): GameState {
   return {
-    ...state, resources: { ...state.resources }, plots: state.plots.map(plot => ({ ...plot })),
+    ...state, resources: { ...state.resources }, seedInventory: getSeedInventory(state),
+    plots: state.plots.map(plot => plot.plantedAt === null ? { ...plot } : { ...plot, cropId: getPlotCropId(plot) }),
     quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
     expedition: state.expedition ? { ...state.expedition } : null,
   };
+}
+
+export function getSeedInventory(state: GameState): Record<CropId, number> {
+  return state.seedInventory ? { ...state.seedInventory } : {
+    carrot: state.resources.seeds, potato: 0, tomato: 0, corn: 0, strawberry: 0, pumpkin: 0,
+  };
+}
+
+export function getSeedCount(state: GameState, cropId: CropId): number {
+  return getSeedInventory(state)[cropId];
+}
+
+export function getPlotCropId(plot: Plot): CropId {
+  return plot.cropId ?? 'carrot';
+}
+
+function addSeeds(state: GameState, cropId: CropId, amount: number) {
+  const inventory = state.seedInventory ??= getSeedInventory(state);
+  inventory[cropId] += amount;
+  state.resources.seeds += amount;
+}
+
+function discoveredSeed(state: GameState): CropId {
+  return CROP_IDS[(state.stats.gathers + state.stats.chops + 1) % CROP_IDS.length];
 }
 
 function addLog(state: GameState, message: string) {
@@ -103,7 +134,8 @@ function addLog(state: GameState, message: string) {
 export function getCropProgress(state: GameState, plot: Plot): number {
   if (plot.plantedAt === null) return 0;
   const elapsed = Math.max(0, state.totalMinutes - plot.plantedAt);
-  return plot.watered ? clamp(elapsed / CROP_MINUTES, 0, 1) : clamp(elapsed / (CROP_MINUTES * 2), 0, 0.7);
+  const growMinutes = CROPS[getPlotCropId(plot)].growMinutes;
+  return plot.watered ? clamp(elapsed / growMinutes, 0, 1) : clamp(elapsed / (growMinutes * 2), 0, 0.7);
 }
 
 export function expansionCost(state: GameState): { wood: number; scrap: number } {
@@ -123,7 +155,7 @@ function grantQuests(state: GameState) {
   for (const quest of questList(state)) {
     if (!quest.complete || state.quests.includes(quest.id)) continue;
     state.quests.push(quest.id);
-    if (quest.id === 'first-harvest') { state.resources.seeds += 5; state.resources.food += 4; }
+    if (quest.id === 'first-harvest') { addSeeds(state, 'carrot', 5); state.resources.food += 4; }
     if (quest.id === 'road-scout') { state.resources.wood += 12; state.resources.scrap += 6; }
     if (quest.id === 'bigger-home') { state.resources.water += 8; state.xp += 30; }
     addLog(state, `목표 달성! ${quest.title} · ${quest.reward}`);
@@ -224,7 +256,7 @@ export function cancelHunt(state: GameState): ActionResult {
   }, state.expedition.id);
 }
 
-export function performAction(state: GameState, action: Action, plotId?: number): ActionResult {
+export function performAction(state: GameState, action: Action, plotId?: number, cropId: CropId = 'carrot'): ActionResult {
   let next = copy(state);
   const fail = (message: string) => ({ state, ok: false, message });
   if (state.expedition) return fail('사냥을 마친 뒤 트럭에서 다시 활동할 수 있어요.');
@@ -239,33 +271,39 @@ export function performAction(state: GameState, action: Action, plotId?: number)
   let xp = 0;
 
   switch (action) {
-    case 'gather':
+    case 'gather': {
+      const foundSeed = discoveredSeed(next);
       next.resources.wood += 10;
       next.resources.scrap += 5;
       next.resources.water += 4;
-      next.resources.seeds += 1;
+      addSeeds(next, foundSeed, 1);
       next.stats.gathers += 1;
-      message = '도로 탐색 완료! 목재 +10 · 고철 +5 · 물 +4 · 씨앗 +1';
+      message = `도로 탐색 완료! 목재 +10 · 고철 +5 · 물 +4 · ${CROPS[foundSeed].seedName} +1`;
       duration = 35;
       xp = 12;
       break;
-    case 'chop':
+    }
+    case 'chop': {
+      const foundSeed = discoveredSeed(next);
       next.resources.wood += 18;
-      next.resources.seeds += 1;
+      addSeeds(next, foundSeed, 1);
       next.stats.chops += 1;
-      message = '도끼로 나무를 베고 통나무를 모았어요. 목재 +18 · 씨앗 +1';
+      message = `도끼로 나무를 베고 통나무를 모았어요. 목재 +18 · ${CROPS[foundSeed].seedName} +1`;
       duration = 35;
       xp = 14;
       break;
+    }
     case 'plant': {
+      if (!isCropId(cropId)) return fail('씨앗 인벤토리에서 심을 씨앗을 선택해 주세요.');
       const plot = next.plots.find(item => plotId === undefined ? item.plantedAt === null : item.id === plotId);
       if (!plot) return fail('빈 텃밭이 없어요. 작물을 수확하거나 트럭을 확장해 주세요.');
       if (plot.plantedAt !== null) return fail('이미 작물이 자라는 텃밭이에요.');
-      if (next.resources.seeds < 1) return fail('씨앗이 부족해요. 도로를 탐색하면 씨앗을 찾을 수 있어요.');
-      next.resources.seeds -= 1;
+      if (getSeedCount(next, cropId) < 1) return fail(`${CROPS[cropId].seedName}이 부족해요. 다른 씨앗을 고르거나 도로를 탐색해 주세요.`);
+      addSeeds(next, cropId, -1);
       plot.plantedAt = next.totalMinutes;
       plot.watered = false;
-      message = '당근 씨앗을 심었어요. 물을 주면 더 잘 자라요!';
+      plot.cropId = cropId;
+      message = `${CROPS[cropId].seedName}을 심었어요. 물을 주면 더 잘 자라요!`;
       duration = 10;
       xp = 5;
       break;
@@ -276,7 +314,7 @@ export function performAction(state: GameState, action: Action, plotId?: number)
       if (next.resources.water < plots.length) return fail(`물을 ${plots.length}개 모아 주세요. 도로 탐색으로 보급할 수 있어요.`);
       next.resources.water -= plots.length;
       plots.forEach(plot => { plot.watered = true; });
-      message = `텃밭 ${plots.length}곳에 물을 주었어요. 당근이 쑥쑥 자라고 있어요!`;
+      message = `텃밭 ${plots.length}곳에 물을 주었어요. ${plots.length === 1 ? CROPS[getPlotCropId(plots[0])].name : '작물'}이 쑥쑥 자라고 있어요!`;
       duration = 10;
       xp = 4;
       break;
@@ -284,14 +322,25 @@ export function performAction(state: GameState, action: Action, plotId?: number)
     case 'harvest': {
       const plots = next.plots.filter(plot => getCropProgress(next, plot) >= 1 && (plotId === undefined || plot.id === plotId));
       if (!plots.length) return fail('아직 다 자란 작물이 없어요. 물을 주고 조금 기다려 주세요.');
-      plots.forEach(plot => { plot.plantedAt = null; plot.watered = false; });
-      next.resources.food += plots.length * 4;
-      next.resources.seeds += plots.length * 2;
+      let food = 0;
+      let seeds = 0;
+      const names = new Set<string>();
+      plots.forEach(plot => {
+        const crop = CROPS[getPlotCropId(plot)];
+        food += crop.food;
+        seeds += crop.seedReturn;
+        xp += crop.xp;
+        names.add(crop.name);
+        addSeeds(next, crop.id, crop.seedReturn);
+        plot.plantedAt = null;
+        plot.watered = false;
+        delete plot.cropId;
+      });
+      next.resources.food += food;
       next.stats.harvests += plots.length;
       next.morale = clamp(next.morale + 3);
-      message = `싱싱한 당근 ${plots.length}밭 수확! 식량 +${plots.length * 4} · 씨앗 +${plots.length * 2}`;
+      message = `싱싱한 ${[...names].join(' · ')} ${plots.length}밭 수확! 식량 +${food} · 씨앗 +${seeds}`;
       duration = 15;
-      xp = plots.length * 15;
       break;
     }
     case 'expand': {
@@ -359,12 +408,18 @@ function validateSave(value: unknown): value is GameState {
   if (!isInteger(value.deckLevel, 1, MAX_DECK_LEVEL) || !isInteger(value.xp, 0, 100_000_000) || !isInteger(value.level, 1, 1_000_000)) return false;
   if (value.level !== Math.floor(value.xp / 120) + 1 || !isInteger(value.lastSaved, 0, 100_000_000_000_000)) return false;
   if (!isRecord(value.resources) || !resourceKeys.every(key => isInteger((value.resources as Record<string, unknown>)[key], 0, 100_000_000))) return false;
+  if (!isRecord(value.seedInventory) || Object.keys(value.seedInventory).length !== CROP_IDS.length
+    || !CROP_IDS.every(id => isInteger((value.seedInventory as Record<string, unknown>)[id], 0, 100_000_000))) return false;
+  const seedTotal = CROP_IDS.reduce((total, id) => total + Number((value.seedInventory as Record<string, unknown>)[id]), 0);
+  if (seedTotal !== value.resources.seeds) return false;
   if (!Array.isArray(value.plots) || value.plots.length !== value.deckLevel + 2) return false;
   const ids = new Set<number>();
   for (const plot of value.plots) {
     if (!isRecord(plot) || !isInteger(plot.id, 1, 100) || ids.has(plot.id) || typeof plot.watered !== 'boolean') return false;
     if (plot.plantedAt !== null && !isNumber(plot.plantedAt, 0, value.totalMinutes)) return false;
     if (plot.plantedAt === null && plot.watered) return false;
+    if (Object.hasOwn(plot, 'cropId') && (plot.plantedAt === null || !isCropId(plot.cropId))) return false;
+    if (plot.plantedAt !== null && !isCropId(plot.cropId)) return false;
     ids.add(plot.id);
   }
   if (!isRecord(value.stats) || !['harvests', 'gathers', 'hunts', 'expansions', 'chops', 'battlesWon', 'defeatedEnemies'].every(key => isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
@@ -383,11 +438,28 @@ function validateSave(value: unknown): value is GameState {
   return true;
 }
 
+/** Existing seeds and growing carrots keep their quantities; migration never grants a starter pack. */
+function migrateCropFields(value: unknown): unknown {
+  if (!isRecord(value) || value.version !== 1) return value;
+  const result = { ...value };
+  if (!Object.hasOwn(value, 'seedInventory') && isRecord(value.resources)) {
+    result.seedInventory = {
+      carrot: value.resources.seeds, potato: 0, tomato: 0, corn: 0, strawberry: 0, pumpkin: 0,
+    };
+  }
+  if (Array.isArray(value.plots)) {
+    result.plots = value.plots.map(plot => isRecord(plot) && plot.plantedAt !== null && !Object.hasOwn(plot, 'cropId')
+      ? { ...plot, cropId: 'carrot' } : plot);
+  }
+  return result;
+}
+
 export function saveGame(state: GameState, storage?: SaveStorage): boolean {
   try {
     const target = storage ?? globalThis.localStorage;
-    if (!target || !validateSave(state)) return false;
-    target.setItem(SAVE_KEY, JSON.stringify({ ...state, lastSaved: Date.now() }));
+    const candidate = migrateCropFields(state);
+    if (!target || !validateSave(candidate)) return false;
+    target.setItem(SAVE_KEY, JSON.stringify({ ...candidate, lastSaved: Date.now() }));
     return true;
   } catch { return false; }
 }
@@ -407,6 +479,7 @@ export function loadGame(storage?: SaveStorage): GameState | null {
       }
       value = { ...value, stats, expedition: Object.hasOwn(value, 'expedition') ? value.expedition : null };
     }
+    value = migrateCropFields(value);
     return validateSave(value) ? value : null;
   } catch { return null; }
 }

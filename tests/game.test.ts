@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceTime, beginHunt, cancelHunt, createGame, expansionCost, finishHunt, getCropProgress, loadGame, MAX_DECK_LEVEL, performAction, questList, SAVE_KEY, saveGame, tick, type Action, type GameState, type HuntResult, type SaveStorage } from '../src/game.ts';
+import { advanceTime, beginHunt, cancelHunt, createGame, CROPS, CROP_IDS, expansionCost, finishHunt, getCropProgress, getPlotCropId, getSeedCount, getSeedInventory, loadGame, MAX_DECK_LEVEL, performAction, questList, SAVE_KEY, saveGame, tick, type Action, type CropId, type GameState, type HuntResult, type SaveStorage } from '../src/game.ts';
 
 function memoryStorage(): SaveStorage {
   const values = new Map<string, string>();
@@ -36,6 +36,194 @@ test('plant, water, wait, and harvest is a sustainable, immutable crop cycle', (
   assert.equal(harvested.state.resources.seeds, initial.resources.seeds + 1);
   assert.equal(harvested.state.plots[2].plantedAt, null);
   assert.equal(JSON.stringify(initial), original);
+});
+
+test('six starter seeds are independently counted and inventory reads cannot mutate state', () => {
+  const state = createGame();
+  assert.deepEqual(getSeedInventory(state), { carrot: 3, potato: 1, tomato: 1, corn: 1, strawberry: 1, pumpkin: 1 });
+  assert.equal(CROP_IDS.reduce((sum, id) => sum + getSeedCount(state, id), 0), state.resources.seeds);
+  const inventory = getSeedInventory(state);
+  inventory.carrot = 999;
+  assert.equal(getSeedCount(state, 'carrot'), 3);
+  assert.equal(getSeedCount(createGame(), 'carrot'), 3);
+});
+
+test('planting consumes only the chosen seed and stores its crop identity without changing the input', () => {
+  const state = createGame();
+  const before = JSON.stringify(state);
+  const planted = performAction(state, 'plant', 3, 'tomato');
+  assert.equal(planted.ok, true);
+  assert.equal(planted.state.plots[2].cropId, 'tomato');
+  assert.equal(planted.state.plots[2].plantedAt, state.totalMinutes);
+  assert.equal(getSeedCount(planted.state, 'tomato'), 0);
+  for (const id of CROP_IDS.filter(id => id !== 'tomato')) assert.equal(getSeedCount(planted.state, id), getSeedCount(state, id));
+  assert.equal(planted.state.resources.seeds, state.resources.seeds - 1);
+  assert.equal(planted.state.energy, state.energy - 4);
+  assert.equal(JSON.stringify(state), before);
+});
+
+test('unknown and exhausted selected seeds never fall back to another seed or charge resources', () => {
+  let state = performAction(createGame(), 'expand').state;
+  const wrong = performAction(state, 'plant', 3, 'cucumber' as CropId);
+  assert.equal(wrong.ok, false);
+  assert.equal(wrong.state, state);
+  state = performAction(state, 'plant', 3, 'tomato').state;
+  assert.ok(state.resources.seeds > 0);
+  const before = JSON.stringify(state);
+  const emptySeed = performAction(state, 'plant', 4, 'tomato');
+  assert.equal(emptySeed.ok, false);
+  assert.equal(emptySeed.state, state);
+  assert.match(emptySeed.message, /토마토/);
+  assert.equal(JSON.stringify(state), before);
+  const samePlot = performAction(state, 'plant', 3, 'carrot');
+  assert.equal(samePlot.ok, false);
+  assert.equal(samePlot.state, state);
+});
+
+test('a selected seed can be planted across consecutive empty plots with one payment per plot', () => {
+  const initial = performAction(createGame(), 'expand').state;
+  const first = performAction(initial, 'plant', 3, 'carrot');
+  const second = performAction(first.state, 'plant', 4, 'carrot');
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(second.state.plots.filter(plot => plot.id >= 3 && plot.cropId === 'carrot').length, 2);
+  assert.equal(getSeedCount(second.state, 'carrot'), getSeedCount(initial, 'carrot') - 2);
+  assert.equal(second.state.energy, initial.energy - 8);
+  assert.equal(second.state.resources.seeds, initial.resources.seeds - 2);
+  assert.equal(saveGame(second.state, memoryStorage()), true);
+});
+
+test('all six crops mature at their own threshold and return their own seeds with the displayed food yield', () => {
+  for (const id of CROP_IDS) {
+    const initial = createGame();
+    const crop = CROPS[id];
+    const planted = performAction(initial, 'plant', 3, id);
+    assert.equal(planted.ok, true, id);
+    const dry = advanceTime(planted.state, crop.growMinutes);
+    assert.ok(getCropProgress(dry, dry.plots[2]) < 1, `${id} needs water`);
+    assert.equal(performAction(dry, 'harvest', 3).ok, false, id);
+    const watered = performAction(planted.state, 'water', 3);
+    assert.equal(watered.ok, true, id);
+    const remaining = watered.state.plots[2].plantedAt! + crop.growMinutes - watered.state.totalMinutes;
+    const almost = advanceTime(watered.state, remaining - 1);
+    assert.ok(getCropProgress(almost, almost.plots[2]) < 1, `${id} must not ripen early`);
+    assert.equal(performAction(almost, 'harvest', 3).state, almost);
+    const ripe = advanceTime(almost, 1);
+    assert.equal(getCropProgress(ripe, ripe.plots[2]), 1, id);
+    const harvested = performAction(ripe, 'harvest', 3);
+    assert.equal(harvested.ok, true, id);
+    assert.equal(harvested.state.resources.food, initial.resources.food + crop.food, id);
+    assert.equal(getSeedCount(harvested.state, id), getSeedCount(initial, id) - 1 + crop.seedReturn, id);
+    for (const other of CROP_IDS.filter(other => other !== id)) assert.equal(getSeedCount(harvested.state, other), getSeedCount(initial, other), `${id}/${other}`);
+    assert.equal(harvested.state.xp, 5 + 4 + crop.xp, id);
+    assert.equal(harvested.state.plots[2].plantedAt, null);
+    assert.equal(harvested.state.plots[2].cropId, undefined);
+    assert.equal(saveGame(harvested.state, memoryStorage()), true, id);
+  }
+});
+
+test('exploration and chopping discover every seed sustainably while preserving the legacy aggregate reward', () => {
+  let state = createGame();
+  const originalSeeds = getSeedInventory(state);
+  for (let i = 0; i < CROP_IDS.length; i++) {
+    const previousTotal = state.resources.seeds;
+    const discovered = performAction(state, 'gather');
+    assert.equal(discovered.ok, true);
+    state = discovered.state;
+    assert.equal(state.resources.seeds, previousTotal + 1);
+  }
+  for (const id of CROP_IDS) assert.equal(getSeedCount(state, id), originalSeeds[id] + 1, id);
+  for (let i = 0; i < CROP_IDS.length; i++) {
+    if (state.energy < 10) state = performAction(state, 'rest').state;
+    const previousTotal = state.resources.seeds;
+    const discovered = performAction(state, 'chop');
+    assert.equal(discovered.ok, true);
+    state = discovered.state;
+    assert.equal(state.resources.seeds, previousTotal + 1);
+  }
+  for (const id of CROP_IDS) assert.equal(getSeedCount(state, id), originalSeeds[id] + 2, id);
+  assert.equal(state.stats.gathers, 6);
+  assert.equal(state.stats.chops, 6);
+  assert.equal(saveGame(state, memoryStorage()), true);
+});
+
+test('legacy seeds become carrots exactly once and planted legacy carrots retain progress after save and reload', () => {
+  const legacy = createGame();
+  delete legacy.seedInventory;
+  for (const plot of legacy.plots) delete plot.cropId;
+  legacy.resources.seeds = 27;
+  const before = JSON.stringify(legacy);
+  const storage = memoryStorage();
+  storage.setItem(SAVE_KEY, before);
+  const loaded = loadGame(storage);
+  assert.ok(loaded);
+  assert.deepEqual(getSeedInventory(loaded), { carrot: 27, potato: 0, tomato: 0, corn: 0, strawberry: 0, pumpkin: 0 });
+  assert.equal(loaded.resources.seeds, 27);
+  assert.equal(getPlotCropId(loaded.plots[0]), 'carrot');
+  assert.equal(loaded.plots[0].plantedAt, legacy.plots[0].plantedAt);
+  assert.equal(loaded.plots[1].watered, legacy.plots[1].watered);
+  assert.equal(getCropProgress(loaded, loaded.plots[0]), getCropProgress(legacy, legacy.plots[0]));
+  assert.equal(saveGame(loaded, storage), true);
+  const twice = loadGame(storage);
+  assert.ok(twice);
+  assert.deepEqual({ ...twice, lastSaved: 0 }, { ...loaded, lastSaved: 0 });
+  assert.equal(JSON.stringify(legacy), before);
+  const noOtherSeed = performAction(twice, 'plant', 3, 'pumpkin');
+  assert.equal(noOtherSeed.ok, false);
+  assert.equal(noOtherSeed.state, twice);
+  const discovered = performAction(twice, 'gather').state;
+  assert.equal(getSeedCount(discovered, 'potato'), 1);
+  assert.equal(getSeedCount(discovered, 'carrot'), 27);
+});
+
+test('mixed crops and precise inventory quantities survive reload without changing progression', () => {
+  let state = performAction(createGame(), 'expand').state;
+  state = performAction(state, 'plant', 3, 'strawberry').state;
+  state = performAction(state, 'plant', 4, 'potato').state;
+  state = performAction(state, 'water', 3).state;
+  state = tick(state, 17);
+  const storage = memoryStorage();
+  assert.equal(saveGame(state, storage), true);
+  const loaded = loadGame(storage);
+  assert.ok(loaded);
+  assert.deepEqual({ ...loaded, lastSaved: 0 }, state);
+  assert.equal(getCropProgress(loaded, loaded.plots[2]), getCropProgress(state, state.plots[2]));
+  assert.equal(loaded.plots[2].cropId, 'strawberry');
+  assert.equal(loaded.plots[3].cropId, 'potato');
+});
+
+test('damaged crop IDs, seed counts, and totals are rejected rather than repaired or rewarded', () => {
+  const storage = memoryStorage();
+  const mutations: Array<(state: GameState) => void> = [
+    state => { state.seedInventory!.tomato = -1; },
+    state => { state.seedInventory!.pumpkin = 0.5; },
+    state => { state.seedInventory!.carrot = 100_000_001; },
+    state => { state.resources.seeds += 1; },
+    state => { delete (state.seedInventory as Partial<Record<CropId, number>>).corn; },
+    state => { (state.seedInventory as unknown as Record<string, number>).cucumber = 1; },
+    state => { (state as unknown as Record<string, unknown>).seedInventory = null; },
+    state => { (state as unknown as Record<string, unknown>).seedInventory = [3, 1, 1, 1, 1, 1]; },
+    state => { (state.plots[0] as unknown as Record<string, unknown>).cropId = 'cucumber'; },
+    state => { state.plots[2].cropId = 'tomato'; },
+  ];
+  for (const mutate of mutations) {
+    const state = createGame();
+    mutate(state);
+    const before = JSON.stringify(state);
+    storage.setItem(SAVE_KEY, before);
+    assert.equal(loadGame(storage), null, before);
+    assert.equal(saveGame(state, storage), false, before);
+    assert.equal(JSON.stringify(state), before);
+  }
+  for (const invalid of [-1, 0.5, '8', null]) {
+    const legacy = createGame();
+    delete legacy.seedInventory;
+    for (const plot of legacy.plots) delete plot.cropId;
+    (legacy.resources as unknown as Record<string, unknown>).seeds = invalid;
+    storage.setItem(SAVE_KEY, JSON.stringify(legacy));
+    assert.equal(loadGame(storage), null, `legacy count ${invalid}`);
+    assert.equal(saveGame(legacy, storage), false, `legacy count ${invalid}`);
+  }
 });
 
 test('unaffordable actions never spend resources, time, or energy', () => {
@@ -80,6 +268,7 @@ test('zero supplies and energy still allow resting, gathering, and recovery', ()
   state.energy = 0;
   state.health = 1;
   for (const key of Object.keys(state.resources) as (keyof typeof state.resources)[]) state.resources[key] = 0;
+  state.seedInventory = { carrot: 0, potato: 0, tomato: 0, corn: 0, strawberry: 0, pumpkin: 0 };
   assert.equal(performAction(state, 'gather').ok, false);
   const rested = performAction(state, 'rest');
   assert.equal(rested.ok, true);
@@ -89,6 +278,7 @@ test('zero supplies and energy still allow resting, gathering, and recovery', ()
   assert.equal(gathered.ok, true);
   assert.ok(gathered.state.resources.seeds > 0);
   assert.ok(gathered.state.resources.water > 0);
+  assert.equal(saveGame(gathered.state, memoryStorage()), true);
 });
 
 test('midnight consistently consumes provisions and damages the truck once', () => {
@@ -214,6 +404,7 @@ test('extended mixed play keeps resources, stats, crop IDs, and save state consi
     assert.equal(JSON.stringify(state), previous, `input mutated at action ${i}`);
     state = tick(result.state, (i % 4) * 0.5);
     assert.ok(Object.values(state.resources).every(value => Number.isInteger(value) && value >= 0));
+    assert.equal(Object.values(getSeedInventory(state)).reduce((sum, value) => sum + value, 0), state.resources.seeds);
     assert.ok([state.health, state.energy, state.morale, state.truckHealth].every(value => value >= 0 && value <= 100));
     assert.equal(state.plots.length, state.deckLevel + 2);
     assert.equal(state.stats.expansions, state.deckLevel - 1);

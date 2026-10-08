@@ -21,6 +21,7 @@ const context = await browser.newContext({ viewport: { width: 390, height: 844 }
 const page = await context.newPage();
 const errors = [];
 const failedAssets = [];
+const canceledImageRequests = [];
 const loadedIllustrations = new Set();
 page.on('pageerror', error => errors.push(error.message));
 page.on('response', response => {
@@ -33,7 +34,12 @@ page.on('response', response => {
 });
 page.on('requestfailed', request => {
  if (['image', 'font', 'script', 'stylesheet'].includes(request.resourceType())) {
-  failedAssets.push((request.failure()?.errorText || 'request failed') + ' ' + request.url());
+  const reason = request.failure()?.errorText || 'request failed';
+  // Removing an SVG icon or reloading a document can cancel a redundant image
+  // request. This is acceptable only if this very URL also loaded successfully
+  // and decodes in the final asset check below; other failures remain fatal.
+  if (request.resourceType() === 'image' && reason === 'net::ERR_ABORTED') canceledImageRequests.push(request.url());
+  else failedAssets.push(reason + ' ' + request.url());
  }
 });
 const save = async () => JSON.parse(await page.evaluate(() => localStorage.getItem('road-haven-save-v1')));
@@ -57,7 +63,7 @@ async function writeReceipt(status, failure) {
   loadedIllustrationCount: loadedIllustrations.size,
   loadedIllustrations: [...loadedIllustrations].sort(),
   maxDeckCase: 'Valid local late-game fixture: deck level 6 and eight plots, day and night',
-  screenshots, errors, failedAssets,
+  screenshots, errors, failedAssets, canceledImageRequests,
   ...(failure ? { failure: String(failure) } : {}),
  }, null, 2) + '\n');
 }
@@ -94,6 +100,39 @@ async function selectPlot(id) {
   await page.locator('[data-plot-step="1"]').click();
  }
  assert.fail('Unable to select plot ' + id + ' from the in-game controls');
+}
+
+async function chooseSeed(button, cropId = 'carrot') {
+ await button.click();
+ assert.equal(await page.locator('#modal-root [data-select-seed]').count(), 6, 'planting starts with a choice of six seeds');
+ const before = await save();
+ await page.locator(`[data-select-seed="${cropId}"]`).click();
+ assert.equal(await page.locator('#modal-root').isVisible(), false);
+ assert.equal(await page.locator('#planting-toolbar').isVisible(), true);
+ assert.equal((await save()).resources.seeds, before.resources.seeds, 'choosing a seed must not consume it');
+ await page.clock.runFor(2000);
+}
+
+async function stopPlanting() {
+ if (await page.locator('#planting-toolbar').isVisible()) await page.locator('[data-plant-cancel]').click();
+}
+
+function paintedPlot(id) {
+ const coordinates = async () => {
+  const state = await save();
+  return page.locator('#world').evaluate((canvas, { id, level }) => {
+   const positions = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]];
+   const [u, v] = positions[id - 1], p = (u, v, z = 0) => [480 + u * .91 - v * .67, 420 + u * .34 + v * .47 - z];
+   const [x, y] = p(u + 35, v + 36, 112), step = level - 1;
+   const minX = Math.min(-10, p(-278 - step * 14, 141 + step * 36)[0] - 28);
+   const rect = canvas.getBoundingClientRect(), style = getComputedStyle(canvas);
+   const top = parseFloat(style.getPropertyValue('--world-safe-top')) || 0, bottom = parseFloat(style.getPropertyValue('--world-safe-bottom')) || 0;
+   const available = Math.max(100, rect.height - top - bottom);
+   const scale = Math.min(rect.width / Math.max(860, 828 - minX), available / (560 + Math.max(0, level - 3) * 17)) * 1.48;
+   return { x: rect.left + rect.width / 2 + (x - 468) * scale, y: rect.top + top + available / 2 + (y - 350) * scale, width: 1, height: 1 };
+  }, { id, level: state.deckLevel });
+ };
+ return { boundingBox: coordinates, click: async () => { const point = await coordinates(); await page.mouse.click(point.x, point.y); } };
 }
 
 async function chore(button, assertNotApplied, { workScreenshot, repeatTap = false } = {}) {
@@ -192,10 +231,13 @@ try {
  await selectPlot(3);
  assert.equal(await page.locator('#plot-action').getAttribute('data-action'), 'plant');
  const beforePlant = await save();
- await chore(page.locator('#plot-action'), async () => assert.equal((await save()).resources.seeds, beforePlant.resources.seeds));
+ await chooseSeed(page.locator('#plot-action'));
+ await chore(paintedPlot(3), async () => assert.equal((await save()).resources.seeds, beforePlant.resources.seeds));
  assert.notEqual((await save()).plots[2].plantedAt, null);
  assert.equal((await save()).plots[0].plantedAt, null, 'planting a selected plot must not silently use another empty plot');
  assert.equal((await save()).resources.seeds, beforePlant.resources.seeds - 1);
+ assert.equal((await save()).plots[2].cropId, 'carrot');
+ await stopPlanting();
  assert.equal(await page.locator('#plot-action').getAttribute('data-action'), 'water');
  const beforeWater = await save();
  await chore(page.locator('#plot-action'), async () => assert.equal((await save()).resources.water, beforeWater.resources.water));
@@ -203,8 +245,11 @@ try {
  assert.equal((await save()).plots[1].watered, false, 'targeted watering must preserve the other dry plot');
  await chore(quick('water'));
  assert.equal((await save()).plots[1].watered, true);
- await chore(quick('plant'));
+ await selectPlot(1);
+ await chooseSeed(quick('plant'));
+ await chore(paintedPlot(1));
  assert.notEqual((await save()).plots[0].plantedAt, null);
+ await stopPlanting();
 
  await page.locator('[data-open="expand"]').click();
  await chore(page.locator('#modal-root [data-action="expand"]'), async () => assert.equal((await save()).deckLevel, 1));
@@ -336,6 +381,8 @@ try {
   delete old.stats.chops;
   delete old.stats.battlesWon;
   delete old.stats.defeatedEnemies;
+  delete old.seedInventory;
+  old.plots.forEach(plot => { delete plot.cropId; });
   localStorage.setItem('road-haven-legacy-test-input', JSON.stringify(old));
  });
  await context.addInitScript(() => {
@@ -421,6 +468,7 @@ try {
  })), [...loadedIllustrations]);
  assert.ok(loadedIllustrations.size >= 4, 'world, survivor, creatures and UI illustration assets must load');
  assert.equal(decodedIllustrations.every(Boolean), true, 'all requested PNG illustrations must decode');
+ assert.equal(canceledImageRequests.every(url => loadedIllustrations.has(url)), true, 'a canceled image request is allowed only when the same image loaded successfully and decoded');
  assert.deepEqual(failedAssets, []);
  assert.deepEqual(errors, []);
  await writeReceipt('passed');

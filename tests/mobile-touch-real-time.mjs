@@ -105,6 +105,29 @@ async function selectPlot(id) {
  }
  assert.fail(`Could not select plot ${id}`);
 }
+async function chooseSeed(button, cropId = 'carrot') {
+ await touch(button);
+ assert.equal(await page.locator('#modal-root [data-select-seed]').count(), 6, 'planting offers all six seed varieties');
+ const before = await saved();
+ await touch(page.locator(`[data-select-seed="${cropId}"]`));
+ assert.equal(await page.locator('#modal-root').isVisible(), false);
+ assert.equal(await page.locator('#planting-toolbar').isVisible(), true);
+ assert.equal((await saved()).resources.seeds, before.resources.seeds, 'seed selection does not consume or plant a seed');
+ await settleCamera();
+}
+async function stopPlanting() {
+ if (await page.locator('#planting-toolbar').isVisible()) await touch(page.locator('[data-plant-cancel]'));
+}
+async function touchPlot(id) {
+ const state = await saved(), step = state.deckLevel - 1;
+ const positions = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]];
+ const [u, v] = positions[id - 1];
+ const x = 480 + (u + 35) * .91 - (v + 36) * .67, y = 420 + (u + 35) * .34 + (v + 36) * .47 - 112;
+ const minX = Math.min(-10, 480 + (-278 - step * 14) * .91 - (141 + step * 36) * .67 - 28);
+ const point = await worldPoint(x, y, { x: 468, y: 350, zoom: 1.48, logicalWidth: Math.max(860, 828 - minX), logicalHeight: 560 + Math.max(0, state.deckLevel - 3) * 17 });
+ assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the selected painted plot is clear of HUD overlays');
+ await page.touchscreen.tap(point.x, point.y);
+}
 
 try {
  for (const width of [360, 390]) {
@@ -169,9 +192,12 @@ try {
 
   await selectPlot(3);
   before = await saved();
-  await chore(`selected-plot-plant-${width}`, () => touch(page.locator('#plot-action')));
+  await chooseSeed(page.locator('#plot-action'));
+  await chore(`selected-plot-plant-${width}`, () => touchPlot(3));
   assert.notEqual((await saved()).plots[2].plantedAt, null);
   assert.equal((await saved()).resources.seeds, before.resources.seeds - 1);
+  assert.equal((await saved()).plots[2].cropId, 'carrot');
+  await stopPlanting();
   await chore(`selected-plot-water-${width}`, () => touch(page.locator('#plot-action')));
   assert.equal((await saved()).plots[2].watered, true);
   assert.equal((await saved()).plots[1].watered, false, 'selected watering preserves another dry plot');
@@ -218,6 +244,7 @@ try {
   exhausted.resources.food = 0;
   exhausted.resources.water = 0;
   exhausted.resources.seeds = 0;
+  delete exhausted.seedInventory;
   await fixture(exhausted);
   await touch(nav('grove'));
   assert.match(await page.locator('#plot-action small').innerText(), /쉬고/);
@@ -234,14 +261,20 @@ try {
 
   const noSeeds = structuredClone(fresh);
   noSeeds.resources.seeds = 0;
+  delete noSeeds.seedInventory;
   await fixture(noSeeds);
   await touch(quick('plant'));
-  assert.match(await page.locator('.activity-block-reason').innerText(), /씨앗/);
-  await chore(`missing-seeds-gather-${width}`, () => touch(page.locator('#modal-root [data-action="gather"]')));
+  assert.equal(await page.locator('#modal-root [data-select-seed]').count(), 6, 'empty inventory still explains all seed varieties');
+  assert.match(await page.locator('#modal-root').innerText(), /씨앗/);
+  await chore(`missing-seeds-gather-${width}`, () => touch(page.locator('#modal-root [data-seed-gather]')));
   assert.equal((await saved()).resources.seeds, 1);
-  await chore(`plant-after-gather-${width}`, () => touch(quick('plant')));
+  await selectPlot(3);
+  await chooseSeed(quick('plant'), 'potato');
+  await chore(`plant-after-gather-${width}`, () => touchPlot(3));
   assert.equal((await saved()).resources.seeds, 0);
   assert.notEqual((await saved()).plots[2].plantedAt, null);
+  assert.equal((await saved()).plots[2].cropId, 'potato', 'gathered seed variety is the crop that gets planted');
+  await stopPlanting();
 
   if (width === 360) {
    // A slow tap crossing a live UI tick should still activate the exact plot
@@ -302,9 +335,11 @@ try {
   late.plots = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, plantedAt: null, watered: false }));
   await fixture(late);
   await selectPlot(8);
-  await chore(`max-deck-plot-eight-${width}`, () => touch(page.locator('#plot-action')));
+  await chooseSeed(page.locator('#plot-action'));
+  await chore(`max-deck-plot-eight-${width}`, () => touchPlot(8));
   assert.notEqual((await saved()).plots[7].plantedAt, null);
   assert.equal((await saved()).plots.slice(0, 7).every(plot => plot.plantedAt === null), true);
+  await stopPlanting();
   await touch(nav('home'));
   await settleCamera();
   await assertHudFits(width, height);
