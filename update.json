@@ -1,9 +1,9 @@
 {
-  "version": "0.10.0",
-  "versionCode": 10,
+  "version": "0.11.0",
+  "versionCode": 11,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.10.0-debug.apk",
-  "sha256": "5fc52e48734c797aea1066ff5cf25a6442c71dd560fdc5732ddf6030c48b32e7",
-  "notes": "게임 시작 시 새 콘텐츠를 자동 확인·적용합니다. 마을과 어울리는 작은 남녀 캐릭터와 농사·벌목 동작을 새로 만들었습니다. v0.8 이상 앱은 APK 재설치 없이 받습니다.",
-  "publishedAt": "2026-10-08T11:12:39.770Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.11.0-debug.apk",
+  "sha256": "ecabf550249957d424abf91b9e6d0376ec1c58e91f10d6190483e3005956d317",
+  "notes": "두 손가락 지도 확대·축소, 자연스러운 걷기와 사다리 이동, 재료를 줍고 담는 채집, 간단한 현재 성장 목표 화면. 기존 v0.8 이상 앱은 게임 실행 시 자동 콘텐츠 패치로 적용됩니다.",
+  "publishedAt": "2026-10-08T11:59:09.853Z"
 }
