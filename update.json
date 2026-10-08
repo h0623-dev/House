@@ -1,8 +1,8 @@
 {
-  "version": "0.3.0",
-  "versionCode": 3,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.3.0-debug.apk",
-  "sha256": "42a335cd5ff529aaa12c62521dce2f59f36a3293b544e189ab22fee2e98eadfe",
-  "notes": "애니메이션 남녀 캐릭터, 화면 안 아이콘 버튼, 간편한 농사·벌목 조작",
-  "publishedAt": "2026-10-08T02:43:37.675Z"
+  "version": "0.4.0",
+  "versionCode": 4,
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.4.0-debug.apk",
+  "sha256": "6a355f73425d6bf4f9d5fe457e1d4c89ed4f9e7987bfc734c5447bc665579c54",
+  "notes": "캐릭터와 같은 애니메이션 화풍으로 트럭·집·도로·텃밭·나무·보리·좀비와 전투 배경을 바꾸었습니다. 아이템 그림과 생활·전투 메뉴, 앱 아이콘도 같은 색감으로 통일했습니다. 기존 진행 정보는 그대로 이어집니다.",
+  "publishedAt": "2026-10-08T05:02:10.177Z"
 }
