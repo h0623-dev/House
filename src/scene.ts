@@ -16,7 +16,8 @@ type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'harvest';
 type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; plotIndex: number; cropId: CropId; resolve: () => void };
 // The hero belongs to the truck's scale: a person fits comfortably beside its house and planters.
-const WORLD_HERO_SCALE = .68;
+// Compact painted residents sit between the crops and miniature buildings.
+const WORLD_HERO_SCALE = .64;
 const CROP_PLANT_SIZE: Record<CropId, Point> = { carrot: [21, 34], potato: [26, 27], tomato: [24, 35], corn: [19, 40], strawberry: [22, 25], pumpkin: [29, 27] };
 const CROP_SEED_COLOR: Record<CropId, string> = { carrot: '#d29b57', potato: '#bfab72', tomato: '#cfad6c', corn: '#efc955', strawberry: '#9d7150', pumpkin: '#ead5a1' };
 const SETTLEMENT_SLOTS: Point[] = [[-42, -106], [124, -106], [-42, -278], [124, -278], [-42, -450], [124, -450], [290, -106], [456, -106], [290, -278], [456, -278], [290, -450], [456, -450]];

@@ -15,7 +15,8 @@ import { petPortrait } from './creatures';
 import { BATTLE_ART_URLS } from './battle-art';
 import { cropIcon } from './crop-art';
 import { APP_VERSION, checkUpdate, downloadUpdate, initializeAutoUpdates, prepareAutomaticUpdate, installPreparedUpdate, isNativeUpdateSupported, type AutomaticUpdateState, type UpdateResult } from './update';
-import { initializeLiveUpdates, checkLiveUpdate, activateLiveUpdate, type LiveUpdateState } from './live-update';
+import { isLiveUpdateSupported, checkLiveUpdate, activateLiveUpdate, type LiveUpdateState } from './live-update';
+import { runStartupPatch } from './startup-patch';
 
 const stored = loadGame();
 let state = stored ?? createGame('female', '하루');
@@ -54,6 +55,7 @@ let liveUpdate:LiveUpdateState={status:'idle',progress:0,message:'게임 콘텐�
 let updateInitializing:Promise<void>|null=null;
 let installAfterWork=false;
 let contentActivationPending=false;
+let startupPending=isLiveUpdateSupported();
 let toastTimer:ReturnType<typeof setTimeout>;
 let audioContext:AudioContext|undefined;
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -107,7 +109,7 @@ app.innerHTML=`
  <div class="modal-backdrop" id="modal-root" hidden></div>
 `;
 const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number)=>{
- if(battleView||contentActivationPending||currentModal)return;
+ if(startupPending||battleView||contentActivationPending||currentModal)return;
  if(kind==='build-slot'){if(plotId!==undefined){if(placement)previewConstruction(plotId);else if(!actionBusy){if(plotId>=getUnlockedSlots(state)){openModal('expand');toast(`데크 Lv.${Math.floor(plotId/2)+1}로 확장하면 새 자리가 열려요.`);}else openModal('build');}}return;}
  if(kind==='facility'){if(plotId!==undefined&&!actionBusy){if(placement)toast('빈 자리를 눌러 시설을 놓아 주세요.');else selectFacility(plotId);}return;}
  if(kind==='farm'&&farmMode){if(plotId!==undefined)enqueueFarmPlot(plotId);return;}
@@ -417,7 +419,7 @@ function render(){
  renderSettlement();refreshUpdateUI();
 }
 
-function persist(){const ok=saveGame(state);document.querySelector('#save-status')!.innerHTML=icon(ok?'check':'shield')+(ok?'여행이 저장되었어요':'저장 공간을 확인해 주세요');return ok;}
+function persist(){if(startupPending&&!stored)return true;const ok=saveGame(state);document.querySelector('#save-status')!.innerHTML=icon(ok?'check':'shield')+(ok?'여행이 저장되었어요':'저장 공간을 확인해 주세요');return ok;}
 function toast(message:string){const el=document.querySelector<HTMLElement>('#toast')!;el.textContent=message;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('visible'),3500);}
 function ping(){if(!sound)return;try{audioContext??=new AudioContext();void audioContext.resume();const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type='sine';osc.frequency.setValueAtTime(580,audioContext.currentTime);osc.frequency.exponentialRampToValueAtTime(850,audioContext.currentTime+.08);gain.gain.setValueAtTime(.05,audioContext.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+.22);osc.connect(gain);gain.connect(audioContext.destination);osc.start();osc.stop(audioContext.currentTime+.22);}catch{}}
 type ChoreAction = 'plant'|'water'|'harvest'|'chop'|'expand'|'gather';
@@ -545,7 +547,7 @@ function showActivityHelp(a:Action,plotId:number|undefined,message:string,cropId
  currentModal='activity';updateNav();modalShell('OUR NEXT LITTLE STEP',actionNames[a],`<div class="activity-help-icon">${icon(a==='chop'?'axe':a==='gather'?'map':a==='plant'?'seeds':a==='water'?'water':a==='harvest'?'food':a==='hunt'?'hunt':'bed')}</div><p class="activity-block-reason" role="status">${escape(message)}</p>${needsRest?`<div class="activity-energy"><span>${icon('bolt')} 현재 기력 <b>${Math.floor(state.energy)}</b></span><span>필요한 기력 <b>${energy}</b></span></div>${a==='hunt'?`<div class="activity-energy"><span>${icon('heart')} 현재 체력 <b>${Math.floor(state.health)}</b></span><span>필요한 체력 <b>15</b></span></div>`:''}`:''}${recovery}${a==='plant'?`<button class="button button-light full-width activity-secondary" data-seed-change>${icon('bag')} 다른 씨앗 고르기</button>`:''}<button class="text-button full-width" data-close>화면으로 돌아가기</button>`);
 }
 async function action(a:Action,plotId?:number,cropId:CropId=selectedCropId,queuedFarm=false):Promise<boolean>{
- if(contentActivationPending)return false;
+ if(startupPending||contentActivationPending)return false;
  if(['plant','water','harvest'].includes(a)&&!queuedFarm){startFarmMode(a as FarmAction,plotId??quickPlot(a as FarmAction)?.id);return false;}
  if(actionBusy||battleView){toast('지금 하던 일을 마치고 함께해요.');return false;}
  if(!queuedFarm){cancelConstruction();closeFacility();if(farmMode)stopFarmMode();}
@@ -647,7 +649,7 @@ function openModal(kind:string){if(kind==='seeds'){openSeedInventory();return;}i
 function renderSettings(){modalShell('MAKE YOURSELF AT HOME','우리집 설정',`<div class="settings-row"><div><strong>게임 소리</strong><p>작은 행동에 기분 좋은 소리를 더해요</p></div><button class="toggle ${sound?'on':''}" data-sound aria-label="게임 소리 ${sound?'끄기':'켜기'}" aria-pressed="${sound}"><span></span></button></div><div class="settings-row"><div><strong>시간 흐름</strong><p>현재 ${paused?'쉬어 가는 중':'흘러가는 중'}</p></div><button class="button button-light small" data-pause>${paused?'계속하기':'잠시 멈춤'}</button></div>${updateSettingsContent()}<button class="text-button full-width" data-save>${icon('check')} 지금 저장하기</button><button class="text-button danger full-width" data-open="reset">새로운 여행 시작</button><p class="fine-print">ROAD HAVEN · 로드헤이븐 v${APP_VERSION}<br>당신의 기기에 머무는 작은 세상</p>`);refreshUpdateUI();}
 function updateSettingsContent(){
  const native=isNativeUpdateSupported();
- return `<div class="update-box game-content-update"><div class="update-heading">${icon('check')}<strong>게임 콘텐츠 자동 업데이트</strong><span>v${APP_VERSION}</span></div><p data-live-update-message>${escape(liveUpdate.message)}</p><div class="update-download-progress" data-live-update-progress hidden><i></i></div><p class="update-explanation">${native?'농사·마을·그래픽 업데이트는 자동으로 받아요. 작업과 전투를 마치고 트럭 홈 화면에서 저장한 뒤 적용해요.':'웹에서는 새로 열면 최신 게임을 플레이해요. Android 앱은 게임 콘텐츠를 자동으로 적용해요.'}</p><button class="button button-light full-width" data-live-update-check ${native?'':'hidden'}>게임 업데이트 다시 확인</button></div><div class="update-box native-feature-update"><div class="update-heading">${icon('download')}<strong>앱 기능 업데이트</strong><span>Android</span></div><p data-native-update-message>${escape(native?automaticUpdate.message:lastUpdate?.message??'앱을 시작할 때 새 버전을 확인해요.')}</p><div class="update-download-progress" data-native-update-progress hidden><i></i></div><div class="release-notes" data-update-release-notes>${escape(lastUpdate?.release?.notes??'')}</div><button class="button button-light full-width" data-update ${updateBusy?'disabled':''}>${updateBusy?'확인하는 중…':'앱 새 버전 확인'}</button><button class="button full-width" data-install-update hidden>받은 새 버전 설치하기</button><button class="button button-light full-width" data-retry-native-update hidden>다운로드 다시 시도</button><button class="button full-width" data-download ${!native&&lastUpdate?.status==='available'?'':'hidden'}>Android APK 다운로드</button><small>${native?'새 앱 기능이 필요할 때는 설치 확인을 한 번 진행해 주세요. 다운로드는 앱 안에서 자동으로 준비해요.':'브라우저에서는 APK를 내려받아 Android에 설치할 수 있어요.'}</small></div>`;
+ return `<div class="update-box game-content-update"><div class="update-heading">${icon('check')}<strong>게임 콘텐츠 자동 업데이트</strong><span>v${APP_VERSION}</span></div><p data-live-update-message>${escape(liveUpdate.message)}</p><div class="update-download-progress" data-live-update-progress hidden><i></i></div><p class="update-explanation">${native?'게임을 실행하면 새 콘텐츠를 확인하고 자동으로 적용해요. 인터넷이 없어도 저장한 마을에서 계속할 수 있어요.':'웹에서는 새로 열면 최신 게임을 플레이해요. Android 앱은 게임 콘텐츠를 자동으로 적용해요.'}</p><button class="button button-light full-width" data-live-update-check ${native?'':'hidden'}>게임 업데이트 다시 확인</button></div><div class="update-box native-feature-update"><div class="update-heading">${icon('download')}<strong>앱 기능 업데이트</strong><span>Android</span></div><p data-native-update-message>${escape(native?automaticUpdate.message:lastUpdate?.message??'앱을 시작할 때 새 버전을 확인해요.')}</p><div class="update-download-progress" data-native-update-progress hidden><i></i></div><div class="release-notes" data-update-release-notes>${escape(lastUpdate?.release?.notes??'')}</div><button class="button button-light full-width" data-update ${updateBusy?'disabled':''}>${updateBusy?'확인하는 중…':'앱 새 버전 확인'}</button><button class="button full-width" data-install-update hidden>받은 새 버전 설치하기</button><button class="button button-light full-width" data-retry-native-update hidden>다운로드 다시 시도</button><button class="button full-width" data-download ${!native&&lastUpdate?.status==='available'?'':'hidden'}>Android APK 다운로드</button><small>${native?'새 앱 기능이 필요할 때는 설치 확인을 한 번 진행해 주세요. 다운로드는 앱 안에서 자동으로 준비해요.':'브라우저에서는 APK를 내려받아 Android에 설치할 수 있어요.'}</small></div>`;
 }
 function refreshUpdateUI(){
  const badge=document.querySelector<HTMLButtonElement>('#update-badge')!;
@@ -672,11 +674,11 @@ function refreshUpdateUI(){
 }
 function onAutomaticUpdate(next:AutomaticUpdateState){automaticUpdate=next;refreshUpdateUI();}
 function setContentApplying(applying:boolean){
- contentActivationPending=applying;app.inert=applying||Boolean(battleView);app.classList.toggle('content-applying',applying);contentApplyingNotice.hidden=!applying;
+ contentActivationPending=applying;app.inert=startupPending||applying||Boolean(battleView);app.classList.toggle('content-applying',applying);contentApplyingNotice.hidden=!applying;
 }
 function onLiveUpdate(next:LiveUpdateState){liveUpdate=next;if(next.status==='error'&&contentActivationPending)setContentApplying(false);refreshUpdateUI();maybeApplyContentUpdate();}
 function maybeApplyContentUpdate(){
- if(liveUpdate.status!=='ready'||contentActivationPending||document.hidden||actionBusy||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return;
+ if(startupPending||liveUpdate.status!=='ready'||contentActivationPending||document.hidden||actionBusy||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return;
  if(!persist())return;
  setContentApplying(true);refreshUpdateUI();
  void activateLiveUpdate().then(accepted=>{if(!accepted){setContentApplying(false);refreshUpdateUI();}}).catch(()=>{setContentApplying(false);refreshUpdateUI();});
@@ -688,7 +690,7 @@ async function requestAutomaticInstall(){
 }
 function finishDeferredUpdate(){if(installAfterWork&&!actionBusy&&!battleView)void requestAutomaticInstall();else maybeApplyContentUpdate();}
 async function initializeUpdateSystem(){
- if(!updateInitializing)updateInitializing=(async()=>{await initializeLiveUpdates(onLiveUpdate);if(isNativeUpdateSupported())onAutomaticUpdate(await initializeAutoUpdates(onAutomaticUpdate));await runUpdate();})().catch(()=>{refreshUpdateUI();});
+ if(!updateInitializing)updateInitializing=(async()=>{if(isNativeUpdateSupported())onAutomaticUpdate(await initializeAutoUpdates(onAutomaticUpdate));await runUpdate();})().catch(()=>{refreshUpdateUI();});
  return updateInitializing;
 }
 async function runUpdate(manual=false){
@@ -705,7 +707,7 @@ function navigateButton(t:HTMLElement){
  return false;
 }
 document.addEventListener('click',e=>{
- const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||battleView||contentActivationPending)return;
+ const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||battleView||contentActivationPending)return;
  if(t.hasAttribute('data-install-update')){void requestAutomaticInstall();return;}
  if(t.hasAttribute('data-update-notice')){if(automaticUpdate.status==='ready'||automaticUpdate.status==='permission')void requestAutomaticInstall();else if(runningFarm&&actionBusy)afterCurrentFarm(()=>openModal('settings'));else if(!actionBusy)openModal('settings');else toast('작업을 마치면 설정에서 업데이트를 확인해요.');return;}
  if(t.hasAttribute('data-live-update-check')){void checkLiveUpdate().then(onLiveUpdate);return;}
@@ -779,14 +781,23 @@ document.addEventListener('click',e=>{
  if(t.hasAttribute('data-update'))void runUpdate(true);
  if(t.hasAttribute('data-download')&&lastUpdate?.release)void downloadUpdate(lastUpdate.release).catch(()=>toast('다운로드를 열지 못했어요. 잠시 후 다시 시도해 주세요.'));
 });
-document.querySelector('#modal-root')!.addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
-document.addEventListener('keydown',e=>{if(battleView||contentActivationPending)return;if(e.key==='Escape'){if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
+document.querySelector('#modal-root')!.addEventListener('click',e=>{if(!startupPending&&e.target===e.currentTarget)closeModal();});
+document.addEventListener('keydown',e=>{if(startupPending||battleView||contentActivationPending)return;if(e.key==='Escape'){if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
 let saveCounter=0;
-setInterval(()=>{if(paused||document.hidden||actionBusy||battleView||contentActivationPending||currentModal==='welcome')return;state=tick(state,1);render();if(++saveCounter>=10){persist();saveCounter=0;}},1000);
-document.addEventListener('visibilitychange',()=>{if(document.hidden){farmQueue=[];afterFarm=null;renderControls();persist();}else void initializeUpdateSystem().then(()=>runUpdate());});
+setInterval(()=>{if(startupPending||paused||document.hidden||actionBusy||battleView||contentActivationPending||currentModal==='welcome')return;state=tick(state,1);render();if(++saveCounter>=10){persist();saveCounter=0;}},1000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden){farmQueue=[];afterFarm=null;renderControls();persist();}else if(!startupPending)void initializeUpdateSystem().then(()=>runUpdate());});
 setInterval(maybeApplyContentUpdate,500);
 window.addEventListener('pagehide',persist);
 render();
-if(!stored)openModal('welcome');
-if(recoveredExpedition){persist();toast('이전 원정에서 안전하게 귀환했어요. 트럭에서 다시 출발할 수 있어요.');}
-void initializeUpdateSystem();
+async function startGame(){
+ const boot=await runStartupPatch({onState:onLiveUpdate,beforeApply:()=>!stored||persist(),onPendingChange:pending=>{
+  startupPending=pending;app.inert=pending||contentActivationPending||Boolean(battleView);scene.setSuspended(pending||Boolean(battleView));
+ }});
+ if(boot==='applying')return;
+ if(boot==='storage-error')toast('저장 공간을 확인한 뒤 게임 업데이트를 다시 적용해 주세요.');
+ else if(boot==='activation-error')toast('현재 버전으로 시작해요. 다음 실행 때 업데이트를 다시 확인해요.');
+ if(!stored)openModal('welcome');
+ if(recoveredExpedition){persist();toast('이전 원정에서 안전하게 귀환했어요. 트럭에서 다시 출발할 수 있어요.');}
+ void initializeUpdateSystem();
+}
+void startGame();

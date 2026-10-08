@@ -101,7 +101,7 @@ async function claim(id, resource, amount) {
 // It does not download an APK, apply a signed bundle or invoke Android itself.
 async function updateFixture(contentOnly = false, web = false, failActivation = false, previousEngine = false) {
  const current = { version, versionCode, minimumNativeVersionCode: versionCode, apkUrl: 'https://example.invalid/private-current.apk', sha256: 'a'.repeat(64), notes: 'Private current-version QA fixture', publishedAt: '2026-10-08T00:00:00Z' };
- if (previousEngine) current.minimumNativeVersionCode = versionCode - 1;
+ if (previousEngine) current.minimumNativeVersionCode = 8;
  const [major, minor] = version.split('.').map(Number), futureVersion = `${major}.${minor + 1}.0`;
  const future = { ...current, version: futureVersion, versionCode: versionCode + 1, minimumNativeVersionCode: contentOnly ? versionCode : versionCode + 1, apkUrl: 'https://example.invalid/private-future.apk', notes: 'PRIVATE QA ONLY: future release is not published' };
  const result = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -124,7 +124,7 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
     return state.native;
    },
   };
- }, { version: previousEngine ? '0.8.0' : version, versionCode: previousEngine ? versionCode - 1 : versionCode, contentVersion: version, contentCode: versionCode, failActivation, legacy: previousEngine ? previousEngineSave : null });
+ }, { version: previousEngine ? '0.8.0' : version, versionCode: previousEngine ? 8 : versionCode, contentVersion: version, contentCode: versionCode, failActivation, legacy: previousEngine ? previousEngineSave : null });
  page = await result.newPage(); attachErrors(page); await page.goto(updateUrl); await page.waitForLoadState('networkidle');
  const emit = (plugin, state) => page.evaluate(({ plugin, state }) => window.__updateFixture.emit(plugin, state), { plugin, state });
  if (await page.locator('[data-start]').count()) await touch(page.locator('[data-start]')); await pauseWorld();
@@ -134,7 +134,7 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   assert.equal(await page.evaluate(() => window.__updateFixture.state.content.contentVersion), versionCode);
   const legacyLoaded = await saved(); assert.equal(legacyLoaded.name, previousEngineSave.name); assert.deepEqual(legacyLoaded.resources, previousEngineSave.resources); assert.deepEqual(legacyLoaded.seedInventory, previousEngineSave.seedInventory); assert.equal(legacyLoaded.xp, previousEngineSave.xp); assert.equal(legacyLoaded.level, previousEngineSave.level);
   await touch(page.locator('[data-next-goal]')); assert.equal(await page.locator('[data-quest-chapter]').count(), 6); assert.equal(await page.locator('[data-growth-quest]').count(), 4); assert.deepEqual((await saved()).resources, previousEngineSave.resources); assert.equal((await saved()).growthQuests?.claimed.length ?? 0, 0);
-  cases.push(`Private loaded content${versionCode} on native engine${versionCode - 1}: minimum native${versionCode - 1} skips APK, new quest UI renders and previous save gains no resource/XP/seed gifts`);
+  cases.push(`Private loaded content${versionCode} on native engine8: minimum native8 skips APK, new quest UI renders and previous save gains no resource/XP/seed gifts`);
   await result.close(); return;
  }
  if (web) {

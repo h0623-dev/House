@@ -2,41 +2,49 @@ import survivorAtlasUrl from './assets/survivors-anime.png';
 import survivorActionsUrl from './assets/survivors-actions.png';
 
 export { survivorAtlasUrl, survivorActionsUrl };
+export const survivorAtlasSize = { width: 1536, height: 1024 } as const;
 export type SurvivorGender = 'female' | 'male';
 export interface SurvivorFrame {
   sheet: 'survivors' | 'actions';
   x: number; y: number; width: number; height: number;
   /** Coordinates of the grounded feet in the original atlas. */
   footX: number; footY: number;
-  /** Optional contour that removes detached particles from a neighbour. */
-  trimBottomLeft?: { x: number; y: number };
+  /** Standing source height shared by every pose; crouches stay shorter. */
+  referenceHeight?: number;
+  /** Source coordinates of the seed hand, watering spout, or tool contact. */
+  effectAnchor?: { x: number; y: number };
 }
+type FramePose = 'idle' | 'walkA' | 'walkB' | 'attack' | 'sow' | 'water' | 'harvest' | 'chop';
 
-// These are measured silhouette rectangles, rather than nominal grid cells.
-// The battle boots and the watering particles cross a grid boundary in the
-// illustration, so crops deliberately exclude every neighbouring character.
-const frames: Record<SurvivorGender, Record<string, SurvivorFrame>> = {
+// Measured silhouettes of the matching miniature-village survivors. Tools
+// cross nominal cell edges, so each crop follows the actual isolated figure.
+const frames: Record<SurvivorGender, Record<FramePose, SurvivorFrame>> = {
   female: {
-    idle: { sheet: 'survivors', x: 70, y: 3, width: 241, height: 491, footX: 197, footY: 489 },
-    walk: { sheet: 'survivors', x: 413, y: 3, width: 287, height: 494, footX: 579, footY: 492 },
-    garden: { sheet: 'survivors', x: 809, y: 5, width: 304, height: 487, footX: 948, footY: 487 },
-    attack: { sheet: 'survivors', x: 1158, y: 2, width: 354, height: 496, footX: 1331, footY: 493 },
-    sow: { sheet: 'actions', x: 74, y: 6, width: 290, height: 496, footX: 184, footY: 497 },
-    water: { sheet: 'actions', x: 418, y: 2, width: 321, height: 509, footX: 569, footY: 506 },
-    harvest: { sheet: 'actions', x: 838, y: 41, width: 299, height: 461, footX: 973, footY: 497 },
-    chop: { sheet: 'actions', x: 1168, y: 12, width: 360, height: 498, footX: 1346, footY: 505 },
+    idle: { sheet: 'survivors', x: 97, y: 35, width: 225, height: 462, footX: 218, footY: 491 },
+    walkA: { sheet: 'survivors', x: 462, y: 40, width: 283, height: 450, footX: 602, footY: 484 },
+    walkB: { sheet: 'survivors', x: 835, y: 40, width: 252, height: 452, footX: 967, footY: 486 },
+    attack: { sheet: 'survivors', x: 1181, y: 67, width: 348, height: 423, footX: 1334, footY: 484 },
+    sow: { sheet: 'actions', x: 92, y: 59, width: 284, height: 433, footX: 216, footY: 486, effectAnchor: { x: 361, y: 366 } },
+    water: { sheet: 'actions', x: 468, y: 52, width: 308, height: 440, footX: 591, footY: 486, effectAnchor: { x: 763, y: 388 } },
+    harvest: { sheet: 'actions', x: 849, y: 135, width: 266, height: 356, footX: 954, footY: 485, effectAnchor: { x: 1034, y: 388 } },
+    chop: { sheet: 'actions', x: 1184, y: 54, width: 344, height: 439, footX: 1330, footY: 487, effectAnchor: { x: 1438, y: 458 } },
   },
   male: {
-    idle: { sheet: 'survivors', x: 69, y: 525, width: 216, height: 490, footX: 186, footY: 1010 },
-    walk: { sheet: 'survivors', x: 407, y: 525, width: 288, height: 499, footX: 554, footY: 1020 },
-    garden: { sheet: 'survivors', x: 801, y: 529, width: 311, height: 487, footX: 945, footY: 1011 },
-    attack: { sheet: 'survivors', x: 1129, y: 534, width: 394, height: 489, footX: 1327, footY: 1018 },
-    sow: { sheet: 'actions', x: 37, y: 530, width: 346, height: 485, footX: 186, footY: 1010 },
-    water: { sheet: 'actions', x: 421, y: 522, width: 352, height: 495, footX: 583, footY: 1012 },
-    harvest: { sheet: 'actions', x: 813, y: 540, width: 325, height: 470, footX: 967, footY: 1005, trimBottomLeft: { x: 860, y: 780 } },
-    chop: { sheet: 'actions', x: 1151, y: 515, width: 362, height: 500, footX: 1330, footY: 1010 },
+    idle: { sheet: 'survivors', x: 88, y: 512, width: 237, height: 481, footX: 211, footY: 988 },
+    walkA: { sheet: 'survivors', x: 455, y: 517, width: 300, height: 473, footX: 605, footY: 984 },
+    walkB: { sheet: 'survivors', x: 825, y: 517, width: 284, height: 473, footX: 969, footY: 984 },
+    attack: { sheet: 'survivors', x: 1164, y: 527, width: 365, height: 465, footX: 1329, footY: 986 },
+    sow: { sheet: 'actions', x: 70, y: 533, width: 321, height: 460, footX: 214, footY: 987, effectAnchor: { x: 375, y: 843 } },
+    water: { sheet: 'actions', x: 461, y: 534, width: 316, height: 460, footX: 595, footY: 988, effectAnchor: { x: 763, y: 873 } },
+    harvest: { sheet: 'actions', x: 841, y: 614, width: 282, height: 373, footX: 957, footY: 981, effectAnchor: { x: 1023, y: 885 } },
+    chop: { sheet: 'actions', x: 1176, y: 533, width: 352, height: 460, footX: 1332, footY: 987, effectAnchor: { x: 1450, y: 954 } },
   },
 };
+
+const standingHeights: Record<SurvivorGender, number> = { female: 453, male: 473 };
+for (const gender of ['female', 'male'] as const) {
+  for (const frame of Object.values(frames[gender])) frame.referenceHeight = standingHeights[gender];
+}
 
 function imageAsset(url: string): HTMLImageElement {
   const image = new Image();
@@ -51,13 +59,15 @@ export const heroImages = {
 };
 
 export function heroFrame(gender: SurvivorGender, pose: string, time: number): SurvivorFrame {
-  if (pose === 'walk') return frames[gender][Math.sin(time * 8.5) > -.18 ? 'walk' : 'idle'];
+  // Both walking poses keep the same identity, head size, and ground anchor.
+  if (pose === 'walk') return frames[gender][Math.sin(time * 9) >= 0 ? 'walkA' : 'walkB'];
   if (pose === 'attack' || pose === 'skill') return frames[gender].attack;
-  return frames[gender][pose] ?? frames[gender].idle;
+  if (pose === 'sow' || pose === 'water' || pose === 'harvest' || pose === 'chop') return frames[gender][pose];
+  return frames[gender].idle;
 }
 
-/** A face-and-shoulders crop of the exact same character used in the world. */
+/** Portraits show the exact same compact survivor who lives on the truck. */
 export const portraitCrops = {
-  female: { x: 125, y: 2, size: 202, backdrop: '#f2e6c9' },
-  male: { x: 99, y: 520, size: 193, backdrop: '#dce8dc' },
+  female: { x: 94, y: 22, size: 240, backdrop: '#e6d8ad' },
+  male: { x: 91, y: 501, size: 240, backdrop: '#d5d9b5' },
 } as const;
