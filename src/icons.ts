@@ -1,4 +1,20 @@
 import { portraitCrops, survivorAtlasUrl } from './character-art';
+import itemAtlasUrl from './assets/items-anime.png';
+import skillsFarmAtlasUrl from './assets/skills-farm-anime.png';
+
+// Original painted equipment shares the survivors' ink, leather and gold
+// palette. A runtime SVG crop retains the small, responsive icon API while
+// bundling one atlas for the native app and standalone browser build.
+const itemCells: Record<string, number> = {
+ wood:0, scrap:1, food:2, water:3,
+ seeds:4, leaf:4, home:5, axe:6, hunt:7, sword:7,
+ bag:8, map:9, bed:10, truck:11,
+ flag:12, book:13, paw:14, hammer:15, expand:15,
+};
+const atlasSize = 1254;
+const itemCellSize = atlasSize / 4;
+const extraCells: Record<string, number> = { sweep:0, dash:1, heal:2, 'plot-empty':3, 'plot-sprout':4, 'plot-ready':5 };
+let illustrationCropId = 0;
 
 const paths: Record<string,string> = {
  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
@@ -39,7 +55,23 @@ const paths: Record<string,string> = {
  shield: '<path d="m12 2 9 4v7c0 5-9 9-9 9s-9-4-9-9V6Z"/><path d="m8 12 3 3 5-6"/>',
  expand: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
 };
-export function icon(name:string, cls=''):string { return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]??paths.sparkle}</svg>`; }
+export function icon(name:string, cls=''):string {
+ const extra=extraCells[name];
+ if(extra!==undefined){
+  // The strike trail drops a few pixels past the nominal row. Bed crops
+  // begin at their actual timber edge so no floating skill particles leak
+  // into the next row's farm illustrations.
+  const x=(extra%3)*512,y=extra<3?0:560,height=extra<3?552:420;
+  const crop=`illustration-crop-${++illustrationCropId}`;
+  return `<svg class="icon illustrated-icon ${cls}" viewBox="${x} ${y} 512 ${height}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><clipPath id="${crop}"><rect x="${x}" y="${y}" width="512" height="${height}"/></clipPath></defs><image href="${skillsFarmAtlasUrl}" x="0" y="0" width="1536" height="1024" clip-path="url(#${crop})"/></svg>`;
+ }
+ const cell=itemCells[name];
+ if(cell!==undefined){
+  const x=(cell%4)*itemCellSize,y=Math.floor(cell/4)*itemCellSize;
+  return `<svg class="icon illustrated-icon ${cls}" viewBox="${x} ${y} ${itemCellSize} ${itemCellSize}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><image href="${itemAtlasUrl}" x="0" y="0" width="${atlasSize}" height="${atlasSize}"/></svg>`;
+ }
+ return `<svg class="icon glyph-icon ${cls}" viewBox="0 0 24 24" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]??paths.sparkle}</svg>`;
+}
 export function portrait(gender: 'male' | 'female', cls = ''): string {
   const crop = portraitCrops[gender];
   // Inline SVG preserves the existing responsive portrait API while cropping

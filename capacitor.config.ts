@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: '로드헤이븐',
   webDir: 'dist',
   android: {
-    backgroundColor: '#132d32',
+    backgroundColor: '#173e36',
     allowMixedContent: false,
     adjustMarginsForEdgeToEdge: 'auto',
   },

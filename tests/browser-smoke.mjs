@@ -1,8 +1,18 @@
 import { chromium } from '@playwright/test';
-import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import strictAssert from 'node:assert/strict';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+
+const startedAt = new Date();
+let assertionsExecuted = 0;
+const assert = new Proxy(strictAssert, {
+ get(target, key) {
+  const value = Reflect.get(target, key);
+  return typeof value === 'function' ? (...args) => { assertionsExecuted++; return value(...args); } : value;
+ },
+});
 
 await mkdir('artifacts', { recursive: true });
+const appVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const browser = await chromium.launch({
  executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
  headless: true, args: ['--no-sandbox'],
@@ -11,10 +21,14 @@ const context = await browser.newContext({ viewport: { width: 390, height: 844 }
 const page = await context.newPage();
 const errors = [];
 const failedAssets = [];
+const loadedIllustrations = new Set();
 page.on('pageerror', error => errors.push(error.message));
 page.on('response', response => {
  if (response.status() >= 400 && ['image', 'font', 'script', 'stylesheet'].includes(response.request().resourceType())) {
   failedAssets.push(response.status() + ' ' + response.url());
+ }
+ if (response.ok() && response.request().resourceType() === 'image' && response.headers()['content-type']?.includes('image/png')) {
+  loadedIllustrations.add(response.url());
  }
 });
 page.on('requestfailed', request => {
@@ -26,12 +40,33 @@ const save = async () => JSON.parse(await page.evaluate(() => localStorage.getIt
 const close = async () => page.locator('#modal-root [data-close]').click();
 const quick = action => page.locator('#quick-actions [data-quick="' + action + '"]');
 const nav = section => page.locator('[data-nav="' + section + '"]');
-const screenshot = name => page.screenshot({ path: 'artifacts/v0.3.0-' + name + '.png', fullPage: true });
+const screenshots = [];
+const screenshot = name => {
+ const path = 'artifacts/v' + appVersion + '-' + name + '.png';
+ screenshots.push(path);
+ return page.screenshot({ path, fullPage: true });
+};
+async function writeReceipt(status, failure) {
+ const finishedAt = new Date();
+ await writeFile('artifacts/browser-v' + appVersion + '-verification.json', JSON.stringify({
+  version: appVersion, status,
+  baseUrl: process.env.TEST_BASE_URL || 'http://127.0.0.1:5173',
+  startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(),
+  elapsedMs: finishedAt.getTime() - startedAt.getTime(), assertionsExecuted,
+  viewports: ['360×740', '390×844', '844×390', '1440×1100'],
+  loadedIllustrationCount: loadedIllustrations.size,
+  loadedIllustrations: [...loadedIllustrations].sort(),
+  maxDeckCase: 'Valid local late-game fixture: deck level 6 and eight plots, day and night',
+  screenshots, errors, failedAssets,
+  ...(failure ? { failure: String(failure) } : {}),
+ }, null, 2) + '\n');
+}
 
 async function assertHudFits(width, height) {
  await page.setViewportSize({ width, height });
  await page.clock.runFor(400);
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, width + 'px mobile viewport must not overflow horizontally');
+ assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1), true, width + '×' + height + ' main game must fit without vertical scrolling');
  for (const action of ['harvest', 'water', 'plant', 'chop', 'gather', 'rest']) {
   const button = quick(action);
   assert.equal(await button.isVisible(), true, action + ' must be directly visible in the game');
@@ -48,6 +83,7 @@ async function assertHudFits(width, height) {
  for (const section of ['home', 'farm', 'grove', 'hunt', 'bag', 'settings']) {
   const box = await nav(section).boundingBox();
   assert.ok(box && box.y >= 0 && box.y + box.height <= height + 1, section + ' navigation must stay in the viewport');
+  assert.ok(box.width >= 44 && box.height >= 44, section + ' navigation needs a finger-sized target');
  }
 }
 
@@ -105,6 +141,7 @@ try {
  await page.clock.install({ time: new Date('2026-10-08T02:00:00Z') });
  await page.clock.pauseAt(new Date('2026-10-08T02:00:00Z'));
  await page.goto(process.env.TEST_BASE_URL || 'http://127.0.0.1:5173');
+ await page.waitForLoadState('networkidle');
  await page.evaluate(() => document.fonts.ready);
  await page.clock.runFor(350);
  await screenshot('character-selection');
@@ -118,6 +155,14 @@ try {
  await screenshot('mobile-small-home');
  await assertHudFits(390, 844);
  await screenshot('mobile-male-home');
+ await assertHudFits(844, 390);
+ await screenshot('landscape-home');
+ await assertHudFits(390, 844);
+ await nav('farm').click();
+ await page.locator('#farm-context [data-open="farm"]').click();
+ await page.clock.runFor(350);
+ await screenshot('mobile-farm-overview');
+ await close();
 
  // Select a different plot in the HUD, then tap the actual rendered first plot.
  // The farm camera is settled before translating this world point into screen pixels.
@@ -165,10 +210,18 @@ try {
  await chore(page.locator('#modal-root [data-action="expand"]'), async () => assert.equal((await save()).deckLevel, 1));
  assert.equal((await save()).deckLevel, 2);
  assert.equal((await save()).plots.length, 4);
+ await screenshot('mobile-expanded-home');
  const wood = (await save()).resources.wood;
  await chore(quick('chop'), async () => assert.equal((await save()).resources.wood, wood), { workScreenshot: 'mobile-woodcutting' });
  assert.equal((await save()).resources.wood, wood + 18);
  assert.equal((await save()).stats.chops, 1);
+ await nav('grove').click();
+ await page.clock.runFor(2000);
+ await screenshot('mobile-grove');
+ await page.locator('#farm-context [data-open="grove"]').click();
+ await page.clock.runFor(350);
+ await screenshot('mobile-grove-guide');
+ await close();
  await chore(quick('gather'));
  assert.equal((await save()).stats.gathers, 1);
 
@@ -185,11 +238,27 @@ try {
  assert.equal(await page.locator('[data-skill="sweep"]').isDisabled(), true);
  await page.locator('[data-battle="auto"]').click();
  await screenshot('mobile-battle');
+ await page.setViewportSize({ width: 844, height: 390 });
+ await page.clock.runFor(350);
+ assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'landscape battle must not overflow horizontally');
+ for (const skill of ['sweep', 'dash', 'heal']) {
+  const box = await page.locator('[data-skill="' + skill + '"]').boundingBox();
+  assert.ok(box && box.width >= 44 && box.height >= 44 && box.y >= 0 && box.y + box.height <= 391, skill + ' skill remains reachable in landscape');
+ }
+ await screenshot('landscape-battle');
+ await page.setViewportSize({ width: 390, height: 844 });
+ await page.clock.runFor(350);
+ let capturedBoss = false;
  for (let attempt = 0; attempt < 24; attempt++) {
   if (await page.locator('[data-battle="finish"]').count()) break;
   await page.clock.runFor(5000);
   assert.equal(await page.locator('.battle-screen').count(), 1, 'battle remains open until the player returns');
+  if (!capturedBoss && await page.locator('.battle-boss-label').isVisible()) {
+   await screenshot('mobile-boss');
+   capturedBoss = true;
+  }
  }
+ assert.equal(capturedBoss, true, 'the final wave must visibly show its illustrated boss');
  await page.locator('[data-battle="finish"]').waitFor();
  await screenshot('battle-result');
  await page.locator('[data-battle="finish"]').click();
@@ -224,6 +293,21 @@ try {
  assert.equal((await save()).stats.battlesWon, 1, 'character changes must preserve progression');
  await page.clock.runFor(1000);
  await screenshot('mobile-female-home');
+
+ await nav('bag').click();
+ await page.clock.runFor(350);
+ await screenshot('mobile-bag');
+ await page.locator('#modal-root [data-open="map"]').click();
+ await page.clock.runFor(350);
+ await screenshot('mobile-overview-map');
+ await close();
+ await page.locator('[data-open="pet"]').click();
+ await page.clock.runFor(350);
+ const svgDefinitionIds = await page.locator('svg [id]').evaluateAll(elements => elements.map(element => element.id));
+ assert.equal(new Set(svgDefinitionIds).size, svgDefinitionIds.length, 'illustrated portraits must use unique SVG clip/gradient IDs when shown together');
+ await screenshot('mobile-pet');
+ await page.getByRole('button', { name: '보리 쓰다듬기', exact: true }).click();
+ await close();
 
  await nav('settings').click();
  await page.getByRole('button', { name: '새 버전 확인', exact: true }).click();
@@ -278,12 +362,78 @@ try {
  await page.setViewportSize({ width: 1440, height: 1100 });
  await page.clock.runFor(4000);
  await screenshot('desktop-home');
+
+ // A valid late-game save exercises all eight plots and the largest painted deck.
+ const maxDeck = await save();
+ maxDeck.deckLevel = 6;
+ maxDeck.stats.expansions = 5;
+ maxDeck.minutes = 9 * 60;
+ maxDeck.totalMinutes = (maxDeck.day - 1) * 1440 + maxDeck.minutes;
+ maxDeck.plots = Array.from({ length: 8 }, (_, index) => ({
+  id: index + 1,
+  plantedAt: index % 3 === 2 ? null : Math.max(0, maxDeck.totalMinutes - (index % 3 === 0 ? 300 : 60)),
+  watered: index % 3 === 0,
+ }));
+ // Stage fixtures separately because the outgoing page saves its real progress
+ // on pagehide; apply the fixture before the next page loads its game state.
+ await context.addInitScript(() => {
+  const fixture = localStorage.getItem('road-haven-visual-test-input');
+  if (fixture) {
+   localStorage.setItem('road-haven-save-v1', fixture);
+   localStorage.removeItem('road-haven-visual-test-input');
+  }
+ });
+ await page.evaluate(fixture => localStorage.setItem('road-haven-visual-test-input', JSON.stringify(fixture)), maxDeck);
+ await page.setViewportSize({ width: 390, height: 844 });
+ await page.reload();
+ await page.locator('#resident-name').getByText('노을').waitFor();
+ await page.getByRole('button', { name: '시간 일시정지', exact: true }).click();
+ await page.clock.runFor(2000);
+ assert.equal((await save()).deckLevel, 6);
+ assert.equal((await save()).plots.length, 8);
+ await assertHudFits(390, 844);
+ await screenshot('mobile-max-deck-day');
+ for (let id = 1; id <= 8; id++) {
+  await selectPlot(id);
+  assert.equal(await page.locator('#plot-action').getAttribute('data-plot'), String(id), 'all eight late-game plots must be selectable');
+ }
+ await page.clock.runFor(2000);
+ await screenshot('mobile-max-deck-farm');
+ await nav('home').click();
+ const nightDeck = await save();
+ nightDeck.minutes = 21 * 60;
+ nightDeck.totalMinutes = (nightDeck.day - 1) * 1440 + nightDeck.minutes;
+ await page.evaluate(fixture => localStorage.setItem('road-haven-visual-test-input', JSON.stringify(fixture)), nightDeck);
+ await page.reload();
+ await page.locator('#resident-name').getByText('노을').waitFor();
+ await page.getByRole('button', { name: '시간 일시정지', exact: true }).click();
+ await page.clock.runFor(2000);
+ assert.equal(await page.locator('#clock').textContent(), '21:00');
+ await assertHudFits(360, 740);
+ await screenshot('mobile-max-deck-night-small');
+ await assertHudFits(390, 844);
+ await screenshot('mobile-max-deck-night');
+ const decodedIllustrations = await page.evaluate(async sources => Promise.all(sources.map(async source => {
+  const image = new Image();
+  image.src = source;
+  await image.decode();
+  return image.naturalWidth > 0 && image.naturalHeight > 0;
+ })), [...loadedIllustrations]);
+ assert.ok(loadedIllustrations.size >= 4, 'world, survivor, creatures and UI illustration assets must load');
+ assert.equal(decodedIllustrations.every(Boolean), true, 'all requested PNG illustrations must decode');
  assert.deepEqual(failedAssets, []);
  assert.deepEqual(errors, []);
+ await writeReceipt('passed');
+ console.log('Verified ' + assertionsExecuted + ' assertions in ' + (Date.now() - startedAt.getTime()) + ' ms; ' + loadedIllustrations.size + ' PNG illustration assets decoded.');
  console.log('PASS: direct in-game plot selection and farming, delayed single resource commits, viewport-sized mobile controls at 360×740 and 390×844, woodcutting/expansion, anime portraits, three battle stages with skills/pause/victory/retreat, exactly-once rewards, old save migration, interrupted expedition recovery, reload, offline actions and clean console/assets.');
 } catch (error) {
  await screenshot('ui-failure').catch(() => {});
- console.error('UI diagnostic', await page.locator('[data-battle-time]').textContent().catch(() => null), await page.locator('[data-battle-wave]').textContent().catch(() => null), { errors, failedAssets });
+ await writeReceipt('failed', error).catch(() => {});
+ const battleDiagnostic = await page.evaluate(() => ({
+  time: document.querySelector('[data-battle-time]')?.textContent ?? null,
+  wave: document.querySelector('[data-battle-wave]')?.textContent ?? null,
+ })).catch(() => null);
+ console.error('UI diagnostic', battleDiagnostic, { errors, failedAssets });
  throw error;
 } finally {
  await browser.close();

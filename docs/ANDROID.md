@@ -4,7 +4,7 @@
 
 ## 이번 테스트 APK
 
-`artifacts/road-haven-0.3.0-debug.apk`는 Android 버전 코드 3의 플레이 테스트 빌드입니다. 이전 0.1.0 및 0.2.0 APK와 같은 패키지 ID와 서명 키를 사용합니다. 기존 앱을 삭제하지 않고 새 APK를 열어 업데이트하면 로컬 저장을 유지할 수 있습니다. Android 파일 앱에서 APK를 열고 설치를 승인하면 됩니다. 해당 파일 앱/브라우저의 “알 수 없는 앱 설치” 허용이 필요할 수 있습니다. 이 설정은 기기에서 사용자가 직접 결정합니다.
+`artifacts/road-haven-0.4.0-debug.apk`는 Android 버전 코드 4의 플레이 테스트 빌드입니다. 이전 0.1.0·0.2.0·0.3.0 APK와 같은 패키지 ID와 서명 키를 사용합니다. 기존 앱을 삭제하지 않고 새 APK를 열어 업데이트하면 로컬 저장을 유지할 수 있습니다. Android 파일 앱에서 APK를 열고 설치를 승인하면 됩니다. 해당 파일 앱/브라우저의 “알 수 없는 앱 설치” 허용이 필요할 수 있습니다. 이 설정은 기기에서 사용자가 직접 결정합니다.
 
 클라우드의 테스트 서명 키는 저장소 밖 `../.road-haven-signing/debug.keystore`에 보관됩니다. 다음 테스트 빌드도 이 파일을 재사용해야 기존 앱에 덮어 설치할 수 있습니다. 테스트 키는 정식 배포에 사용하지 마세요. CI에서 키 없이 만든 테스트 APK는 실행마다 서명이 달라질 수 있어 지속 업데이트 배포용이 아닙니다.
 
@@ -31,11 +31,11 @@ bash scripts/build-android.sh debug
 설치된 앱을 업데이트하는 APK는 이전 파일과 호환성 검사를 함께 수행하세요. 아래 명령은 새 APK를 내보내기 전에 두 APK의 유효한 서명, 동일한 서명 인증서와 패키지 ID, 증가한 버전 코드를 검사합니다. 기존 테스트 APK가 있는데 원래 키 파일이 없으면 빌드는 새 키를 만들지 않고 복구를 요청합니다.
 
 ```bash
-PREVIOUS_APK_PATH=artifacts/road-haven-0.2.0-debug.apk \
+PREVIOUS_APK_PATH=artifacts/road-haven-0.3.0-debug.apk \
   bash scripts/build-android.sh debug
 # 이미 생성한 두 APK만 검사할 수도 있습니다.
-node scripts/verify-android-update.mjs artifacts/road-haven-0.2.0-debug.apk \
-  artifacts/road-haven-0.3.0-debug.apk
+node scripts/verify-android-update.mjs artifacts/road-haven-0.3.0-debug.apk \
+  artifacts/road-haven-0.4.0-debug.apk
 ```
 
 ## 정식 서명
