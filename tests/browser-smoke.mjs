@@ -63,17 +63,19 @@ async function pauseWorld() {
 }
 async function openPetOnMap() {
  await nav('home').click(); await page.clock.runFor(2000);
- // The pet shortcut moved onto the painted truck. Touch its roaming area in
- // the live canvas rather than invoking the modal through a private API.
- for (const u of [90, 62, 118, 35, 145]) for (const v of [-14, -29, 1]) {
-  const point = await page.locator('#world').evaluate((canvas, { u, v }) => {
+ // Touch the pet actually painted in this frame. Blank floor now directs the
+ // resident to walk, so guessing old roaming coordinates tests the wrong input.
+ for (let attempt = 0; attempt < 6; attempt++) {
+  const point = await page.locator('#world').evaluate(canvas => {
    const g = JSON.parse(canvas.dataset.sceneGeometry), r = canvas.getBoundingClientRect();
-   return { x: r.left + g.dx + (480 + u * .91 - v * .67) * g.scale, y: r.top + g.dy + (420 + u * .34 + v * .47 - 110) * g.scale };
-  }, { u, v });
+   return JSON.parse(canvas.dataset.sceneHits).filter(hit => hit.kind === 'pet').map(hit => ({ x: r.left + g.dx + hit.x * g.scale, y: r.top + g.dy + hit.y * g.scale })).find(point => document.elementFromPoint(point.x, point.y)?.id === 'world');
+  });
+  assert.ok(point, 'a roaming pet is painted and reachable');
   assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the pet roaming area is reachable on the painted truck');
   await page.mouse.click(point.x, point.y);
   if (await page.locator('#modal-root [data-companion-card="dog"]').isVisible()) return;
   if (await page.locator('#modal-root').isVisible()) await close();
+  await page.clock.runFor(100);
  }
  assert.fail('Tapping the visible pet roaming area must open the pet interaction');
 }

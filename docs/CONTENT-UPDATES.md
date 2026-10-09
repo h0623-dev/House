@@ -20,6 +20,8 @@
 
 ## 배포
 
+0.20.0은 터치 이동과 강아지·고양이의 보행을 콘텐츠 버전 20, Android 네이티브 호환 범위 8–20으로 배포합니다. 기존 0.8–0.19 앱과 iPhone·웹은 재설치 없이 자동 콘텐츠 패치로 받습니다. 직접 걷는 동안에는 적용을 기다리며, 이동을 마치고 안전한 트럭 홈에서 진행을 저장한 뒤 적용합니다. 공통 2배 속도와 기존 마을·작물·생산의 저장 형식은 유지합니다.
+
 0.19.0은 공통 게임 속도를 3배에서 2배로 낮추고 콘텐츠 버전 19, Android 네이티브 호환 범위 8–19로 배포합니다. 기존 0.8–0.18 앱과 iPhone·웹은 재설치 없이 자동 콘텐츠 패치로 받습니다. 저장된 작물·생산의 게임 분과 완료 시각은 바꾸지 않고 남은 실제 시간을 새 속도에 맞춥니다. 기존 마을·자원·보상 기록은 이어갑니다.
 
 0.18.0은 iPhone 홈 화면 플레이와 웹 자동 패치를 추가하며 콘텐츠 버전 18, Android 네이티브 호환 범위 8–18로 배포합니다. 기존 0.8–0.17 앱은 같은 서명 콘텐츠를 받으므로 APK를 다시 설치할 필요가 없습니다. 게임 규칙과 v0.17의 저장 형식은 유지합니다.
@@ -102,3 +104,12 @@ v0.15 배포에서는 GitHub Pages의 게시 용량을 줄이기 위해 `gh-page
 | --- | ---: | --- |
 | [0.17.0 ZIP](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.17.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.17.0-content.zip.sha256) | 49,434,259 | `b5efc6bb8ec0b14538adf0a0cbd06a0ec253faef592645469ac37d04c61dfb03` |
 | [0.18.0 ZIP](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.18.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.18.0-content.zip.sha256) | 52,699,032 | `a9ac407ed479c903c2a7680679136ded689b57fee85f262aa4ff5f52f75d915d` |
+
+## v0.20 보관 주소
+
+게시 용량을 유지하기 위해 v0.19 콘텐츠 ZIP과 v0.4 APK 및 각각의 체크섬은 기존 공개 커밋의 고정 주소로 보관합니다. 전체 HTTP 응답·바이트·SHA-256을 확인한 뒤 최신 게시 트리에서만 정리합니다. 원본 파일과 Git 이력을 유지하며, 최신 APK·콘텐츠와 이전 웹 캐시의 코드·그림·폰트는 현재 게시 주소에 남습니다. 아래 고정 주소로 이전 파일도 계속 받을 수 있습니다.
+
+| 보관 파일·체크섬 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| [road-haven-0.19.0-content.zip](https://raw.githubusercontent.com/h0623-dev/House/a9435d83f7139d0f778fafbddc47c17cedcae856/content/road-haven-0.19.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/a9435d83f7139d0f778fafbddc47c17cedcae856/content/road-haven-0.19.0-content.zip.sha256) | 52,699,027 | `dc95d0843d9e93ea96a006547743d0cebfe25a62317e35b291201c5e1e9e87af` |
+| [road-haven-0.4.0-debug.apk](https://raw.githubusercontent.com/h0623-dev/House/a9435d83f7139d0f778fafbddc47c17cedcae856/downloads/road-haven-0.4.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/a9435d83f7139d0f778fafbddc47c17cedcae856/downloads/road-haven-0.4.0-debug.apk.sha256) | 46,342,599 | `6a355f73425d6bf4f9d5fe457e1d4c89ed4f9e7987bfc734c5447bc665579c54` |

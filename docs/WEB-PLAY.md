@@ -1,16 +1,22 @@
 # 로드헤이븐 웹 플레이 배포
 
-v0.19.0은 공통 속도 2배로 iPhone 홈 화면 앱과 정적 웹 호스팅에서 실행할 수 있습니다. [iPhone 설치 안내](IOS.md)를 참고하세요. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
+v0.20.0은 바닥 터치 이동과 공통 속도 2배로 iPhone 홈 화면 앱과 정적 웹 호스팅에서 실행할 수 있습니다. [iPhone 설치 안내](IOS.md)를 참고하세요. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
 
 ## 준비된 파일
 
 - `artifacts/web-play/`: 웹 서버에 올릴 정적 사이트. `index.html`, `assets/`, `fonts/`, `manifest.webmanifest`, `sw.js`, `web-update.json`, `.nojekyll`을 함께 배포합니다.
-- `artifacts/road-haven-0.19.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
-- `artifacts/road-haven-0.19.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
+- `artifacts/road-haven-0.20.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
+- `artifacts/road-haven-0.20.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
 
 `fonts/OFL-NotoSansKR.txt`와 `fonts/OFL-DMSans.txt`는 포함된 글꼴의 라이선스입니다. 배포할 때 함께 보관하세요. 생성된 `artifacts/` 디렉터리는 소스 저장소의 Git 추적에서 제외됩니다.
 
 v0.18 최종 정적 사이트의 30개 파일과 웹 ZIP의 정확한 파일 목록·전체 바이트를 검증했습니다. 같은 소스의 Android 내장 웹 파일 26개 및 단일 HTML과 함께 수정하지 않는 QA 사본 `v018-r2`에 보관했습니다. 총 57개 파일은 실제 로컬 HTTP 응답과도 바이트가 같습니다. 단일 HTML에는 외부 정적 파일 참조가 없으며 웹 전용 설치·패치 파일은 네이티브 업데이터에서 제외합니다. 실제 Service Worker의 오프라인 재실행과 안전한 적용은 [v0.18 검수](research/v018-playtest-results.md)에 기록합니다. 이전 결과는 [v0.17 검수](research/v017-playtest-results.md)에 보관합니다.
+
+## v0.20 터치 이동
+
+빈 바닥을 터치하면 캐릭터가 걸어가고, 다시 누르면 목적지를 바꿉니다. 트럭과 도로 사이는 사다리로 오가며 밭과 건물을 피해 걷습니다. 손가락으로 끌기·두 손가락 확대는 기존 지도 조작으로 유지합니다. 농사·시설·동물은 해당 오브젝트를 눌러 선택합니다. 걷는 동안에는 자동 패치 적용을 기다립니다. 강아지와 고양이의 걸음도 실제 이동 거리에 맞춰 다듬었습니다.
+
+최종 빌드의 단위 테스트 220개와 네 가지 브라우저 검사 14,419개를 통과했습니다. 세 화면 크기의 실제 터치 이동·작업·보행, 실제 자동 패치와 저장 보존의 범위는 [v0.20 검수](research/v020-playtest-results.md)에 기록합니다.
 
 ## v0.19 속도 조정
 
