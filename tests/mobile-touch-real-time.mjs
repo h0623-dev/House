@@ -4,6 +4,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 // Regressions for the controls a person actually touches on a phone. Unlike the
 // broader browser smoke suite, this test never installs or advances page.clock.
+const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
+const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
 const startedAt = new Date();
 const appVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
@@ -160,8 +162,8 @@ try {
   const fresh = await saved();
   await shot(`home-${width}`);
 
-  await touch(nav('hunt'));
-  await touch(page.locator('#modal-root [data-zone="grove"]'));
+  await menuItem('grove');
+  await touch(page.locator('#modal-root [data-look-grove]'));
   await settleCamera();
   const tree = await worldPoint(98, 554);
   assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', tree), true, 'painted tree must remain touchable through the HUD');
@@ -256,8 +258,8 @@ try {
   exhausted.resources.seeds = 0;
   delete exhausted.seedInventory;
   await fixture(exhausted);
-  await touch(nav('hunt'));
-  await touch(page.locator('#modal-root [data-zone="grove"]'));
+  await menuItem('grove');
+  await touch(page.locator('#modal-root [data-look-grove]'));
   assert.match(await page.locator('#plot-action small').innerText(), /쉬고/);
   await touch(page.locator('#plot-action'));
   assert.equal(await page.locator('#modal-root').isVisible(), true, 'low-energy tap must explain the obstacle');
@@ -414,16 +416,16 @@ try {
  assert.deepEqual(errors, []);
  assert.deepEqual(failedAssets, []);
  await writeFile(`artifacts/mobile-real-time-v${appVersion}-verification.json`, JSON.stringify({
-  version: appVersion, status: 'passed', baseUrl, clock: 'Real browser timers and requestAnimationFrame; no page.clock',
+  version: appVersion, snapshotId, finalSnapshot, status: 'passed', baseUrl, clock: 'Real browser timers and requestAnimationFrame; no page.clock',
   input: 'Touchscreen tap coordinates on mobile contexts', viewports: ['360×740', '390×844'],
   slowRenderingCase: 'Actual requestAnimationFrame callbacks delayed by 350 ms with original browser timestamps',
   startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt.getTime(),
   assertionsExecuted, timings, screenshots, errors, failedAssets,
  }, null, 2) + '\n');
- console.log(`PASS: ${assertionsExecuted} real-touch assertions; ${timings.length} bounded real-time chores; tree/context/modal/quick woodcutting, gathering, targeted farming, rest, expansion, battle controls, low-energy/low-supply recovery and max-deck save persistence.`);
+ console.log(`PASS: ${assertionsExecuted} real-touch assertions; ${timings.length} bounded real-time chores; tree/context/modal/quick woodcutting, gathering, targeted farming, rest, expansion, battle controls, low-energy/low-supply recovery and legacy level6 save persistence.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/mobile-real-time-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, status: 'failed', baseUrl, assertionsExecuted, timings, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n');
+ await writeFile(`artifacts/mobile-real-time-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, snapshotId, finalSnapshot, status: 'failed', baseUrl, assertionsExecuted, timings, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n');
  throw error;
 } finally {
  await browser.close();

@@ -12,7 +12,7 @@ const hidden = (value: boolean) => value ? ' hidden' : '';
 const count = (value: number) => String(Math.max(0, Math.floor(Number.isFinite(value) ? value : 0)));
 const destinationIcons: Record<GrowthQuestView['destination']['kind'], string> = {
  gather: 'map', harvest: 'food', plant: 'seeds', water: 'water', build: 'hammer',
- collect: 'bag', upgrade: 'hammer', chop: 'axe', hunt: 'hunt', expand: 'expand',
+ collect: 'bag', upgrade: 'hammer', chop: 'axe', hunt: 'hunt', expand: 'expand', companions: 'paw',
 };
 
 export function growthQuestStatusLabel(status: GrowthQuestStatus): string {
@@ -64,7 +64,7 @@ function renderHistoryRow(quest: GrowthQuestView, position: number): string {
 }
 
 function renderAllComplete(): string {
- return `<article class="growth-all-complete" data-growth-complete>${icon('check')}<h3>24개 목표를 모두 완료했어요!</h3><p>가장 넓어진 트럭 마을에서<br>농사와 생산, 꾸미기를 이어 가요.</p><button class="button full-width" data-close>마을로 돌아가기</button></article>`;
+ return `<article class="growth-all-complete" data-growth-complete>${icon('check')}<h3>32개 목표를 모두 완료했어요!</h3><p>여덟 번째 트럭 데크에서<br>동료의 모험과 농사, 생산을 이어 가요.</p><button class="button full-width" data-close>마을로 돌아가기</button></article>`;
 }
 
 export function renderGrowthQuestBoard(state: GameState, selectedChapter?: number): string {

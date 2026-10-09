@@ -4,6 +4,7 @@ import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, ty
 import { drawHero, type HeroPose } from './actors';
 import { drawZombie } from './creatures';
 import { drawCompanion } from './companion-art';
+import { getSelectedTeam, getUnitRoster } from './units';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady, worldImages } from './world-art';
 import { drawCropSprite } from './crop-art';
 import { BUILDINGS, getSettlement, getUnlockedSlots, type BuildingType } from './settlement';
@@ -15,12 +16,14 @@ import itemAtlasUrl from './assets/items-anime.png';
 type Point = [number, number];
 type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number };
-type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather';
+type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade';
 type FarmAction = 'plant' | 'water' | 'harvest';
+type PlanningMode = 'catalog' | 'placement' | 'expansion';
+type WorldBounds = { left: number; top: number; right: number; bottom: number };
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; plotIndex: number; cropId: CropId; resolve: () => void };
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; plotIndex: number; cropId: CropId; facilitySlot?: number; resolve: () => void };
 // The hero belongs to the truck's scale: a person fits comfortably beside its house and planters.
 // Compact painted residents sit between the crops and miniature buildings.
 const WORLD_HERO_SCALE = .64;
@@ -29,9 +32,9 @@ const CROP_SEED_COLOR: Record<CropId, string> = { carrot: '#d29b57', potato: '#b
 // The original eight beds keep their identity and position as the garden grows.
 // New beds occupy the deck's front garden; facilities stay behind the central path.
 const FARM_POSITIONS: Point[] = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122],
-  [216, 42], [216, 122], [299, 42], [299, 122], [-116, 202], [-33, 202], [50, 202], [133, 202], [216, 202], [299, 202]];
-const DECK_FRONTS = [141, 216, 216, 249, 296, 321];
-const SETTLEMENT_SLOTS: Point[] = [[-42, -106], [124, -106], [-42, -278], [124, -278], [-42, -450], [124, -450], [290, -106], [456, -106], [290, -278], [456, -278], [290, -450], [456, -450]];
+  [216, 42], [216, 122], [299, 42], [299, 122], [-116, 202], [-33, 202], [50, 202], [133, 202], [216, 202], [299, 202], [-116, 282], [-33, 282], [50, 282], [133, 282], [216, 282], [299, 282]];
+const DECK_FRONTS = [141, 216, 216, 249, 296, 321, 361, 401];
+const SETTLEMENT_SLOTS: Point[] = [[-42, -106], [124, -106], [-42, -278], [124, -278], [-42, -450], [124, -450], [290, -106], [456, -106], [290, -278], [456, -278], [290, -450], [456, -450], [-42, -622], [124, -622], [290, -622], [456, -622]];
 const FACILITY_SIZE: Record<BuildingType, Point> = { workshop: [126, 119], kitchen: [120, 112], waterworks: [116, 118], greenhouse: [126, 105], watchtower: [111, 146], petHouse: [106, 90] };
 
 /** A live isometric home built from our original painted anime environment art. */
@@ -73,6 +76,11 @@ export class Scene {
   private selectedSlot: number | null = null;
   private movingBuildingId: number | null = null;
   private selectedFacilityId: number | null = null;
+  private planningMode: PlanningMode | null = null;
+  private planningLevel: number | null = null;
+  private expansionPreview: number | null = null;
+  private cameraFocusRequested = false;
+  private safeViewport = { top: 0, bottom: 0, left: 0, right: 0, width: 1, height: 1 };
   private queuedPlotIds: number[] = [];
   private plantingCropId: CropId = 'carrot';
   private itemAtlas = (() => { const image = new Image(); image.decoding = 'async'; image.src = itemAtlasUrl; return image; })();
@@ -265,6 +273,31 @@ export class Scene {
     this.movingBuildingId = type && movingId !== undefined ? movingId : null;
     if (type && !this.action) this.zone = 'home';
   }
+  /** Fit when a planning view opens; later user drags and pinches keep their camera. */
+  setPlanningViewport(mode: PlanningMode | null, nextLevel?: number) {
+    const level = mode === 'expansion' ? Math.min(8, Math.max(1, nextLevel ?? (this.state?.deckLevel ?? 1) + 1)) : null;
+    if (mode === this.planningMode && level === this.planningLevel) return;
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
+    this.planningMode = mode; this.planningLevel = level;
+    this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null;
+    this.cameraFocusRequested = true;
+    if (mode) this.zone = 'home';
+    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
+    this.render();
+  }
+  setExpansionPreview(level: number | null) {
+    this.expansionPreview = level === null ? null : Math.min(8, Math.max(this.state?.deckLevel ?? 1, Math.floor(level)));
+    this.render();
+  }
+  /** Selecting a distant facility explicitly makes both its sprite and upgrade sheet readable. */
+  focusFacility(id: number) {
+    if (!this.state || !getSettlement(this.state).buildings.some(building => building.id === id)) return;
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
+    this.selectedFacilityId = id; this.zone = 'home';
+    this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.cameraFocusRequested = true;
+    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
+    this.render();
+  }
   setSelectedFacility(id: number | null) {
     if (id !== this.selectedFacilityId) { this.endFarmStroke(); this.endMapGesture(); }
     this.selectedFacilityId = id;
@@ -306,24 +339,37 @@ export class Scene {
     const cropId = kind === 'plant' ? selectedCropId ?? this.plantingCropId : getPlotCropId(state?.plots[plotIndex] ?? { id: 0, plantedAt: null, watered: false });
     const home = this.p(-74, 14, 95), [u, v] = this.plotPosition(plotIndex);
     let path: Point[] = [home, this.p(u - 9, 12, 95), this.p(u - 9, v + 39, 95)];
-    let work = kind === 'expandFarm' ? 2.4 : kind === 'water' ? 2.1 : kind === 'harvest' ? 2.2 : 1.9;
+    let work = kind === 'expandFarm' ? 1.8 : kind === 'water' ? 1.5 : kind === 'harvest' ? 1.65 : 1.5;
     let climbSegments: number[] = [];
     if (kind === 'chop' || kind === 'gather') {
       const front = this.deckBounds().front;
       path = [home, this.p(-168, 16, 95), this.p(-176, front - 13, 95), this.rampTop(), this.rampBottom(),
         ...(kind === 'chop' ? [[146, 560], [142, 590]] as Point[] : [[181, 549], [211, 578]] as Point[])];
       climbSegments = [3];
-      work = kind === 'chop' ? 4 : 3.8;
+      work = kind === 'chop' ? 2.55 : 2.4;
       if (kind === 'chop') this.treeCutAt = -100;
     } else if (kind === 'expand') {
       path = [home, this.p(-156, 16, 95), this.p(-157, this.deckBounds().front - 19, 95)];
-      work = 2.4;
+      work = 1.8;
     }
     work = realDuration(work);
     const route = createMotionRoute(path, climbSegments), walk = route.duration;
     this.zone = 'home';
     this.lastFrame = performance.now();
     return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk * 2 + work, walk, work, path, route, plotIndex, cropId, resolve }; });
+  }
+  /** A short, visible visit to the facility; the controller commits its state exactly once. */
+  playFacilityAction(slot: number, kind: 'build' | 'upgrade'): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    if (this.action) return Promise.reject(new Error('이미 행동 중이에요.'));
+    if (!Number.isInteger(slot) || !SETTLEMENT_SLOTS[slot]) return Promise.reject(new Error('시설 자리를 확인해 주세요.'));
+    const [u, v] = SETTLEMENT_SLOTS[slot];
+    // These narrow aisles run along the edges of every existing footprint.
+    const path: Point[] = [this.p(-74, 14, 95), this.p(u + 67, 14, 95), this.p(u + 67, v + 67, 95)];
+    const route = createMotionRoute(path), walk = route.duration, work = .55;
+    this.zone = 'home'; this.lastFrame = performance.now();
+    return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk * 2 + work, walk, work, path,
+      route, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, resolve }; });
   }
   focus(kind: string) { this.focused = kind; this.focusedUntil = performance.now() + 2400; }
   resize() {
@@ -415,14 +461,21 @@ export class Scene {
     const round = (value: number) => Math.round(value * 1000) / 1000;
     const geometry = JSON.stringify({ scale: round(this.scale), dx: round(this.dx), dy: round(this.dy), zone: this.zone,
       farmMode: this.farmMode, constructionMode: this.constructionMode, mapZoom: this.mapZoom,
-      mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null });
+      mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null,
+      planningMode: this.planningMode, planningLevel: this.planningLevel, expansionPreview: this.expansionPreview,
+      deckLevel: this.state?.deckLevel ?? 1, farmCapacity: this.state ? getFarmCapacity(this.state) : 3, facilityCapacity: this.state ? getUnlockedSlots(this.state) : 2,
+      viewport: { width: round(this.width), height: round(this.height), safeTop: round(this.safeViewport.top), safeBottom: round(this.safeViewport.bottom), safeLeft: round(this.safeViewport.left), safeRight: round(this.safeViewport.right), usableWidth: round(this.safeViewport.width), usableHeight: round(this.safeViewport.height) } });
     if (this.canvas.dataset.sceneGeometry !== geometry) this.canvas.dataset.sceneGeometry = geometry;
     const buildings = this.state ? getSettlement(this.state).buildings : [];
     const unlocked = this.state ? getUnlockedSlots(this.state) : 2;
     const slots = SETTLEMENT_SLOTS.map(([u, v], slot) => {
       const point = this.p(u, v, 95), building = buildings.find(item => item.slot === slot);
       const size = building ? FACILITY_SIZE[building.type] : [126, 119];
-      return { slot, x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale),
+      const logicalBounds = this.slotBounds(slot);
+      const footprint = { left: round(this.dx + logicalBounds.left * this.scale), top: round(this.dy + logicalBounds.top * this.scale),
+        right: round(this.dx + logicalBounds.right * this.scale), bottom: round(this.dy + logicalBounds.bottom * this.scale) };
+      return { slot, footprint, visible: footprint.left >= this.safeViewport.left && footprint.right <= this.width - this.safeViewport.right
+        && footprint.top >= this.safeViewport.top && footprint.bottom <= this.height - this.safeViewport.bottom, x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale),
         unlocked: slot < unlocked, buildingId: building?.id ?? null,
         facilityX: round(this.dx + point[0] * this.scale), facilityY: round(this.dy + (point[1] - 44) * this.scale),
         readyX: round(this.dx + point[0] * this.scale), readyY: round(this.dy + (point[1] - size[1] - 18) * this.scale),
@@ -431,6 +484,10 @@ export class Scene {
         remainingSeconds: building?.readyAt === null || !building ? null
           : gameMinutesToSeconds(building.readyAt - (this.state?.totalMinutes ?? 0)) };
     });
+    const deck = this.deckBounds(), preview = this.expansionPreview === null ? null : this.deckBounds(this.expansionPreview);
+    const corners = (bounds: ReturnType<Scene['deckBounds']>) => [[bounds.left, bounds.back], [bounds.end, bounds.back], [bounds.end, bounds.front], [bounds.left, bounds.front]].map(([u, v]) => { const point = this.p(u, v, 95); return { x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale) }; });
+    this.canvas.dataset.deckExpansion = JSON.stringify({ level: this.state?.deckLevel ?? 1, nextLevel: this.expansionPreview, current: corners(deck), preview: preview ? corners(preview) : null,
+      addedSlots: this.expansionPreview === null ? [] : slots.filter(slot => !slot.unlocked && slot.slot < this.expansionPreview! * 2).map(slot => slot.slot) });
     const encoded = JSON.stringify(slots);
     if (this.canvas.dataset.settlementSlots !== encoded) this.canvas.dataset.settlementSlots = encoded;
     const plots = (this.state?.plots ?? []).slice(0, FARM_POSITIONS.length).map((plot, index) => {
@@ -523,6 +580,7 @@ export class Scene {
     this.canvas.dataset.sceneAction = JSON.stringify({ kind: action?.kind ?? null, phase,
       elapsed: round(action?.elapsed ?? 0), total: round(action?.duration ?? 0),
       walk: round(action?.walk ?? 0), work: round(action?.work ?? 0),
+      facilitySlot: action?.facilitySlot ?? null, facilityId: action?.facilitySlot === undefined || !this.state ? null : getSettlement(this.state).buildings.find(building => building.slot === action.facilitySlot)?.id ?? null,
       pose: hero.pose, climbing: hero.climbing ?? null, progress: round(hero.progress),
       x: round(hero.point[0]), y: round(hero.point[1]), gaitTime: round(hero.time) });
     const progress = action ? Math.min(100, Math.floor(action.elapsed / action.duration * 100)) : 0;
@@ -533,12 +591,12 @@ export class Scene {
       this.canvas.dispatchEvent(new CustomEvent('sceneactionchange', { detail }));
     }
   }
-  private deckBounds() {
-    let level = this.state?.deckLevel ?? 1;
-    if (this.action?.kind === 'expand') level += this.ease(this.actionProgress());
-    const step = Math.max(0, Math.min(5, level - 1));
+  private deckBounds(atLevel?: number) {
+    let level = atLevel ?? this.state?.deckLevel ?? 1;
+    if (atLevel === undefined && this.action?.kind === 'expand') level += this.ease(this.actionProgress());
+    const step = Math.max(0, Math.min(7, level - 1));
     const lower = Math.floor(step), upper = Math.ceil(step), amount = step - lower;
-    const ends = [234, 282, 330, 558, 582, 606], backs = [-184, -356, -528, -544, -560, -576];
+    const ends = [234, 282, 330, 558, 582, 606, 634, 662], backs = [-184, -356, -528, -544, -560, -576, -744, -768];
     return { level, left: -278 - step * 14, end: ends[lower] + (ends[upper] - ends[lower]) * amount,
       back: backs[lower] + (backs[upper] - backs[lower]) * amount, front: DECK_FRONTS[lower] + (DECK_FRONTS[upper] - DECK_FRONTS[lower]) * amount };
   }
@@ -558,7 +616,7 @@ export class Scene {
       const motion = sampleMotionRoute(action.route, action.elapsed - action.walk - action.work, true);
       return { ...motion, time: motion.distance / 86 };
     }
-    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather' };
+    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather' };
     return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
       progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
@@ -567,6 +625,48 @@ export class Scene {
     if (!action || action.kind !== 'chop' && action.kind !== 'gather') return true;
     const stairEntry = action.route.rampSeconds / 2 + action.route.segments.slice(0, 3).reduce((seconds, segment) => seconds + segment.seconds, 0);
     return action.elapsed < stairEntry || action.elapsed > action.duration - stairEntry;
+  }
+  private slotBounds(slot: number): WorldBounds {
+    const [u, v] = SETTLEMENT_SLOTS[slot], point = this.p(u, v, 95);
+    const corners = [this.p(u - 65, v - 62, 95), this.p(u + 65, v - 62, 95), this.p(u + 65, v + 62, 95), this.p(u - 65, v + 62, 95)];
+    return { left: Math.min(...corners.map(p => p[0]), point[0] - 75),
+      right: Math.max(...corners.map(p => p[0]), point[0] + 75),
+      top: Math.min(...corners.map(p => p[1]), point[1] - 174),
+      bottom: Math.max(...corners.map(p => p[1]), point[1] + 26) };
+  }
+  private planningBounds(): WorldBounds | null {
+    if (!this.planningMode) return null;
+    const level = this.planningMode === 'expansion' ? this.planningLevel ?? this.state?.deckLevel ?? 1 : this.state?.deckLevel ?? 1;
+    const slotCount = Math.min(SETTLEMENT_SLOTS.length, level * 2);
+    const bounds = Array.from({ length: slotCount }, (_, slot) => this.slotBounds(slot));
+    if (this.planningMode === 'expansion') {
+      const deck = this.deckBounds(level);
+      const corners = [this.p(deck.left, deck.back, 95), this.p(deck.end, deck.back, 95), this.p(deck.end, deck.front, 95), this.p(deck.left, deck.front, 95)];
+      bounds.push({ left: Math.min(...corners.map(p => p[0])) - 10, right: Math.max(...corners.map(p => p[0])) + 10,
+        top: Math.min(...corners.map(p => p[1])) - 35, bottom: Math.max(...corners.map(p => p[1])) + 20 });
+    }
+    return { left: Math.min(...bounds.map(b => b.left)) - 22, top: Math.min(...bounds.map(b => b.top)) - 18,
+      right: Math.max(...bounds.map(b => b.right)) + 22, bottom: Math.max(...bounds.map(b => b.bottom)) + 18 };
+  }
+  private viewportInsets(css: CSSStyleDeclaration): { top: number; bottom: number; left: number; right: number; width: number; height: number } {
+    const top = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-top')) || 0);
+    let bottom = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-bottom')) || 0), left = 0, right = 0;
+    if (this.planningMode) {
+      const canvas = this.canvas.getBoundingClientRect();
+      const overlay = this.planningMode === 'placement' ? document.querySelector<HTMLElement>('#construction-bar')
+        : document.querySelector<HTMLElement>('#modal-root:not([hidden]) .modal');
+      if (overlay && !overlay.hidden) {
+        const bounds = overlay.getBoundingClientRect();
+        if (bounds.width > 0 && bounds.height > 0 && bounds.top < canvas.bottom && bounds.bottom > canvas.top) {
+          // Landscape catalogues sit beside the map. Reserve their column instead
+          // of shrinking a fully available left-hand map to a thin strip above it.
+          if (bounds.width < canvas.width * .55 && (bounds.height > canvas.height * .45 || this.planningMode === 'placement' && canvas.width > canvas.height * 1.4) && bounds.left > canvas.left + canvas.width * .4) right = canvas.right - bounds.left + 12;
+          else if (bounds.width < canvas.width * .55 && (bounds.height > canvas.height * .45 || this.planningMode === 'placement' && canvas.width > canvas.height * 1.4) && bounds.right < canvas.left + canvas.width * .6) left = bounds.right - canvas.left + 12;
+          else bottom = Math.max(bottom, canvas.bottom - bounds.top + 12);
+        }
+      }
+    }
+    return { top, bottom, left, right, width: Math.max(100, this.width - left - right), height: Math.max(70, this.height - top - bottom) };
   }
   private updateCamera() {
     const { level, left, end, back, front } = this.deckBounds();
@@ -599,9 +699,8 @@ export class Scene {
     const logicalHeight = 560 + Math.max(0, level - 3) * 17;
     // The same scene supports the phone HUD and the standalone art preview.
     const css = getComputedStyle(this.canvas);
-    const safeTop = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-top')) || 0);
-    const safeBottom = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-bottom')) || 0);
-    const availableHeight = Math.max(100, this.height - safeTop - safeBottom);
+    const insets = this.viewportInsets(css); this.safeViewport = insets;
+    const safeTop = insets.top, availableHeight = insets.height, availableWidth = insets.width;
     let viewWidth = showFarm ? Math.max(logicalWidth, farmWidth * 1.48) : logicalWidth;
     let viewHeight = showFarm ? Math.max(logicalHeight, farmHeight * 1.48) : logicalHeight;
     if (!showFarm && this.zone === 'home' && (!this.action || this.action.kind === 'expand')) {
@@ -630,6 +729,12 @@ export class Scene {
       viewWidth = Math.min(viewWidth, Math.max(700, this.width / 1.05));
       viewHeight = Math.min(viewHeight, viewWidth * availableHeight / this.width);
     }
+    const planning = this.planningBounds();
+    if (planning) {
+      viewWidth = planning.right - planning.left;
+      viewHeight = planning.bottom - planning.top;
+      target = { x: (planning.left + planning.right) / 2, y: (planning.top + planning.bottom) / 2, zoom: 1 };
+    }
     // Keep the viewport as well as the camera fixed after a manual move. An action
     // starting or ending must not silently change the map's scale under the finger.
     if (this.manualViewport) [viewWidth, viewHeight] = this.manualViewport;
@@ -640,13 +745,16 @@ export class Scene {
       Math.max(-this.mapPanLimit[1], Math.min(this.mapPanLimit[1], this.mapPan[1]))];
     target.x += this.mapPan[0]; target.y += this.mapPan[1]; target.zoom *= this.mapZoom;
     // Explicit navigation or the reset control returns to automatic camera focus.
+    if (this.cameraFocusRequested && !this.manualViewport) {
+      this.camera = { ...target }; this.cameraFocusRequested = false;
+    }
     if (!this.manualViewport && !this.pinch.active) {
       this.camera.x += (target.x - this.camera.x) * blend;
       this.camera.y += (target.y - this.camera.y) * blend;
       this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
     }
-    this.scale = Math.min(this.width / viewWidth, availableHeight / viewHeight) * this.camera.zoom;
-    this.dx = this.width / 2 - this.camera.x * this.scale;
+    this.scale = Math.min(availableWidth / viewWidth, availableHeight / viewHeight) * this.camera.zoom;
+    this.dx = insets.left + availableWidth / 2 - this.camera.x * this.scale;
     this.dy = safeTop + availableHeight / 2 - this.camera.y * this.scale;
   }
 
@@ -745,20 +853,23 @@ export class Scene {
     for (let v = 141; v < deckFront; v += 36) this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#80613c', 1.5);
     this.railing(left + 1, back + 4, end, back + 4, 94, false);
     this.railing(left + 2, back + 4, left + 2, deckFront - 2, 94, false);
+    this.expansionDeck();
     this.bunting(); this.settlement(); this.house(); this.farm();
     if (this.heroOnDeck()) this.hero();
     drawWorldSprite(this.ctx, 'crate', ...this.p(-207, -53, 96), 26, 27);
-    const dogResting=(this.state?.companions?.dog.health??100)<=0;
-    const dogPhase=dogResting||this.reducedMotion?0:this.time*.37;
-    const dogU = 90 + Math.sin(dogPhase) * 55;
-    const dogV = -14 + Math.cos(dogPhase) * 15;
-    const dog = this.p(dogU, dogV, 95);
-    this.dog(dog[0], dog[1], .78, Math.cos(dogPhase) > 0);
-    this.hits.push({kind: 'pet', x: dog[0], y: dog[1] - 15, radius: 29});
-    const catResting=(this.state?.companions?.cat.health??100)<=0;
-    const catPhase=(catResting||this.reducedMotion?0:this.time*.31)+1.8,cat=this.p(-45+Math.sin(catPhase)*34,-26+Math.cos(catPhase)*11,95);
-    drawCompanion(this.ctx,{id:'cat',x:cat[0],y:cat[1],scale:.73,time:this.reducedMotion?0:this.time,facing:Math.cos(catPhase)>0?1:-1,pose:catResting?'down':this.reducedMotion?'idle':'walk'});
-    this.hits.push({kind:'pet',x:cat[0],y:cat[1]-14,radius:24});
+    const team = this.state ? getSelectedTeam(this.state) : ['dog', 'cat'] as const;
+    const roster = getUnitRoster(this.state ?? {});
+    const petPositions: Point[] = [];
+    team.forEach((id, index) => {
+      const resting = roster[id].health <= 0;
+      const phase = (resting || this.reducedMotion ? 0 : this.time * (.31 + index * .03)) + index * 1.8;
+      const point = this.p([-45, 100, 230][index] + Math.sin(phase) * 34, -26 + Math.cos(phase) * 11, 95);
+      petPositions.push(point);
+      drawCompanion(this.ctx, { id, x: point[0], y: point[1], scale: id === 'dog' ? .78 : id === 'boar' ? .7 : .73,
+        time: this.reducedMotion ? 0 : this.time, facing: Math.cos(phase) > 0 ? 1 : -1,
+        pose: resting ? 'down' : this.reducedMotion ? 'idle' : 'walk' });
+      this.hits.push({ kind: 'pet', x: point[0], y: point[1] - 14, radius: 24 });
+    });
     this.cabin();
     this.railing(left + 3, deckFront, -244, deckFront, 94, true);
     this.railing(-206, deckFront, end, deckFront, 94, true);
@@ -772,8 +883,28 @@ export class Scene {
     if (this.action?.kind === 'expand') this.buildingDeck();
     const center = this.p(end + 50, (back + deckFront) / 2, 120);
     this.hits.unshift({kind: 'truck', x: center[0], y: center[1] + 55, radius: 97});
-    this.pulse('pet', dog[0], dog[1] - 15, 29);
+    for (const point of petPositions) this.pulse('pet', point[0], point[1] - 15, 26);
     this.pulse('truck', center[0], center[1] + 50, 71);
+  }
+
+  private expansionDeck() {
+    if (this.expansionPreview === null || this.expansionPreview <= (this.state?.deckLevel ?? 1)) return;
+    const current = this.deckBounds(), next = this.deckBounds(this.expansionPreview);
+    const rectangles = [
+      [next.left, next.back, next.end, current.back], [next.left, current.front, next.end, next.front],
+      [next.left, current.back, current.left, current.front], [current.end, current.back, next.end, current.front],
+    ];
+    this.ctx.save(); this.ctx.setLineDash([9, 5]);
+    for (const [left, back, right, front] of rectangles) {
+      if (right <= left || front <= back) continue;
+      this.poly([this.p(left, back, 96), this.p(right, back, 96), this.p(right, front, 96), this.p(left, front, 96)], '#c7ec9690', '#c4e9a2', 2.2);
+    }
+    this.poly([this.p(next.left, next.back, 96), this.p(next.end, next.back, 96), this.p(next.end, next.front, 96), this.p(next.left, next.front, 96)], '', '#f3f4b8', 3);
+    this.ctx.restore();
+    const point = this.p((next.left + next.end) / 2, (next.back + current.back) / 2, 103);
+    const pixel = 1 / this.scale;
+    this.round(point[0] - 58 * pixel, point[1] - 12 * pixel, 116 * pixel, 24 * pixel, 10 * pixel, '#e7f4cded', '#91af74');
+    this.label(`확장 후 데크 Lv.${this.expansionPreview}`, point[0], point[1] + 4 * pixel, 10 * pixel, '#577244', 800);
   }
 
   private wheel(u: number, v: number) {
@@ -804,7 +935,8 @@ export class Scene {
     const selectedType = this.constructionMode;
     for (let slot = 0; slot < SETTLEMENT_SLOTS.length; slot++) {
       const open = slot < unlocked;
-      if (!open && !selectedType) continue;
+      const previewSlot = this.expansionPreview !== null && slot < this.expansionPreview * 2;
+      if (!open && !previewSlot) continue;
       const [u, v] = SETTLEMENT_SLOTS[slot], point = this.p(u, v, 95);
       const building = buildings.find(item => item.slot === slot);
       const selected = selectedType !== null && slot === this.selectedSlot;
@@ -813,13 +945,13 @@ export class Scene {
       const corners: [Point, Point, Point, Point] = [this.p(u - 65, v - 62, 95), this.p(u + 65, v - 62, 95), this.p(u + 65, v + 62, 95), this.p(u - 65, v + 62, 95)];
       this.ctx.save();
       if (!open || selectedType && !building) this.ctx.setLineDash([6, 5]);
-      const edge = selected ? valid ? '#86bb7c' : '#d09a83' : open ? '#ad977164' : '#8b9a8780';
-      this.poly(corners, selected ? valid ? '#d2efb044' : '#dbbaa22e' : open ? '#fff3cb1c' : '#c5d6bf20', edge, selected ? 3 : 1.25);
+      const edge = selected ? valid ? '#86bb7c' : '#d09a83' : this.planningMode && open ? '#d5eb99' : open ? '#ad977164' : '#8b9a8780';
+      this.poly(corners, selected ? valid ? '#d2efb077' : '#dbbaa22e' : this.planningMode && open ? '#eff8c44a' : open ? '#fff3cb1c' : '#c5d6bf30', edge, selected || this.planningMode ? 2.5 : 1.25);
       this.ctx.restore();
       if (!building) {
-        const badgeSize = Math.min(32, 12 / this.scale);
+        const badgeSize = 12 / this.scale;
         this.label(open ? '+' : '⌑', point[0], point[1] - 2, badgeSize, open ? '#69895c' : '#74856e', 500);
-        if (selectedType) this.label(open ? `${slot + 1}번 자리` : `데크 Lv.${Math.floor(slot / 2) + 1}`, point[0], point[1] + 19, Math.min(22, 8 / this.scale), open ? '#705d3b' : '#60735b', 600);
+        if (selectedType || this.planningMode) this.label(open ? `${slot + 1}번 자리` : `데크 Lv.${Math.floor(slot / 2) + 1}`, point[0], point[1] + 12 / this.scale, 10 / this.scale, open ? '#705d3b' : '#60735b', 600);
       }
       this.hits.push({ kind: 'build-slot', x: point[0], y: point[1], radius: 57, plotId: slot });
       if (selected && selectedType && valid) {
@@ -836,7 +968,7 @@ export class Scene {
         this.ellipse(point[0], point[1] - 3, width * .56, 23, '#fbea9c45', '#ffefa4', 2.5); this.ctx.restore();
       }
       const alpha = building.id === this.movingBuildingId ? .4 : 1;
-      if (facilityArtReady()) drawFacility(this.ctx, building.type, point[0], point[1], width, height, alpha);
+      if (facilityArtReady()) drawFacility(this.ctx, building.type, point[0], point[1], width, height, alpha, building.level);
       else drawWorldSprite(this.ctx, building.type === 'waterworks' ? 'tank' : building.type === 'greenhouse' ? 'solar' : 'furniture', point[0], point[1], width * .76, height * .76, alpha);
       this.hits.push({ kind: 'facility', x: point[0], y: point[1] - 44, radius: 61, plotId: building.id });
     }
@@ -850,7 +982,7 @@ export class Scene {
       }
       // Placement previews own the map while building: production controls must
       // not cover a free slot or intercept a placement confirmation.
-      if (!state || selectedType) continue;
+      if (!state || selectedType || this.planningMode) continue;
       const bubble: Point = [point[0], point[1] - height - 18];
       if (building.readyAt === null) {
         this.round(bubble[0] - 22 * pixel, bubble[1] - 19 * pixel, 44 * pixel, 38 * pixel, 12 * pixel, '#f3f3dcf2', '#b3b791');
@@ -1018,7 +1150,7 @@ export class Scene {
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
       const cropName = CROPS[this.action.cropId].name;
-      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡' };
+      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요' };
       const label = labels[this.action.kind];
       const top = y - 128 * WORLD_HERO_SCALE - 32;
       this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
@@ -1159,6 +1291,20 @@ export class Scene {
         c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE); c.rotate(-.8 + Math.sin(progress * Math.PI * 14) * .9);
         this.line([[0, 0], [0, -25]], '#9e7750', 4); this.round(-10, -30, 21, 9, 3, '#8faaa0', '#617e75'); c.restore();
       }
+    } else if ((action.kind === 'build' || action.kind === 'upgrade') && action.facilitySlot !== undefined) {
+      const [fu, fv] = SETTLEMENT_SLOTS[action.facilitySlot], facility = this.p(fu, fv, 100);
+      c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE);
+      c.rotate(-.75 + Math.sin(progress * Math.PI * 4) * .7);
+      this.line([[0, 0], [0, -25]], '#9e7750', 4); this.round(-10, -30, 21, 9, 3, '#8faaa0', '#617e75'); c.restore();
+      for (let i = 0; i < 6; i++) {
+        const t = (progress * 2 + i * .17) % 1;
+        this.ellipse(facility[0] + 48 - t * 12 + (i % 3 - 1) * 8, facility[1] - Math.sin(t * Math.PI) * 12 + i % 2 * 3,
+          1.8, 1.1, '#d4b578');
+      }
+      if (progress > .72) for (let i = 0; i < 4; i++) {
+        const x = facility[0] + Math.cos(i * 1.7) * 40, y = facility[1] - 42 + Math.sin(i * 1.7) * 24;
+        this.line([[x - 3, y], [x + 3, y]], '#fff4b0', 1.8); this.line([[x, y - 3], [x, y + 3]], '#fff4b0', 1.8);
+      }
     } else if (action.kind === 'expand' && progress < .83) {
       c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE); c.rotate(-.8 + Math.sin(progress * Math.PI * 10) * .9);
       this.line([[0, 0], [0, -29]], '#9e7750', 5); this.round(-12, -34, 25, 10, 3, '#8faaa0', '#617e75'); c.restore();
@@ -1169,10 +1315,6 @@ export class Scene {
         this.line([[x - 3, y], [x + 3, y]], '#fff4b0', 2); this.line([[x, y - 3], [x, y + 3]], '#fff4b0', 2);
       }
     }
-  }
-
-  private dog(x: number, y: number, s: number, right: boolean) {
-    drawCompanion(this.ctx, { id:'dog',x, y, scale: s, time: this.reducedMotion ? 0 : this.time, facing: right ? 1 : -1, pose: (this.state?.companions?.dog.health??100)<=0?'down':this.reducedMotion?'idle':'walk' });
   }
 
   private pulse(kind: string, x: number, y: number, radius: number) {

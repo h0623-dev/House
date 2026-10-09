@@ -470,6 +470,7 @@ test('maximum deck expansion cannot charge the player or create invalid extra pl
   state.resources.wood = 10_000;
   state.resources.scrap = 10_000;
   for (let level = 1; level < MAX_DECK_LEVEL; level++) {
+    if (state.energy < 15) state = performAction(state, 'rest').state;
     const result = performAction(state, 'expand');
     assert.equal(result.ok, true);
     state = result.state;
@@ -550,7 +551,7 @@ test('a hunt starts with a single energy payment and no upfront loot or experien
   assert.equal(started.state.xp, state.xp);
   assert.equal(started.state.health, state.health);
   assert.equal(started.state.stats.hunts, 1);
-  assert.deepEqual(started.state.expedition, { id: 1, stage: 2, animalParty: true, participantIds: ['dog', 'cat'] });
+  assert.deepEqual(started.state.expedition, { id: 1, stage: 2, unitParty: true, unitParticipantIds: ['dog', 'cat'], unitBattleBonuses: { attackMultiplier: 1, enemyDamageMultiplier: 1 } });
   assert.equal(JSON.stringify(state), before);
   assert.equal(beginHunt(started.state, 1).ok, false);
   assert.equal(performAction(started.state, 'rest').ok, false);
@@ -577,7 +578,7 @@ test('hunts validate stage, healthy animals, and energy before charging the play
 test('victories grant stage-specific loot once and record the actual health and kills', () => {
   const initial = createGame();
   const started = beginHunt(initial, 3).state;
-  const result: HuntResult = { outcome: 'victory', stage: 3, remainingHealth: 63, companionHealth: { dog: 63, cat: 42 }, enemiesDefeated: 8, duration: 42.5 };
+  const result: HuntResult = { outcome: 'victory', stage: 3, remainingHealth: 63, companionHealth: { dog: 63, cat: 42 }, reserveHealth: { rabbit: 100, fox: 100, boar: 100, owl: 100 }, enemiesDefeated: 8, duration: 42.5 };
   const won = finishHunt(started, result, started.expedition!.id);
   assert.equal(won.ok, true);
   assert.equal(won.state.expedition, null);
@@ -607,6 +608,7 @@ test('defeat and retreat retain combat damage, grant no loot, and let the player
     const finished = finishHunt(started, {
       outcome, stage: 1, remainingHealth: outcome === 'defeat' ? 0 : 41, enemiesDefeated: 2, duration: 20,
       companionHealth: outcome === 'defeat' ? { dog: 0, cat: 0 } : { dog: 41, cat: 29 },
+      reserveHealth: { rabbit: 100, fox: 100, boar: 100, owl: 100 },
     }, started.expedition!.id);
     assert.equal(finished.ok, true);
     assert.equal(finished.state.health, initial.health);
@@ -641,7 +643,7 @@ test('interrupted expeditions survive saving and recover as unrewarded retreats'
 
 test('malformed or mismatched battle results never change the pending expedition', () => {
   const started = beginHunt(createGame(), 1).state;
-  const valid: HuntResult = { outcome: 'victory', stage: 1, remainingHealth: 90, companionHealth: { dog: 90, cat: 70 }, enemiesDefeated: 8, duration: 30 };
+  const valid: HuntResult = { outcome: 'victory', stage: 1, remainingHealth: 90, companionHealth: { dog: 90, cat: 70 }, reserveHealth: { rabbit: 100, fox: 100, boar: 100, owl: 100 }, enemiesDefeated: 8, duration: 30 };
   const badResults: unknown[] = [
     null, {}, { ...valid, stage: 2 }, { ...valid, outcome: 'unknown' },
     { ...valid, remainingHealth: NaN }, { ...valid, remainingHealth: Infinity },

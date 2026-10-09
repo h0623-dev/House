@@ -6,20 +6,22 @@ import './growth-quests.css';
 import './map-controls.css';
 import './farm-expansion.css';
 import './village.css';
-import { createGame, performAction, tick, applyOfflineProgress, saveGame, loadGame, expansionCost, farmExpansionCost, getFarmCapacity, questList, getCropProgress, resourceLabels, MAX_DECK_LEVEL, beginHunt, finishHunt, cancelHunt, type Action, type Gender, type Resource, type CropId, CROPS, CROP_IDS, getSeedInventory, getSeedCount, getPlotCropId } from './game';
+import { createGame, performAction, tick, applyOfflineProgress, saveGame, loadGame, expansionCost, farmExpansionCost, getFarmCapacity, questList, getCropProgress, resourceLabels, MAX_DECK_LEVEL, beginHunt, finishHunt, cancelHunt, setCompanionTeam, type Action, type Gender, type Resource, type CropId, CROPS, CROP_IDS, getSeedInventory, getSeedCount, getPlotCropId } from './game';
 import { getVillageOrder, fulfillVillageOrder } from './village-orders';
 import { Scene } from './scene';
-import { BUILDINGS, BUILDING_TYPES, getSettlement, getUnlockedSlots, buildFacility, moveFacility, replaceFacility, upgradeFacility, startProduction, collectProduction, getBuiltTypes, type BuildingType } from './settlement';
-import { buildingCatalog, facilitySheet, productionState } from './settlement-ui';
+import { BUILDINGS, BUILDING_TYPES, getSettlement, getUnlockedSlots, getUpgradeCost, buildFacility, moveFacility, replaceFacility, upgradeFacility, startProduction, collectProduction, getBuiltTypes, type BuildingType } from './settlement';
+import { buildingCatalog, facilitySheet, facilityUpgradePreview, productionState } from './settlement-ui';
 import { GROWTH_CHAPTERS, getGrowthQuests, getActiveGrowthQuest, claimGrowthQuest } from './growth-quests';
 import { renderGrowthQuestBoard, updateGrowthQuestBoard } from './growth-quests-ui';
 import { facilityIcon } from './settlement-art';
 import { BattleView } from './battle-view';
 import { STAGE_NAMES, type BattleResult } from './battle';
 import { icon, portrait } from './icons';
-import { COMPANION_IDS, COMPANIONS, getCompanions, getCompanionLevel, getCompanionMaxHealth } from './companions';
+import { getCompanions } from './companions';
+import { UNIT_IDS, UNITS, getUnitRoster, getUnlockedUnitIds, getSelectedTeam, getReadyTeam, getUnitLevel, getUnitMaxHealth, getUnitBattleBonuses, isUnitId } from './units';
 import { companionPortrait } from './companion-art';
 import './companions.css';
+import './planning.css';
 import { BATTLE_ART_URLS } from './battle-art';
 import { cropIcon } from './crop-art';
 import { APP_VERSION, checkUpdate, downloadUpdate, initializeAutoUpdates, prepareAutomaticUpdate, installPreparedUpdate, isNativeUpdateSupported, type AutomaticUpdateState, type UpdateResult } from './update';
@@ -124,7 +126,8 @@ app.innerHTML=`
  <div class="modal-backdrop" id="modal-root" hidden></div>
 `;
 const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number)=>{
- if(startupPending||battleView||contentActivationPending||currentModal)return;
+ if(startupPending||battleView||contentActivationPending)return;
+ if(currentModal){if(currentModal==='build'||currentModal==='expand')closeModal();return;}
  if(kind==='build-slot'){if(plotId!==undefined){if(placement)previewConstruction(plotId);else if(!actionBusy){if(plotId>=getUnlockedSlots(state)){openModal('expand');toast(`데크 Lv.${Math.floor(plotId/2)+1}로 확장하면 새 자리가 열려요.`);}else openModal('build');}}return;}
  if(kind==='facility-collect'||kind==='facility-start'){if(plotId!==undefined)operateFacility(kind==='facility-collect'?'collect':'start',plotId);return;}
  if(kind==='facility'){if(plotId!==undefined){if(placement)toast('빈 자리를 눌러 시설을 놓아 주세요.');else selectFacility(plotId);}return;}
@@ -180,10 +183,10 @@ function setFarmTray(open:boolean){
  toggle.querySelector('small')!.textContent=open?'도구 접기':'농사 도구';
 }
 function closeFacility(){document.querySelector('#toast')!.classList.remove('facility-toast');selectedFacilityId=null;scene.setSelectedFacility(null);document.querySelector<HTMLElement>('#facility-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('facility-selected');}
-function cancelConstruction(){placement=null;scene.setConstructionMode(null);document.querySelector<HTMLElement>('#construction-bar')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('construction-mode');}
+function cancelConstruction(){placement=null;scene.setConstructionMode(null);scene.setPlanningViewport(null);document.querySelector<HTMLElement>('#construction-bar')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('construction-mode');}
 function selectFacility(id:number){
  const facility=getSettlement(state).buildings.find(b=>b.id===id);if(!facility)return;
- cancelConstruction();if(!actionBusy)stopFarmMode();closeModal();setZone('home');setFarmTray(false);selectedFacilityId=id;scene.setSelectedFacility(id);renderSettlement();
+ cancelConstruction();if(!actionBusy)stopFarmMode();closeModal();setZone('home');setFarmTray(false);selectedFacilityId=id;scene.setSelectedFacility(id);renderSettlement();scene.focusFacility(id);
 }
 function beginConstruction(type:BuildingType,movingId?:number){
  if(battleView)return;if(actionBusy){toast('지금 작업을 마치면 시설을 배치할 수 있어요. 건설 목록은 둘러볼 수 있어요.');return;}
@@ -191,7 +194,7 @@ function beginConstruction(type:BuildingType,movingId?:number){
  if(state.deckLevel<definition.unlockLevel){toast(`데크 Lv.${definition.unlockLevel}부터 ${definition.name}을 지을 수 있어요.`);openModal('expand');return;}
  if(movingId===undefined&&getSettlement(state).buildings.length>=getUnlockedSlots(state)){openReplacementTargets(type);return;}
  recenterMap();closeModal();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);
- placement={type,slot:null,...(movingId!==undefined?{movingId}:{})};scene.setConstructionMode(type,undefined,movingId);renderSettlement();
+ placement={type,slot:null,...(movingId!==undefined?{movingId}:{})};scene.setConstructionMode(type,undefined,movingId);renderSettlement();scene.setPlanningViewport('placement');
  toast(movingId?'빈 자리를 눌러 시설을 옮겨 보세요.':'빈 자리를 누르고 건설을 확정해 주세요.');
 }
 function previewConstruction(slot:number){
@@ -207,21 +210,28 @@ function confirmConstruction(){
  if(!result.ok){toast(result.message);return;}
  state=result.state;cancelConstruction();persist();render();ping();toast(result.message);
  const building=plan.movingId!==undefined?getSettlement(state).buildings.find(b=>b.id===plan.movingId):getSettlement(state).buildings.find(b=>b.slot===plan.slot);
- if(building)selectFacility(building.id);
+ if(building){selectFacility(building.id);if(plan.movingId===undefined)void showFacilityWork(building.id,'build');}
+}
+async function showFacilityWork(id:number,kind:'build'|'upgrade'){
+ const building=getSettlement(state).buildings.find(b=>b.id===id);if(!building||actionBusy)return;
+ actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
+ const status=document.querySelector<HTMLElement>('.chore-status')!;
+ status.innerHTML=`<span class="chore-pulse">${icon('hammer')}</span><div><strong>${escape(state.name)}의 마을 작업<small data-chore-phase>이동 중</small></strong><span>${BUILDINGS[building.type].name} ${kind==='build'?'새 시설 마무리':'시설 개선 마무리'}</span><div class="chore-track" role="progressbar" aria-label="시설 작업 진행" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div></div>`;status.hidden=false;
+ try{await scene.playFacilityAction(building.slot,kind);}catch{toast('시설 작업을 마쳤어요.')}finally{actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');render();finishDeferredUpdate();}
 }
 function operateFacility(kind:'start'|'collect'|'upgrade',id:number){
  if(battleView||placement||contentActivationPending)return;
  if(actionBusy&&kind!=='collect'){toast('지금 작업을 마치면 생산과 개선을 시작할 수 있어요. 시설은 둘러볼 수 있어요.');return;}
  const result=kind==='start'?startProduction(state,id):kind==='collect'?collectProduction(state,id):upgradeFacility(state,id);
- if(result.ok){state=result.state;persist();render();ping();}else if(kind==='start'){currentModal='facility-supplies';modalShell('KEEP OUR VILLAGE MOVING','생산에 쓸 물자를 모아요',`<p class="activity-block-reason" role="status">${escape(result.message)}</p><button class="button full-width" data-action="gather">${icon('map')} 부족한 생활 물자 찾기</button><button class="button button-light full-width activity-secondary" data-close>${icon('arrow')} 시설로 돌아가기</button>`);}toast(result.message);
+ if(result.ok){state=result.state;persist();render();ping();if(kind==='upgrade')void showFacilityWork(id,'upgrade');}else if(kind==='start'){currentModal='facility-supplies';modalShell('KEEP OUR VILLAGE MOVING','생산에 쓸 물자를 모아요',`<p class="activity-block-reason" role="status">${escape(result.message)}</p><button class="button full-width" data-action="gather">${icon('map')} 부족한 생활 물자 찾기</button><button class="button button-light full-width activity-secondary" data-close>${icon('arrow')} 시설로 돌아가기</button>`);}toast(result.message);
 }
 function openFacilityUpgrade(id:number){
  const building=getSettlement(state).buildings.find(b=>b.id===id);if(!building)return;
  const definition=BUILDINGS[building.type];
  if(building.level>=definition.maxLevel){toast('이미 최대 레벨의 시설이에요.');return;}
  if(building.readyAt!==null){toast('진행 중인 생산품을 먼저 수령해 주세요.');return;}
- const next=building.level+1;currentModal='facility-upgrade';
- modalShell('MAKE ROOM FOR MORE',`${definition.name} Lv.${next}`,`<div class="upgrade-facility-art">${facilityIcon(building.type)}${icon('arrow')}<strong>Lv.${next}</strong></div><p class="modal-description">한 번에 만드는 생산품이 ${definition.yieldAmount*building.level}개에서 ${definition.yieldAmount*next}개로 늘어나요.<br>생산에 쓰는 재료도 시설 레벨에 맞춰 늘어나요.</p><div class="cost-row"><span>${icon('wood')} 목재 <strong>${state.resources.wood} / ${definition.wood*next}</strong></span><span>${icon('scrap')} 고철 <strong>${state.resources.scrap} / ${definition.scrap*next}</strong></span></div><button class="button full-width" data-upgrade-confirm="${id}">${icon('hammer')} 재료를 사용해 레벨 올리기</button>${state.resources.wood<definition.wood*next||state.resources.scrap<definition.scrap*next?'<button class="button button-light full-width activity-secondary" data-action="gather">'+icon('map')+' 부족한 개선 재료 찾기</button>':''}`);
+ currentModal='facility-upgrade';
+ modalShell('GROW OUR VILLAGE',`${definition.name} 레벨 올리기`,facilityUpgradePreview(state,building));
 }
 function openReplacementTargets(preferred?:BuildingType){
  if(actionBusy||battleView||contentActivationPending)return;
@@ -279,6 +289,7 @@ function goToGrowthQuest(id:string){
  if(destination.kind==='chop'){setZone('grove');void action('chop');return;}
  if(destination.kind==='expand'){openModal('expand');return;}
  if(destination.kind==='hunt'){selectedStage=1;openModal('hunt');return;}
+ if(destination.kind==='companions'){openModal('pet');return;}
  if(destination.kind==='plant'){
   questSeedHint=CROP_IDS.find(crop=>!state.plots.some(p=>p.plantedAt!==null&&getPlotCropId(p)===crop)&&getSeedCount(state,crop)>0)??'potato';
   openSeedInventory();document.querySelector<HTMLElement>(`[data-select-seed="${questSeedHint}"]`)?.classList.add('quest-target');toast(`성장 목표를 위해 ${CROPS[questSeedHint].seedName}을 골라 빈 밭에 심어 보세요.`);return;
@@ -297,7 +308,7 @@ function goToGrowthQuest(id:string){
   selectFacility(facility.id);toast(ready?'준비된 생산품 수령을 눌러 목표를 진행해요.':running?'생산을 마치면 이곳에서 생산품을 수령해요.':'생산 시작을 누른 뒤 완성된 생산품을 수령해요.');return;
  }
  if(destination.kind==='upgrade'){
-  const upgradedIds=state.facilityHistory?.upgradedFacilityIds??[],eligible=facilities.filter(b=>b.level<2&&!upgradedIds.includes(b.id)),facility=eligible.find(b=>b.readyAt===null)??eligible[0];
+  const upgradedIds=state.facilityHistory?.upgradedFacilityIds??[],target=quest.metric==='highestFacilityLevel'?quest.target:2,eligible=facilities.filter(b=>b.level<target&&(target>2||!upgradedIds.includes(b.id))).sort((a,b)=>b.level-a.level),facility=eligible.find(b=>b.readyAt===null)??eligible[0];
   if(!facility){showQuestBuild();return;}
   selectFacility(facility.id);if(facility.readyAt===null)openFacilityUpgrade(facility.id);else toast('생산품을 수령한 뒤 레벨 올리기를 눌러 주세요.');
  }
@@ -307,7 +318,7 @@ function renderSettlement(){
  const settlement=getSettlement(state),goal=getActiveGrowthQuest(state),ready=settlement.buildings.filter(b=>productionState(state,b).ready).length;
  const chapter=GROWTH_CHAPTERS.find(c=>c.id===goal?.chapter),objective=document.querySelector<HTMLElement>('#settlement-objective')!,rewardReady=goal?.status==='ready';
  objective.classList.toggle('reward-ready',rewardReady);objective.dataset.questState=goal?.status??'complete';objective.dataset.activeQuest=goal?.id??'';
- document.querySelector('#objective-chapter')!.textContent=chapter?`${String(chapter.id).padStart(2,'0')}장 · ${chapter.title}`:'여섯 장의 이야기를 완성했어요';
+ document.querySelector('#objective-chapter')!.textContent=chapter?`${String(chapter.id).padStart(2,'0')}장 · ${chapter.title}`:'여덟 장의 이야기를 완성했어요';
  document.querySelector('#objective-title')!.textContent=goal?(rewardReady?`보상 받기 · ${goal.title}`:goal.title):'도로 위 마을의 모든 이야기를 완성했어요';
  document.querySelector('#objective-detail')!.textContent=goal?(rewardReady?'완료 · 보상을 받고 다음 목표로':`${Math.min(goal.current,goal.target)} / ${goal.target}`):'마을 의뢰와 시설 생산을 이어가요';
  document.querySelector('[data-objective-cta]')!.textContent=goal?(rewardReady?'보상 받기':'하러 가기'):'기록';
@@ -327,15 +338,14 @@ function renderSettlement(){
  if(!selected){if(selectedFacilityId!==null)closeFacility();return;}
  const panel=document.querySelector<HTMLElement>('#facility-sheet')!,definition=BUILDINGS[selected.type],production=productionState(state,selected);
  panel.hidden=false;document.querySelector('.scene-card')!.classList.add('facility-selected');
- if(panel.dataset.facility!==String(selected.id)||panel.dataset.facilityType!==selected.type){panel.dataset.facility=String(selected.id);panel.dataset.facilityType=selected.type;panel.innerHTML=facilitySheet(state,selected);}
- panel.querySelector('[data-facility-level]')!.textContent=`Lv.${selected.level}`;
+ if(panel.dataset.facility!==String(selected.id)||panel.dataset.facilityType!==selected.type||panel.dataset.level!==String(selected.level)){panel.dataset.facility=String(selected.id);panel.dataset.facilityType=selected.type;panel.dataset.level=String(selected.level);panel.innerHTML=facilitySheet(state,selected);}
+ panel.querySelector('[data-facility-level]')!.textContent=`Lv.${selected.level} / ${definition.maxLevel}`;
  panel.querySelector('[data-production-status]')!.textContent=production.ready?'생산품이 준비됐어요!':production.running?`생산 중 · ${formatGameDuration(production.remaining)} 남음`:`한 번 생산으로 ${resourceLabels[definition.yieldResource]}을 모아요`;
  panel.querySelector<HTMLElement>('.facility-progress>i')!.style.width=`${production.progress*100}%`;
  panel.querySelector('[data-production-reward]')!.innerHTML=`${icon(definition.yieldResource)} +${definition.yieldAmount*selected.level}`;
  const start=panel.querySelector<HTMLButtonElement>('[data-facility-start]')!,collect=panel.querySelector<HTMLButtonElement>('[data-facility-collect]')!;
  start.hidden=production.ready;collect.hidden=!production.ready;start.disabled=production.running;start.querySelector('span')!.textContent=production.running?'생산 중…':'생산 시작';
- panel.querySelector<HTMLElement>('.facility-recipe')!.textContent=`${definition.recipe?Object.entries(definition.recipe).map(([r,n])=>`${resourceLabels[r as Resource]} ${Number(n)*selected.level}`).join(' · ')+' 사용':'재료 사용 없이 생산해요'} · 최대 Lv.${definition.maxLevel}`;
- const upgrade=panel.querySelector<HTMLButtonElement>('[data-facility-upgrade]')!;upgrade.title=selected.level>=definition.maxLevel?'최대 레벨이에요':`목재 ${definition.wood*(selected.level+1)} · 고철 ${definition.scrap*(selected.level+1)}`;
+ const cost=getUpgradeCost(selected),upgrade=panel.querySelector<HTMLButtonElement>('[data-facility-upgrade]')!;upgrade.title=selected.level>=definition.maxLevel?'최대 레벨이에요':`목재 ${cost.wood} · 고철 ${cost.scrap}`;
 }
 function updateNav(){
  const active=['build','hunt','bag','settings'].includes(currentModal)?currentModal:selectedZone==='grove'||farmFocused?'farm':'home';
@@ -581,7 +591,7 @@ async function drainFarmQueue(){
  }
 }
 function showActivityHelp(a:Action,plotId:number|undefined,message:string,cropId:CropId=selectedCropId){
- const energy=actionEnergy[a]??0,needsHealth=a==='hunt'&&!COMPANION_IDS.some(id=>getCompanions(state)[id].health>0),needsRest=state.energy<energy||needsHealth;
+ const energy=actionEnergy[a]??0,needsHealth=a==='hunt'&&!getReadyTeam(state).length,needsRest=state.energy<energy||needsHealth;
  const targetPlot=(plotId===undefined?'':` data-plot="${plotId}"`)+(a==='plant'?` data-crop="${cropId}"`:'');
  let recovery='';
  if(needsRest)recovery=`<button class="button full-width" data-rest-retry="${a}"${targetPlot}>${icon('bed')} 쉬고 ${a==='hunt'?'사냥 준비하기':actionNames[a]}</button><p class="fine-print">${a==='hunt'?'휴식 후 선택한 사냥터로 돌아가 출발을 준비해요.':'휴식으로 기력을 회복한 뒤 바로 작업해요.'}<br>${state.resources.food>=1&&state.resources.water>=1?'식량 1 · 물 1 사용 · 기력 +55 · 체력 +12':'식량과 물이 없어도 잠깐 쉬면 기력 +35 · 체력 +3'}${needsHealth?'<br>보리와 나비도 함께 회복해요.':''}</p>`;
@@ -633,7 +643,7 @@ function startBattle(){
  state=started.state;const expeditionId=state.expedition!.id;persist();
  closeModal();scene.setSuspended(true);app.inert=true;document.body.classList.add('in-battle');
  try {
-  battleView=new BattleView({gender:state.gender,name:state.name,level:state.level,health:state.health,companions:getCompanions(state),stage:selectedStage,onFinish:(result:BattleResult)=>{
+  battleView=new BattleView({gender:state.gender,name:state.name,level:state.level,health:state.health,companions:getCompanions(state),units:getUnitRoster(state),teamIds:state.expedition!.unitParticipantIds??getReadyTeam(state),bonuses:state.expedition!.unitBattleBonuses,stage:selectedStage,onFinish:(result:BattleResult)=>{
    const finished=finishHunt(state,result,expeditionId);state=finished.state;
    if(!finished.ok&&state.expedition?.id===expeditionId)state=cancelHunt(state).state;
    battleView?.destroy();battleView=null;app.inert=false;document.body.classList.remove('in-battle');scene.setSuspended(false);setZone('home');persist();render();toast(finished.message);finishDeferredUpdate();
@@ -642,15 +652,16 @@ function startBattle(){
   state=cancelHunt(state).state;battleView?.destroy();battleView=null;app.inert=false;document.body.classList.remove('in-battle');scene.setSuspended(false);persist();render();toast('전투 화면을 열지 못해 트럭으로 돌아왔어요.');
  }
 }
-function companionRosterCards(){
- const roster=getCompanions(state);
- return `<div class="companion-roster">${COMPANION_IDS.map(id=>{
-  const progress=roster[id],definition=COMPANIONS[id],level=getCompanionLevel(progress),max=getCompanionMaxHealth(id,progress),hp=Math.ceil(progress.health*max/100);
-  return `<article class="companion-card ${hp===0?'companion-resting':''}" data-companion-card="${id}"><div class="companion-card-art">${companionPortrait(id)}</div><div class="companion-card-info"><strong>${definition.name}<small>Lv.${level}</small></strong><span>${definition.roleLabel}</span><b data-companion-hp="${id}">${hp} / ${max}</b><div class="companion-hp-track" role="progressbar" aria-label="${definition.name} 체력" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${hp}"><i style="width:${progress.health}%"></i></div><small class="companion-xp">${level===10?'최대 레벨':`다음 레벨까지 경험치 ${80-progress.xp%80}`}${hp===0?' · 회복이 필요해요':''}</small></div></article>`;
- }).join('')}</div>`;
+function companionRosterCards(compact=false){
+ const roster=getUnitRoster(state),selected=getSelectedTeam(state),unlocked=getUnlockedUnitIds(state),bonuses=getUnitBattleBonuses(state);
+ if(compact)return `<section class="unit-team unit-team-compact"><div class="unit-team-heading"><strong>출전 편성 <b>${selected.length} / 3</b></strong><button data-open="pet">${icon('paw')} 편성 바꾸기</button></div><div class="companion-roster" style="--team-columns:${selected.length}">${selected.map(id=>{const definition=UNITS[id],progress=roster[id],max=getUnitMaxHealth(id,progress),hp=Math.ceil(progress.health*max/100);return `<article class="companion-card ${hp===0?'companion-resting':''}" data-companion-card="${id}"><div class="companion-card-art">${companionPortrait(id)}</div><div class="companion-card-info"><strong>${definition.name}<small>Lv.${getUnitLevel(progress)}</small></strong><span>${definition.roleLabel}</span><b data-companion-hp="${id}">${hp} / ${max}</b><div class="companion-hp-track"><i style="width:${progress.health}%"></i></div>${hp===0?'<small class="companion-xp">휴식 후 출전해요</small>':''}</div></article>`;}).join('')}</div></section>`;
+ return `<section class="unit-team" aria-label="동물 전투 편성"><div class="unit-team-heading"><strong>우리 원정대 <b>${selected.length} / 3</b></strong><small>최대 3마리 · 교체할 동료를 먼저 빼 주세요</small></div><div class="companion-roster">${UNIT_IDS.map(id=>{
+  const progress=roster[id],definition=UNITS[id],level=getUnitLevel(progress),max=getUnitMaxHealth(id,progress),hp=Math.ceil(progress.health*max/100),locked=!unlocked.includes(id),chosen=selected.includes(id);
+  return `<button class="companion-card ${hp===0?'companion-resting':''} ${chosen?'unit-selected':''} ${locked?'unit-locked':''}" data-companion-card="${id}" data-team-toggle="${id}" aria-pressed="${chosen}" aria-label="${definition.name} ${locked?`데크 Lv.${definition.unlockDeck} 해금`:chosen?'편성에서 빼기':'편성하기'}" ${locked?'disabled':''}><div class="companion-card-art">${companionPortrait(id)}</div><div class="companion-card-info"><strong>${definition.name}<small>Lv.${level}</small></strong><span>${definition.roleLabel}</span><b data-companion-hp="${id}">${hp} / ${max}</b><div class="companion-hp-track" role="progressbar" aria-label="${definition.name} 체력" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${hp}"><i style="width:${progress.health}%"></i></div><small class="companion-xp">${locked?`데크 Lv.${definition.unlockDeck}에서 함께해요`:level===10?'최대 레벨':`다음 레벨까지 경험치 ${80-progress.xp%80}`}${!locked&&hp===0?' · 회복 필요':''}</small><span class="unit-selection-label">${locked?icon('paw'):chosen?icon('check'):icon('plus')}${locked?'아직 잠김':chosen?'편성 중':'편성하기'}</span></div><span class="unit-skill-description">${definition.skillLabel} · ${definition.skillDescription}</span></button>`;
+ }).join('')}</div><p class="unit-village-bonus">${icon('home')} 마을 지원 · 공격 +${Math.round((bonuses.attackMultiplier-1)*100)}% · 받는 피해 −${Math.round((1-bonuses.enemyDamageMultiplier)*100)}%<small>동료의 쉼터와 도로 관측소를 개선하면 강해져요.</small></p></section>`;
 }
-function modalShell(eyebrow:string,title:string,body:string,wide=false){const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=false;root.innerHTML=`<section class="modal ${wide?'modal-wide':''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close round-button" data-close aria-label="닫기">${icon('close')}</button><div class="eyebrow">${eyebrow}</div><h2 id="modal-title">${title}</h2>${body}</section>`;requestAnimationFrame(()=>root.querySelector<HTMLButtonElement>('button')?.focus());}
-function closeModal(){document.querySelector<HTMLElement>('#modal-root')!.hidden=true;currentModal='';updateNav();}
+function modalShell(eyebrow:string,title:string,body:string,wide=false){const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=false;root.innerHTML=`<section class="modal modal-${currentModal} ${wide?'modal-wide':''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close round-button" data-close aria-label="닫기">${icon('close')}</button><div class="eyebrow">${eyebrow}</div><h2 id="modal-title">${title}</h2>${body}</section>`;requestAnimationFrame(()=>root.querySelector<HTMLButtonElement>('button')?.focus());}
+function closeModal(){const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=true;root.classList.remove('planning-catalog','planning-expansion');document.querySelector('.scene-card')!.classList.remove('planning-catalog','planning-expansion');scene.setExpansionPreview(null);if(!placement)scene.setPlanningViewport(null);currentModal='';updateNav();}
 function farmExpansionSummary(){
  const capacity=getFarmCapacity(state),remaining=capacity-state.plots.length;
  return `<div class="farm-expansion-summary"><span>${icon('plot-empty')}</span><div><strong>우리 농장 <b>${state.plots.length} / ${capacity}칸</b></strong><small>${remaining>0?`밭 ${remaining}칸을 더 만들 수 있어요`:state.deckLevel<MAX_DECK_LEVEL?'데크를 넓히면 새 농장 공간이 열려요':'가장 넓은 농장이에요'}</small></div><button class="button button-light" data-open="farm-expand">밭 확장</button></div>`;
@@ -659,7 +670,7 @@ function renderFarmExpansion(){
  const capacity=getFarmCapacity(state),count=state.plots.length,full=count>=capacity,cost=farmExpansionCost(state);
  modalShell('GROW OUR GARDEN','밭을 더 만들어 볼까요?',`
   <div class="farm-expansion-preview">${icon('plot-empty')}<div><strong>${count}칸 ${full?'':`→ ${count+1}칸`}</strong><span>데크 Lv.${state.deckLevel} · 최대 ${capacity}칸</span></div></div>
-  <p class="modal-description">${full?state.deckLevel<MAX_DECK_LEVEL?`지금 데크의 농장 공간을 모두 사용하고 있어요.<br>데크 Lv.${state.deckLevel+1}로 확장하면 최대 ${getFarmCapacity({deckLevel:state.deckLevel+1})}칸까지 가꿀 수 있어요.`:'18칸의 넓은 농장이 완성됐어요. 원하는 씨앗을 골라 가꿔 보세요.':'목재와 고철로 새 밭 한 칸을 만들어요.<br>완성한 밭에서도 씨앗 심기·물 주기·수확을 이어서 할 수 있어요.'}</p>
+  <p class="modal-description">${full?state.deckLevel<MAX_DECK_LEVEL?`지금 데크의 농장 공간을 모두 사용하고 있어요.<br>데크 Lv.${state.deckLevel+1}로 확장하면 최대 ${getFarmCapacity({deckLevel:state.deckLevel+1})}칸까지 가꿀 수 있어요.`:'24칸의 넓은 농장이 완성됐어요. 원하는 씨앗을 골라 가꿔 보세요.':'목재와 고철로 새 밭 한 칸을 만들어요.<br>완성한 밭에서도 씨앗 심기·물 주기·수확을 이어서 할 수 있어요.'}</p>
   ${full?'':`<div class="cost-row"><span class="${state.resources.wood>=cost.wood?'':'insufficient'}">${icon('wood')} 목재 <strong>${state.resources.wood} / ${cost.wood}</strong></span><span class="${state.resources.scrap>=cost.scrap?'':'insufficient'}">${icon('scrap')} 고철 <strong>${state.resources.scrap} / ${cost.scrap}</strong></span></div><p class="farm-expansion-energy">${icon('bolt')} 기력 8 사용</p>`}
   <button class="button full-width" data-action="expandFarm" ${full?'disabled':''}>${icon('hammer')} ${full?'지금 데크의 밭이 가득 찼어요':'새 밭 1칸 만들기'}</button>
   ${full&&state.deckLevel<MAX_DECK_LEVEL?`<button class="button button-light full-width activity-secondary" data-open="expand">${icon('expand')} 데크 확장하러 가기</button>`:''}
@@ -717,35 +728,38 @@ function goToOrderSource(){
  else if(order.costs.wood){setZone('grove');renderControls();toast('나무를 눌러 의뢰에 필요한 목재를 모아요.');}
  else {openModal('build');toast('빗물 정수소를 건설하면 물을 계속 생산할 수 있어요.');}
 }
-function deckExpansionPreview(){
- if(state.deckLevel>=MAX_DECK_LEVEL)return '<p class="modal-description">우리 트럭은 가장 큰 데크를 갖췄어요. 시설 개선과 마을 의뢰를 이어가요.</p>';
- const next={deckLevel:state.deckLevel+1},slots=getUnlockedSlots(state),newSlots=getUnlockedSlots(next),capacity=getFarmCapacity(next);
- const unlocks=BUILDING_TYPES.filter(type=>BUILDINGS[type].unlockLevel===next.deckLevel);
- return `<section class="deck-growth-preview" aria-label="데크 확장으로 열리는 공간"><div class="deck-preview-tiles">${Array.from({length:newSlots},(_,i)=>`<span class="${i>=slots?'new-deck-tile':''}">${i>=slots?icon('plus'):icon('home')}<small>${i>=slots?'새 자리':`${i+1}번`}</small></span>`).join('')}</div><div class="deck-growth-numbers"><span>시설 자리 <b>${slots} → ${newSlots}</b></span><span>밭 최대 <b>${getFarmCapacity(state)} → ${capacity}칸</b></span><span>새 기본 밭 <b>+1칸</b></span></div>${unlocks.length?`<p>새 시설 해금 · ${unlocks.map(type=>BUILDINGS[type].name).join(' · ')}</p>`:'<p>새 데크에 생산시설과 텃밭을 더 배치할 수 있어요.</p>'}</section>`;
+function showPlanningSheet(mode:'catalog'|'expansion'){
+ const className=mode==='catalog'?'planning-catalog':'planning-expansion',root=document.querySelector<HTMLElement>('#modal-root')!;
+ root.classList.add(className);document.querySelector('.scene-card')!.classList.add(className);
+ requestAnimationFrame(()=>{if(currentModal===(mode==='catalog'?'build':'expand'))scene.setPlanningViewport(mode,state.deckLevel<MAX_DECK_LEVEL?state.deckLevel+1:undefined);});
 }
-function openModal(kind:string){if(kind==='seeds'){openSeedInventory();return;}if(battleView)return;document.querySelector('#toast')!.classList.remove('visible');clearTimeout(toastTimer);cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();currentModal=kind;updateNav();
+function openModal(kind:string){if(kind==='seeds'){openSeedInventory();return;}if(battleView)return;closeModal();document.querySelector('#toast')!.classList.remove('visible');clearTimeout(toastTimer);cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();currentModal=kind;updateNav();
  if(kind==='menu')modalShell('OUR LITTLE VILLAGE','마을 메뉴',`<div class="village-menu-grid">${[['flag','성장 목표','settlement-goals'],['expand','트럭 확장','expand'],['plot-empty','밭 확장','farm-expand'],['axe','벌목장','grove'],['bag','마을 의뢰','orders'],['settings','설정','settings'],['paw','동물 동료','pet'],['character','생존자','character'],['map','도움말','guide']].map(([i,t,id])=>`<button data-open="${id}">${icon(i)}<span>${t}</span></button>`).join('')}</div>`);
  if(kind==='orders')modalShell('NEIGHBORS ON THE ROAD','마을 의뢰',`<div id="village-order-content" data-order="${getVillageOrder(state).id}">${villageOrderContent()}</div>`);
- if(kind==='build'){setZone('home');setFarmTray(false);closeFacility();modalShell('BUILD OUR TRUCK VILLAGE','트럭 위 마을 건설',buildingCatalog(state),true);}
+ if(kind==='build'){setZone('home');setFarmTray(false);closeFacility();modalShell('BUILD OUR TRUCK VILLAGE','트럭 위 마을 건설',buildingCatalog(state),true);showPlanningSheet('catalog');}
  if(kind==='settlement-goals'){selectedGrowthChapter??=getActiveGrowthQuest(state)?.chapter;modalShell('CURRENT QUEST','마을 성장 목표',renderGrowthQuestBoard(state,selectedGrowthChapter),true);}
  if(kind==='farm')modalShell('LITTLE GARDEN','트럭 위 작은 텃밭',`<div id="farm-content">${farmContent()}</div>`,true);
  if(kind==='farm-expand')renderFarmExpansion();
  if(kind==='bag')modalShell('THINGS WE FOUND','우리의 배낭',`<div id="bag-content">${bagContent()}</div>`,true);
- if(kind==='expand'){const cost=expansionCost(state);modalShell('A LITTLE MORE ROOM','우리집을 넓혀 볼까요?',`<div class="expansion-art">${icon('truck')}<span>Lv.${state.deckLevel}</span>${icon('arrow')}<span>${state.deckLevel>=MAX_DECK_LEVEL?'MAX':`Lv.${state.deckLevel+1}`}</span></div><p class="modal-description">옆으로 펼쳐지는 새 데크와 넓어진 통로를 직접 확인해 보세요.<br>확장하면 기본 밭 1칸과 추가 밭을 만들 공간이 열려요.</p>${deckExpansionPreview()}${farmExpansionSummary()}<div class="cost-row"><span class="${state.resources.wood>=cost.wood?'':'insufficient'}">${icon('wood')} 목재 <strong>${state.resources.wood} / ${cost.wood}</strong></span><span class="${state.resources.scrap>=cost.scrap?'':'insufficient'}">${icon('scrap')} 고철 <strong>${state.resources.scrap} / ${cost.scrap}</strong></span></div><button class="button full-width" data-action="expand" ${state.deckLevel>=MAX_DECK_LEVEL?'disabled':''}>${icon('hammer')} ${state.deckLevel>=MAX_DECK_LEVEL?'최대 크기의 우리집이에요':'데크 확장하기'}</button><button class="text-button full-width" data-action="repair">${icon('shield')} 트럭 수리 · 현재 내구도 ${state.truckHealth}%</button>`);}
+ if(kind==='expand'){
+  setZone('home');setFarmTray(false);const cost=expansionCost(state),full=state.deckLevel>=MAX_DECK_LEVEL,next=state.deckLevel+1;
+  modalShell('EXPAND OUR TRUCK',full?'우리 트럭이 완성됐어요':`데크 Lv.${state.deckLevel} → Lv.${next}`,`<div class="expansion-dock-summary"><span>${icon('expand')}</span><div><strong>${full?'시설 16곳 · 밭 최대 24칸':`시설 자리 ${getUnlockedSlots(state)} → ${getUnlockedSlots({deckLevel:next})} · 밭 최대 ${getFarmCapacity(state)} → ${getFarmCapacity({deckLevel:next})}칸`}</strong><small>${full?'시설을 개선하고 동료를 성장시켜요':'맵의 초록 영역이 새로 열릴 데크예요 · 기본 밭 +1'}</small></div></div><div class="expansion-dock-cost">${icon('wood')} 목재 ${state.resources.wood} / ${cost.wood} ${icon('scrap')} 고철 ${state.resources.scrap} / ${cost.scrap}<span>${icon('bolt')} 기력 15</span></div><button class="button full-width" data-action="expand" ${full?'disabled':''}>${icon('hammer')} ${full?'최대 크기의 우리집':'새 데크 확장 확정'}</button>`);
+  showPlanningSheet('expansion');if(!full)scene.setExpansionPreview(next);
+ }
  if(kind==='grove'){
   modalShell('THE LITTLE WOODLAND','도로 옆, 우리의 벌목장',`<div class="grove-illustration"><span class="grove-sign">서울 숲길 · 채집 구역</span></div><p class="modal-description">트럭 옆 숲길로 내려가 나무를 직접 베어요.<br>벌목장 화면에서 나무를 누르거나 아래 버튼으로 시작하세요.</p><div class="grove-rewards"><span>${icon('wood')} 목재 <b>+18</b></span><span>${icon('seeds')} 씨앗 <b>+3</b></span><span>${icon('bolt')} 기력 <b>−10</b></span></div><button class="button full-width" data-action="chop">${icon('axe')} ${state.energy<10?'쉬고 나무 베러 가기':'나무 베러 가기'}</button><button class="button button-light full-width grove-look" data-look-grove>${icon('map')} 벌목장 둘러보기</button><div class="grove-salvage"><span>고철과 물이 필요하다면</span><button class="text-button" data-action="gather">버려진 휴게소 탐색 ${icon('arrow')}</button></div>`);
  }
  if(kind==='hunt'){
   const stages=[{id:1,title:STAGE_NAMES[0],desc:'숲에 숨어든 좀비 무리',tag:'추천 동료 Lv.1',style:'forest'},{id:2,title:STAGE_NAMES[1],desc:'바리케이드 너머의 감염자',tag:'추천 동료 Lv.2',style:'toll'},{id:3,title:STAGE_NAMES[2],desc:'거대한 경비병이 지키는 보급품',tag:'추천 동료 Lv.3',style:'ruins'}];
-  modalShell('OUR ANIMAL EXPEDITION','보리와 나비의 모험',`<p class="modal-description">세 번의 웨이브를 지나 보스를 물리치세요.<br>보리는 앞에서 지키고 나비는 발톱으로 공격해요.<br>기본 공격은 자동 · 동물 기술과 함께 회복을 눌러 도와주세요.</p><div class="explore-quick-links"><button data-zone="grove">${icon('axe')} 벌목장 둘러보기</button><button data-action="gather">${icon('map')} 생활 물자 탐색</button></div><div class="stage-list">${stages.map(st=>`<button class="stage-card ${st.style} ${selectedStage===st.id?'selected':''}" data-stage="${st.id}" aria-pressed="${selectedStage===st.id}" style="--stage-art:url('${BATTLE_ART_URLS[st.id-1]}')"><span class="stage-number">${String(st.id).padStart(2,'0')}<span>STAGE</span></span><span class="stage-card-body"><small>${st.tag} · 3 WAVES</small><strong>${st.title}</strong><span>${st.desc}</span></span><span class="stage-check">${icon(selectedStage===st.id?'check':'chevron')}</span></button>`).join('')}</div>${companionRosterCards()}<p class="companion-party-note">${icon('paw')} 출전 동료: ${COMPANION_IDS.filter(id=>getCompanions(state)[id].health>0).map(id=>COMPANIONS[id].name).join(' · ')||'함께 쉬어 주세요'} <span>${icon('bolt')} 기력 ${Math.round(state.energy)}</span></p><div class="battle-reward-preview">${icon('food')} 승리 보상: 식량 ${6+selectedStage*2} · 고철 ${selectedStage*2} · 목재 2</div><button class="button full-width ${state.energy<16||!COMPANION_IDS.some(id=>getCompanions(state)[id].health>0)?'unavailable':''}" data-start-hunt aria-disabled="${state.energy<16||!COMPANION_IDS.some(id=>getCompanions(state)[id].health>0)}">${icon('hunt')} 전투 스테이지 입장 <span class="button-cost">기력 16</span></button>${state.energy<16||!COMPANION_IDS.some(id=>getCompanions(state)[id].health>0)?`<p class="fine-print">기력 16과 출전할 동료가 필요해요. 함께 쉬면 동료도 회복해요.</p><button class="button button-light full-width activity-secondary" data-action="rest">${icon('bed')} 여기서 쉬고 사냥 준비하기</button>`:''}<p class="fine-print">승리하면 출전 동료가 경험치를 얻어요 · 한 동료가 지쳐도 다른 동료는 계속 싸워요<br>전투 중 앱을 종료하면 보상 없이 귀환해요</p>`,true);
+  modalShell('OUR ANIMAL EXPEDITION','우리 동물 원정대',`<p class="modal-description">동료 최대 3마리와 세 웨이브에 도전해요.<br>기본 공격은 자동 · 기술 버튼으로 도와주세요.</p><div class="explore-quick-links"><button data-zone="grove">${icon('axe')} 벌목장 둘러보기</button><button data-action="gather">${icon('map')} 생활 물자 탐색</button></div><div class="stage-list">${stages.map(st=>`<button class="stage-card ${st.style} ${selectedStage===st.id?'selected':''}" data-stage="${st.id}" aria-pressed="${selectedStage===st.id}" style="--stage-art:url('${BATTLE_ART_URLS[st.id-1]}')"><span class="stage-number">${String(st.id).padStart(2,'0')}<span>STAGE</span></span><span class="stage-card-body"><small>${st.tag} · 3 WAVES</small><strong>${st.title}</strong><span>${st.desc}</span></span><span class="stage-check">${icon(selectedStage===st.id?'check':'chevron')}</span></button>`).join('')}</div>${companionRosterCards(true)}<p class="companion-party-note">${icon('paw')} 출전 동료: ${getReadyTeam(state).map(id=>UNITS[id].name).join(' · ')||'함께 쉬어 주세요'} <span>${icon('bolt')} 기력 ${Math.round(state.energy)}</span></p><div class="battle-reward-preview">${icon('food')} 승리 보상: 식량 ${6+selectedStage*2} · 고철 ${selectedStage*2} · 목재 2</div><button class="button full-width ${state.energy<16||!getReadyTeam(state).length?'unavailable':''}" data-start-hunt aria-disabled="${state.energy<16||!getReadyTeam(state).length}">${icon('hunt')} 전투 스테이지 입장 <span class="button-cost">기력 16</span></button>${state.energy<16||!getReadyTeam(state).length?`<p class="fine-print">기력 16과 출전할 동료가 필요해요. 함께 쉬면 동료도 회복해요.</p><button class="button button-light full-width activity-secondary" data-action="rest">${icon('bed')} 여기서 쉬고 사냥 준비하기</button>`:''}<p class="fine-print">승리하면 출전 동료가 경험치를 얻어요 · 한 동료가 지쳐도 다른 동료는 계속 싸워요<br>전투 중 앱을 종료하면 보상 없이 귀환해요</p>`,true);
  }
  if(kind==='quests'){modalShell('ONE STEP AT A TIME','작은 목표, 큰 하루',`<p class="modal-description">서두르지 않아도 괜찮아요. 하나씩 해 나가요.</p><div class="quest-list">${questList(state).map(q=>`<article class="quest-row ${q.complete?'completed':''}"><span class="quest-row-icon">${icon(q.complete?'check':'flag')}</span><div><h3>${escape(q.title)}</h3><p>${escape(q.description)}</p><small>${escape(q.reward)} · 달성 시 자동 지급</small><div class="quest-progress"><span style="width:${Math.min(100,q.current/q.target*100)}%"></span></div></div><b>${q.current}/${q.target}</b></article>`).join('')}</div>`);}
- if(kind==='pet'){modalShell('OUR LITTLE FAMILY','보리와 나비, 우리 동료',`${companionRosterCards()}<p class="modal-description">보리는 든든한 앞줄, 나비는 날렵한 공격수예요.<br>모험에서 함께 성장하고 트럭 위를 자유롭게 돌아다녀요.</p><div class="bond-meter"><span>우리의 행복</span><strong>${Math.round(state.morale)} / 100</strong><div class="quest-progress"><span style="width:${state.morale}%"></span></div></div><button class="button full-width" data-action="rest">${icon('bed')} 동료와 함께 쉬기</button><p class="fine-print">${state.resources.food>=1&&state.resources.water>=1?'식량 1 · 물 1로 함께 휴식 · 동료 체력 35% 회복':'물자가 없어도 잠깐 쉬면 동료 체력 10% 회복'}</p><button class="button button-light full-width activity-secondary" data-action="pet">${icon('paw')} 보리 쓰다듬기</button><button class="text-button full-width" data-open="hunt">${icon('hunt')} 동료와 모험 떠나기</button>`);}
+ if(kind==='pet'){modalShell('OUR LITTLE FAMILY','함께 성장하는 동물 동료',`${companionRosterCards()}<p class="modal-description">데크를 넓히면 새로운 동료를 만나요.<br>마음에 드는 동료를 최대 3마리 편성하고, 모험에서 경험치를 얻어 성장해요.</p><div class="bond-meter"><span>우리의 행복</span><strong>${Math.round(state.morale)} / 100</strong><div class="quest-progress"><span style="width:${state.morale}%"></span></div></div><button class="button full-width" data-action="rest">${icon('bed')} 동료와 함께 쉬기</button><p class="fine-print">${state.resources.food>=1&&state.resources.water>=1?'식량 1 · 물 1로 함께 휴식 · 동료 체력 35% 회복':'물자가 없어도 잠깐 쉬면 동료 체력 10% 회복'}</p><button class="button button-light full-width activity-secondary" data-action="pet">${icon('paw')} 보리 쓰다듬기</button><button class="text-button full-width" data-open="hunt">${icon('hunt')} 사냥 준비로 돌아가기</button>`);}
  if(kind==='character'||kind==='welcome'){selectedGender=state.gender;modalShell(kind==='welcome'?'YOUR STORY STARTS HERE':'MEET YOUR SURVIVOR',kind==='welcome'?'우리의 첫 번째 아침':'오늘의 나를 만나기',`<p class="modal-description">2187년, 좀비로 가득한 대한민국.<br>커다란 트럭 위에서 당신만의 작은 일상을 시작하세요.</p><div class="character-choices"><button data-gender="female" class="character-choice ${selectedGender==='female'?'selected':''}">${portrait('female')}<strong>여자 생존자</strong><span>다정하고 씩씩한 모험가</span></button><button data-gender="male" class="character-choice ${selectedGender==='male'?'selected':''}">${portrait('male')}<strong>남자 생존자</strong><span>따뜻하고 든든한 모험가</span></button></div><label class="name-label" for="player-name">어떤 이름으로 불러 드릴까요?</label><input class="name-input" id="player-name" maxlength="16" value="${escape(state.name)}" placeholder="생존자의 이름" autocomplete="off"><button class="button full-width" data-start>${icon('sun')} ${kind==='welcome'?'우리집에서 시작하기':'변경 저장하기'}</button><p class="fine-print">캐릭터는 언제든 변경할 수 있어요 · 기기에 자동 저장</p>`);}
  if(kind==='map'){modalShell('BEYOND OUR LITTLE HOME','도로 너머로 한 걸음',`<p class="modal-description">서울 외곽 순환도로 · 현재 주둔지<br>트럭을 중심으로 주변을 탐색해 생활에 필요한 자원을 구해요.</p><div class="explore-map"><span class="map-home">${icon('truck')} 우리집</span><span class="map-stop s1">${icon('wood')}</span><span class="map-stop s2">${icon('hunt')}</span><span class="map-caption">SEOUL OUTER RING ROAD</span></div><div class="exploration-list"><button data-action="gather"><span class="resource-icon wood">${icon('wood')}</span><span><strong>버려진 휴게소</strong><small>목재 · 고철 · 생활 물자 수집</small></span>${icon('arrow')}</button><button data-open="grove"><span class="resource-icon wood">${icon('wood')}</span><span><strong>도로 옆 벌목장</strong><small>직접 나무 베기 · 목재 +18</small></span>${icon('arrow')}</button><button data-open="hunt"><span class="resource-icon food">${icon('hunt')}</span><span><strong>좀비가 숨어든 사냥터</strong><small>전투 스테이지 3곳 · 승리 보상</small></span>${icon('arrow')}</button></div><div class="info-note">${icon('shield')} 바깥에는 좀비가 있어요. 건강과 기력을 챙겨 주세요.</div>`,true);}
  if(kind==='journal'){modalShell('POSTCARDS FROM THE ROAD','우리의 여행 일지',`<div class="journal-day">DAY ${String(state.day).padStart(2,'0')}<span>도로 위에서 함께한 날들</span></div><div class="journal-stats"><div><b>${state.stats.harvests}</b><span>번의 수확</span></div><div><b>${state.stats.chops}</b><span>번의 벌목</span></div><div><b>${state.stats.battlesWon}</b><span>번의 전투 승리</span></div></div><div class="journal-entries">${state.log.slice(0,12).map(l=>`<div>${icon('leaf')}<p>${escape(l)}</p></div>`).join('')||'<p>작은 행동으로 첫 번째 이야기를 써 보세요.</p>'}</div>`);}
  if(kind==='settings')renderSettings();
- if(kind==='guide'){modalShell('WELCOME TO ROAD HAVEN','천천히, 함께 살아가기',`<div class="guide-list">${[['move','원하는 곳으로 화면을 움직여요','빈 공간을 손가락으로 끌면 화면이 움직여요. 밭 위에서도 움직이려면 왼쪽 화면 이동 버튼을 켜 주세요. 이동 모드에서는 씨앗을 쓰거나 시설을 선택하지 않아요. 두 손가락으로 이동·확대도 가능하며, 기본 보기나 우리 트럭 메뉴로 돌아올 수 있어요.'],['seeds','심고, 돌보고, 수확해요','씨앗을 한 번 골라 두면 심기 이어하기로 다시 사용할 수 있어요. 밭을 누르거나 손가락으로 쓸면 차례로 심고 돌봐요. 아래 물 주기·수확 버튼은 한 번 누르면 가능한 밭을 모두 작업해요. 작업 종료는 대기를 취소하고 지금 밭만 마쳐요.'],['wood','도로 너머를 탐색해요','벌목장에서 나무를 베어 목재를 얻고, 휴게소를 탐색해 물과 고철을 모아요. 사냥은 보리와 나비가 함께 싸우는 전투 스테이지에서 진행돼요.'],['hammer','트럭을 우리집으로 만들어요','데크를 확장하면 기본 밭 1칸과 추가 농장 공간이 열려요. 화면 왼쪽 밭 확장에서 재료를 써 새 밭을 만들 수 있어요. 데크 단계마다 최대 밭이 3칸씩 늘어 총 18칸까지 가꿀 수 있어요.'],['bed','쉼도 소중한 하루예요','활동하면 기력이 줄어요. 동료와 함께 쉬면서 회복하고, 보리를 쓰다듬어 행복을 채워요.'],['shield','우리의 일상은 저장돼요','진행 상황은 이 기기에 자동 저장돼요. 앱을 삭제하거나 데이터를 지우면 저장도 사라져요.']].map(([i,t,d])=>`<div><span>${icon(i)}</span><article><h3>${t}</h3><p>${d}</p></article></div>`).join('')}</div>`);}
+ if(kind==='guide'){modalShell('WELCOME TO ROAD HAVEN','천천히, 함께 살아가기',`<div class="guide-list">${[['move','원하는 곳으로 화면을 움직여요','빈 공간을 손가락으로 끌면 화면이 움직여요. 밭 위에서도 움직이려면 왼쪽 화면 이동 버튼을 켜 주세요. 이동 모드에서는 씨앗을 쓰거나 시설을 선택하지 않아요. 두 손가락으로 이동·확대도 가능하며, 기본 보기나 우리 트럭 메뉴로 돌아올 수 있어요.'],['seeds','심고, 돌보고, 수확해요','씨앗을 한 번 골라 두면 심기 이어하기로 다시 사용할 수 있어요. 밭을 누르거나 손가락으로 쓸면 차례로 심고 돌봐요. 아래 물 주기·수확 버튼은 한 번 누르면 가능한 밭을 모두 작업해요. 작업 종료는 대기를 취소하고 지금 밭만 마쳐요.'],['wood','도로 너머를 탐색해요','벌목장에서 나무를 베어 목재를 얻고, 휴게소를 탐색해 물과 고철을 모아요. 사냥은 동물 6종 중 최대 3마리를 편성하는 전투 스테이지에서 진행돼요.'],['hammer','트럭을 우리집으로 만들어요','데크를 확장하면 기본 밭 1칸과 추가 농장 공간이 열려요. 화면 왼쪽 밭 확장에서 재료를 써 새 밭을 만들 수 있어요. 데크 단계마다 최대 밭이 3칸씩 늘어 총 24칸까지 가꿀 수 있어요. 시설은 Lv.5까지 개선할 수 있어요.'],['bed','쉼도 소중한 하루예요','활동하면 기력이 줄어요. 동료와 함께 쉬면서 회복하고, 보리를 쓰다듬어 행복을 채워요.'],['shield','우리의 일상은 저장돼요','진행 상황은 이 기기에 자동 저장돼요. 앱을 삭제하거나 데이터를 지우면 저장도 사라져요.']].map(([i,t,d])=>`<div><span>${icon(i)}</span><article><h3>${t}</h3><p>${d}</p></article></div>`).join('')}</div>`);}
  if(kind==='reset')modalShell('A FRESH START','새로운 여행을 시작할까요?',`<p class="modal-description">현재 기기의 모든 진행 상황이 지워집니다.<br>이 작업은 되돌릴 수 없어요.</p><button class="button button-danger full-width" data-reset>진행 상황을 지우고 새로 시작</button><button class="text-button full-width" data-close>지금의 여행 계속하기</button>`);
 }
 function renderSettings(){modalShell('MAKE YOURSELF AT HOME','우리집 설정',`<div class="settings-row"><div><strong>게임 소리</strong><p>작은 행동에 기분 좋은 소리를 더해요</p></div><button class="toggle ${sound?'on':''}" data-sound aria-label="게임 소리 ${sound?'끄기':'켜기'}" aria-pressed="${sound}"><span></span></button></div><div class="settings-row"><div><strong>시간 흐름</strong><p>현재 ${paused?'쉬어 가는 중':'흘러가는 중'}</p></div><button class="button button-light small" data-pause>${paused?'계속하기':'잠시 멈춤'}</button></div>${updateSettingsContent()}<button class="text-button full-width" data-save>${icon('check')} 지금 저장하기</button><button class="text-button danger full-width" data-open="reset">새로운 여행 시작</button><p class="fine-print">ROAD HAVEN · 로드헤이븐 v${APP_VERSION}<br>당신의 기기에 머무는 작은 세상</p>`);refreshUpdateUI();}
@@ -864,6 +878,10 @@ document.addEventListener('click',e=>{
  if(t.matches('a[href="#"]')){e.preventDefault();closeModal();}
  if(navigateButton(t))return;
  if(t.dataset.stage){selectedStage=Number(t.dataset.stage);openModal('hunt');}
+ if(t.dataset.teamToggle&&isUnitId(t.dataset.teamToggle)){
+  const id=t.dataset.teamToggle,team=getSelectedTeam(state),next=team.includes(id)?team.filter(unit=>unit!==id):[...team,id];
+  const result=setCompanionTeam(state,next);if(result.ok){const scroll=document.querySelector<HTMLElement>('#modal-root .modal')?.scrollTop??0;state=result.state;persist();render();openModal(currentModal==='hunt'?'hunt':'pet');document.querySelector<HTMLElement>('#modal-root .modal')!.scrollTop=scroll;}toast(result.message);return;
+ }
  if(t.hasAttribute('data-start-hunt'))startBattle();
  if(t.hasAttribute('data-close'))closeModal();
  if(t.dataset.restRetry){

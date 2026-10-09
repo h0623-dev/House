@@ -9,6 +9,8 @@ const expectedGameMinutesPerSecond = 6;
 const expectedSpeedMultiplier = 3;
 const appVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
+const snapshotId = process.env.TEST_SNAPSHOT_ID || null;
+const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === 'true' && snapshotId !== null;
 const crops = [
  { id: 'carrot', minutes: 180, food: 4 }, { id: 'potato', minutes: 240, food: 5 },
  { id: 'tomato', minutes: 270, food: 6 }, { id: 'corn', minutes: 300, food: 7 },
@@ -314,7 +316,7 @@ try {
  const decodedCanceledImages = await imagePage.evaluate(async sources => Promise.all(sources.map(async source => { const image = new Image(); image.src = source; await image.decode(); return { source, width: image.naturalWidth, height: image.naturalHeight }; })), [...new Set(canceledImageRequests)]);
  assert.equal(decodedCanceledImages.every(image => image.width > 0 && image.height > 0), true); await imageContext.close();
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
- await writeFile(`artifacts/farm-tools-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, status: 'passed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl,
+ await writeFile(`artifacts/farm-tools-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, status: 'passed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, snapshotId, finalSnapshot,
   input: 'Actual touchscreen tap coordinates and CDP touchStart/touchMove/touchEnd gestures in mobile browser contexts',
   clock: 'Real browser timers and requestAnimationFrame; no page.clock', viewports: ['360×740', '390×844', '844×390'],
   slowRenderingCase: 'Actual RAF callbacks delayed 350 ms with original browser timestamps',
@@ -324,6 +326,6 @@ try {
  console.log(`PASS: ${assertionsExecuted} real-touch continuous farming assertions; ${timings.length} real-time sequences; global batches, persistent context tools, actual drag selection, switching/cancel, resource reservation, remembered seeds, recovery, landscape and slow rendering.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/farm-tools-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, status: 'failed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, assertionsExecuted, cases, timings, screenshots, errors, failedAssets, canceledImageRequests, failure: String(error) }, null, 2) + '\n');
+ await writeFile(`artifacts/farm-tools-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, status: 'failed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, snapshotId, finalSnapshot, assertionsExecuted, cases, timings, screenshots, errors, failedAssets, canceledImageRequests, failure: String(error) }, null, 2) + '\n');
  throw error;
 } finally { await browser.close(); }

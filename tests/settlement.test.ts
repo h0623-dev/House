@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceTime, beginHunt, createGame, loadGame, performAction, SAVE_KEY, saveGame, tick, type GameState, type SaveStorage } from '../src/game.ts';
-import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getBuiltTypes, getUpgradedFacilityRecord, getFacilityHistory, validateFacilityHistory, getProductionCost, getSettlement, getSettlementGoals, getUnlockedSlots, getUpgradeCost, moveFacility, replaceFacility, startProduction, upgradeFacility, validateSettlement, type BuildingType } from '../src/settlement.ts';
+import { advanceTime, beginHunt, createGame, loadGame, performAction, SAVE_KEY, saveGame, tick, type GameState, type Resource, type SaveStorage } from '../src/game.ts';
+import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getBuiltTypes, getUpgradedFacilityRecord, getFacilityHistory, getHighestFacilityLevel, validateFacilityHistory, getProductionCost, getProductionMinutes, getSettlement, getSettlementGoals, getUnlockedSlots, getUpgradeCost, moveFacility, replaceFacility, startProduction, upgradeFacility, validateSettlement, type BuildingType } from '../src/settlement.ts';
 import { GAME_MINUTES_PER_SECOND } from '../src/game-time.ts';
 
 function memoryStorage(): SaveStorage {
@@ -11,7 +11,13 @@ function memoryStorage(): SaveStorage {
 function fundedGame(deckLevel = 1): GameState {
   let state = createGame();
   state.resources.wood = 10_000; state.resources.scrap = 10_000;
-  for (let level = 1; level < deckLevel; level++) state = performAction(state, 'expand').state;
+  state.resources.food = 10_000; state.resources.water = 10_000;
+  for (let level = 1; level < deckLevel; level++) {
+    if (state.energy < 15) state = performAction(state, 'rest').state;
+    const expanded = performAction(state, 'expand');
+    assert.equal(expanded.ok, true, expanded.message);
+    state = expanded.state;
+  }
   return state;
 }
 function withBuilding(type: BuildingType = 'waterworks'): GameState {
@@ -19,12 +25,31 @@ function withBuilding(type: BuildingType = 'waterworks'): GameState {
   assert.equal(result.ok, true);
   return result.state;
 }
+function withBuildingLevel(type: BuildingType, level: number): GameState {
+  let state = withBuilding(type);
+  for (let current = 1; current < level; current++) {
+    const upgraded = upgradeFacility(state, 1);
+    assert.equal(upgraded.ok, true, `${type}: upgrade to Lv.${current + 1}`);
+    state = upgraded.state;
+  }
+  return state;
+}
+
+const FACILITY_EXPECTATIONS = {
+  waterworks: { minutes: 90, wood: 12, scrap: 4, resource: 'water', amount: 4, recipe: {} },
+  kitchen: { minutes: 120, wood: 16, scrap: 6, resource: 'food', amount: 5, recipe: { water: 2 } },
+  workshop: { minutes: 150, wood: 22, scrap: 10, resource: 'scrap', amount: 4, recipe: { wood: 3 } },
+  petHouse: { minutes: 120, wood: 18, scrap: 6, resource: 'wood', amount: 6, recipe: { food: 1 } },
+  greenhouse: { minutes: 240, wood: 28, scrap: 12, resource: 'food', amount: 6, recipe: { water: 2 } },
+  watchtower: { minutes: 180, wood: 26, scrap: 14, resource: 'scrap', amount: 3, recipe: {} },
+} as const;
 
 test('new settlements have two independent building slots per deck level and read-only snapshots', () => {
   const state = createGame();
   assert.deepEqual(getSettlement(state), { buildings: [], nextBuildingId: 1, stats: { productions: 0, collections: 0 } });
   assert.equal(getUnlockedSlots(state), 2);
   assert.equal(getUnlockedSlots(fundedGame(6)), 12);
+  assert.equal(getUnlockedSlots(fundedGame(8)), 16);
   const snapshot = getSettlement(state);
   snapshot.nextBuildingId = 8; snapshot.stats!.productions = 20;
   assert.equal(getSettlement(state).nextBuildingId, 1);
@@ -158,28 +183,56 @@ test('moving a facility preserves its identity, paid costs, level, and in-flight
   assert.equal(saveGame(moved.state, memoryStorage()), true);
 });
 
-test('each of the six facilities has a paid recipe or rain/scanning cycle and produces its stated resource', () => {
+test('all six facilities at levels 1–5 charge a batch once and complete at the faster level-specific boundary', () => {
   for (const type of BUILDING_TYPES) {
-    const initial = withBuilding(type), definition = BUILDINGS[type];
-    const before = JSON.stringify(initial);
-    const started = startProduction(initial, 1);
-    assert.equal(started.ok, true, type);
-    const building = getSettlement(started.state).buildings[0];
-    assert.equal(building.startedAt, initial.totalMinutes);
-    assert.equal(building.readyAt, initial.totalMinutes + definition.minutes);
-    assert.equal(started.state.totalMinutes, initial.totalMinutes);
-    for (const resource of ['wood', 'scrap', 'food', 'water', 'seeds'] as const) {
-      assert.equal(started.state.resources[resource], initial.resources[resource] - (definition.recipe?.[resource] ?? 0), `${type}/${resource}`);
+    const expected = FACILITY_EXPECTATIONS[type], recipe: Partial<Record<Resource, number>> = expected.recipe;
+    assert.equal(BUILDINGS[type].minutes, expected.minutes, `${type}: preserve the legacy stored duration definition`);
+    assert.equal(BUILDINGS[type].maxLevel, 5, type);
+    for (const [level, denominator] of [[1, 2], [2, 2.5], [3, 3], [4, 3.5], [5, 4]]) {
+      const initial = withBuildingLevel(type, level), before = JSON.stringify(initial);
+      const duration = expected.minutes / denominator;
+      const started = startProduction(initial, 1);
+      assert.equal(started.ok, true, `${type}/Lv.${level}`);
+      const building = getSettlement(started.state).buildings[0];
+      assert.equal(building.startedAt, initial.totalMinutes);
+      assert.equal(building.readyAt, initial.totalMinutes + duration);
+      assert.equal(getProductionMinutes(building), duration);
+      assert.equal(started.state.totalMinutes, initial.totalMinutes);
+      assert.equal(started.state.energy, initial.energy);
+      assert.equal(started.state.health, initial.health);
+      for (const resource of ['wood', 'scrap', 'food', 'water', 'seeds'] as const) {
+        assert.equal(started.state.resources[resource], initial.resources[resource] - (recipe[resource] ?? 0) * level, `${type}/Lv.${level}/${resource}`);
+      }
+      assert.equal(JSON.stringify(initial), before);
+      const paid = JSON.stringify(started.state), duplicate = startProduction(started.state, 1);
+      assert.equal(duplicate.ok, false);
+      assert.equal(duplicate.state, started.state);
+      assert.equal(JSON.stringify(started.state), paid, `${type}/Lv.${level}: retry does not charge the recipe again`);
+
+      const almost = tick(started.state, duration / GAME_MINUTES_PER_SECOND - 0.125);
+      assert.ok(almost.totalMinutes < building.readyAt!, `${type}/Lv.${level}: not ready 125ms early`);
+      const early = collectProduction(almost, 1);
+      assert.equal(early.ok, false);
+      assert.equal(early.state, almost);
+      const ready = tick(almost, (building.readyAt! - almost.totalMinutes) / GAME_MINUTES_PER_SECOND);
+      assert.equal(ready.totalMinutes, building.readyAt, `${type}/Lv.${level}: exact completion boundary`);
+      const collected = collectProduction(ready, 1);
+      assert.equal(collected.ok, true, `${type}/Lv.${level}`);
+      assert.equal(collected.state.resources[expected.resource], ready.resources[expected.resource] + expected.amount * level);
+      assert.equal(collected.state.totalMinutes, ready.totalMinutes);
+      assert.equal(collected.state.energy, ready.energy);
+      assert.equal(getSettlement(collected.state).buildings[0].startedAt, null);
+      assert.equal(getSettlement(collected.state).buildings[0].readyAt, null);
+      assert.deepEqual(getSettlement(collected.state).stats, { productions: 1, collections: 1 });
+      const twice = collectProduction(collected.state, 1);
+      assert.equal(twice.ok, false); assert.equal(twice.state, collected.state);
+      const storage = memoryStorage();
+      assert.equal(saveGame(collected.state, storage), true, `${type}/Lv.${level}`);
+      const loaded = loadGame(storage)!;
+      assert.equal(getSettlement(loaded).buildings[0].level, level);
+      assert.deepEqual(loaded.resources, collected.state.resources);
+      assert.deepEqual(getSettlement(loaded).stats, { productions: 1, collections: 1 });
     }
-    assert.equal(JSON.stringify(initial), before);
-    const ready = advanceTime(started.state, definition.minutes);
-    const collected = collectProduction(ready, 1);
-    assert.equal(collected.ok, true, type);
-    assert.equal(collected.state.resources[definition.yieldResource], ready.resources[definition.yieldResource] + definition.yieldAmount, type);
-    assert.equal(getSettlement(collected.state).buildings[0].startedAt, null);
-    assert.equal(getSettlement(collected.state).buildings[0].readyAt, null);
-    assert.deepEqual(getSettlement(collected.state).stats, { productions: 1, collections: 1 });
-    assert.equal(saveGame(collected.state, memoryStorage()), true, type);
   }
 });
 
@@ -187,7 +240,7 @@ test('production is capped at one batch and can only be collected once at the ex
   const initial = startProduction(withBuilding(), 1).state;
   const duplicate = startProduction(initial, 1);
   assert.equal(duplicate.ok, false); assert.equal(duplicate.state, initial);
-  const almost = tick(initial, BUILDINGS.waterworks.minutes / GAME_MINUTES_PER_SECOND - 0.5);
+  const almost = tick(initial, getProductionMinutes(getSettlement(initial).buildings[0]) / GAME_MINUTES_PER_SECOND - 0.5);
   const tooEarly = collectProduction(almost, 1);
   assert.equal(tooEarly.ok, false); assert.equal(tooEarly.state, almost);
   const ready = tick(almost, 0.5);
@@ -228,30 +281,31 @@ test('recipes must be affordable and repeated start attempts never charge ingred
   assert.equal(started.state.resources.water, 8);
 });
 
-test('facility levels use exact upgrade costs and scale recipes and yield with a maximum level of three', () => {
-  let state = withBuilding('kitchen');
-  for (const level of [2, 3]) {
-    const before = state;
-    const cost = getUpgradeCost(getSettlement(state).buildings[0]);
-    assert.deepEqual(cost, { wood: BUILDINGS.kitchen.wood * level, scrap: BUILDINGS.kitchen.scrap * level });
-    const upgraded = upgradeFacility(state, 1);
-    assert.equal(upgraded.ok, true);
-    state = upgraded.state;
-    assert.equal(getSettlement(state).buildings[0].level, level);
-    assert.equal(state.resources.wood, before.resources.wood - cost.wood);
-    assert.equal(state.resources.scrap, before.resources.scrap - cost.scrap);
+test('all facilities improve through level five using reduced exact costs and retain paid recipe scaling', () => {
+  for (const type of BUILDING_TYPES) {
+    let state = withBuilding(type);
+    const expected = FACILITY_EXPECTATIONS[type];
+    for (const [level, multiplier] of [[2, 2], [3, 2], [4, 3], [5, 3]]) {
+      const before = state, snapshot = JSON.stringify(before);
+      const cost = getUpgradeCost(getSettlement(state).buildings[0]);
+      assert.deepEqual(cost, { wood: expected.wood * multiplier, scrap: expected.scrap * multiplier });
+      const upgraded = upgradeFacility(state, 1);
+      assert.equal(upgraded.ok, true);
+      state = upgraded.state;
+      assert.equal(getSettlement(state).buildings[0].level, level);
+      assert.equal(state.resources.wood, before.resources.wood - cost.wood);
+      assert.equal(state.resources.scrap, before.resources.scrap - cost.scrap);
+      assert.equal(state.energy, before.energy);
+      assert.equal(state.totalMinutes, before.totalMinutes);
+      assert.equal(JSON.stringify(before), snapshot);
+    }
+    const maxed = upgradeFacility(state, 1);
+    assert.equal(maxed.ok, false); assert.equal(maxed.state, state);
+    const recipe = Object.fromEntries(Object.entries(expected.recipe).map(([resource, amount]) => [resource, amount * 5]));
+    assert.deepEqual(getProductionCost(getSettlement(state).buildings[0]), recipe);
+    assert.equal(getFacilityHistory(state).highestFacilityLevel, 5);
+    assert.equal(saveGame(state, memoryStorage()), true);
   }
-  const maxed = upgradeFacility(state, 1);
-  assert.equal(maxed.ok, false); assert.equal(maxed.state, state);
-  assert.deepEqual(getProductionCost(getSettlement(state).buildings[0]), { water: 6 });
-  const started = startProduction(state, 1);
-  assert.equal(started.ok, true);
-  assert.equal(started.state.resources.water, state.resources.water - 6);
-  const ready = advanceTime(started.state, BUILDINGS.kitchen.minutes);
-  const collected = collectProduction(ready, 1);
-  assert.equal(collected.ok, true);
-  assert.equal(collected.state.resources.food, ready.resources.food + 15);
-  assert.equal(saveGame(collected.state, memoryStorage()), true);
 });
 
 test('running and ready batches block upgrades until collected, preserving the recipe and output level', () => {
@@ -348,7 +402,7 @@ test('normal farming and time advance deep-copy facilities while an expedition f
 
 test('fractional game clocks keep an exact duration and can be saved at the readiness boundary', () => {
   const started = startProduction(tick(withBuilding(), 0.25), 1).state;
-  const ready = advanceTime(started, BUILDINGS.waterworks.minutes);
+  const ready = advanceTime(started, getProductionMinutes(getSettlement(started).buildings[0]));
   assert.equal(ready.totalMinutes, getSettlement(ready).buildings[0].readyAt);
   assert.equal(validateSettlement(ready.settlement, ready), true);
   assert.equal(saveGame(ready, memoryStorage()), true);
@@ -392,7 +446,7 @@ test('corrupt facility IDs, slots, levels, counters, and production times are re
     state => { state.settlement!.buildings[0].slot = -1; },
     state => { state.settlement!.buildings[0].slot = 2; },
     state => { state.settlement!.buildings[0].slot = 0.5; },
-    state => { state.settlement!.buildings[0].level = 4; },
+    state => { state.settlement!.buildings[0].level = 6; },
     state => { state.settlement!.buildings[0].level = 0; },
     state => { state.settlement!.buildings[0].type = 'greenhouse'; },
     state => { (state.settlement!.buildings[0] as unknown as Record<string, unknown>).type = 'free-loot'; },
@@ -416,4 +470,91 @@ test('corrupt facility IDs, slots, levels, counters, and production times are re
     assert.equal(saveGame(state, storage), false, before);
     assert.equal(JSON.stringify(state), before);
   }
+});
+
+test('all paid v16 active and ready batches keep their absolute clocks and award one original-level batch', () => {
+  for (const type of BUILDING_TYPES) for (const level of [1, 2, 3]) {
+    const initial = withBuildingLevel(type, level), definition = BUILDINGS[type];
+    const started = startProduction(initial, 1).state;
+    const oldJob = started.settlement!.buildings[0];
+    oldJob.readyAt = oldJob.startedAt! + definition.minutes;
+    const exact = structuredClone(oldJob), beforeResources = { ...started.resources }, memory = memoryStorage();
+    assert.equal(saveGame(started, memory), true, `${type} Lv.${level}: legacy active job is accepted`);
+    const loaded = loadGame(memory)!;
+    assert.deepEqual(loaded.settlement!.buildings[0], exact, 'loading does not replace paid legacy timestamps with the faster formula');
+    assert.deepEqual(loaded.resources, beforeResources);
+    const early = tick(loaded, definition.minutes / GAME_MINUTES_PER_SECOND - .125);
+    assert.equal(collectProduction(early, 1).state, early, 'old job does not complete at the new shorter duration');
+    const ready = tick(early, .125);
+    assert.equal(ready.totalMinutes, exact.readyAt);
+    assert.equal(saveGame(ready, memory), true);
+    const collected = collectProduction(loadGame(memory)!, 1);
+    assert.equal(collected.ok, true);
+    assert.equal(collected.state.resources[definition.yieldResource], ready.resources[definition.yieldResource] + definition.yieldAmount * level);
+    assert.equal(collectProduction(collected.state, 1).state, collected.state);
+    const restarted = startProduction(collected.state, 1);
+    assert.equal(restarted.ok, true);
+    const job = restarted.state.settlement!.buildings[0];
+    assert.equal(job.readyAt! - job.startedAt!, getProductionMinutes(job));
+  }
+});
+
+test('completed finite paid batches are preserved without timestamp repair while malformed active clocks are rejected', () => {
+  const state = startProduction(withBuildingLevel('kitchen', 3), 1).state;
+  const building = state.settlement!.buildings[0];
+  building.startedAt = state.totalMinutes - 17.5;
+  building.readyAt = state.totalMinutes - .25;
+  const before = JSON.stringify(state), memory = memoryStorage();
+  assert.equal(saveGame(state, memory), true);
+  const loaded = loadGame(memory)!;
+  assert.deepEqual(loaded.settlement!.buildings[0], building);
+  assert.deepEqual(loaded.resources, state.resources);
+  const got = collectProduction(loaded, 1);
+  assert.equal(got.ok, true);
+  assert.equal(got.state.resources.food, state.resources.food + 15);
+  assert.equal(JSON.stringify(state), before);
+  for (const patch of [{ startedAt: building.readyAt }, { readyAt: -1 }, { readyAt: NaN }, { readyAt: Infinity },
+    { startedAt: state.totalMinutes + 1 }, { readyAt: state.totalMinutes + 31 }]) {
+    const invalid = structuredClone(state);
+    Object.assign(invalid.settlement!.buildings[0], patch);
+    assert.equal(validateSettlement(invalid.settlement, invalid), false);
+    assert.equal(saveGame(invalid, memoryStorage()), false);
+  }
+});
+
+test('sixteen paid slots and fifth-level facilities round trip while lifetime maximum survives replacement', () => {
+  let state = fundedGame(8);
+  for (let slot = 0; slot < 16; slot++) {
+    const built = buildFacility(state, 'waterworks', slot);
+    assert.equal(built.ok, true, built.message);
+    state = built.state;
+  }
+  assert.equal(state.settlement!.nextBuildingId, 17);
+  assert.equal(state.settlement!.buildings.length, 16);
+  assert.equal(buildFacility(state, 'waterworks', 16).state, state);
+  for (let level = 1; level < 5; level++) {
+    const upgraded = upgradeFacility(state, 16);
+    assert.equal(upgraded.ok, true);
+    state = upgraded.state;
+  }
+  assert.equal(getHighestFacilityLevel(state), 5);
+  assert.deepEqual(state.facilityHistory!.upgradedFacilityIds, [16]);
+  const memory = memoryStorage();
+  assert.equal(saveGame(state, memory), true);
+  const loaded = loadGame(memory)!;
+  assert.equal(getHighestFacilityLevel(loaded), 5);
+  const replaced = replaceFacility(loaded, 16, 'kitchen');
+  assert.equal(replaced.ok, true);
+  assert.equal(replaced.state.settlement!.buildings[15].level, 1);
+  assert.equal(getHighestFacilityLevel(replaced.state), 5);
+  assert.equal(saveGame(replaced.state, memory), true);
+  assert.equal(getHighestFacilityLevel(loadGame(memory)!), 5);
+  for (const value of [null, 0, 6, 4.5, '5']) {
+    const invalid = structuredClone(state);
+    (invalid.facilityHistory as unknown as Record<string, unknown>).highestFacilityLevel = value;
+    assert.equal(saveGame(invalid, memoryStorage()), false, String(value));
+  }
+  const contradiction = structuredClone(state);
+  contradiction.facilityHistory!.highestFacilityLevel = 4;
+  assert.equal(saveGame(contradiction, memoryStorage()), false, 'a recorded maximum cannot be below a current facility');
 });

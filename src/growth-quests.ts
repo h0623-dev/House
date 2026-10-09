@@ -1,7 +1,8 @@
 import type { ActionResult, GameState, Resource } from './game';
 import { CROP_IDS, type CropId } from './crops';
-import { getBuiltTypes, getSettlement, getUpgradedFacilityRecord, type BuildingType } from './settlement';
+import { getBuiltTypes, getSettlement, getUpgradedFacilityRecord, getHighestFacilityLevel, getFacilityHistory, type BuildingType } from './settlement';
 import { cloneCompanions } from './companions';
+import { cloneUnitProgressFields, getMaxTeamSize, getUnlockedUnitIds } from './units';
 
 export type GrowthQuestStatus = 'locked' | 'active' | 'ready' | 'claimed';
 export interface GrowthQuestProgress { claimed: string[] }
@@ -11,10 +12,10 @@ export interface GrowthQuestReward {
   xp: number;
 }
 export interface GrowthQuestDestination {
-  kind: 'gather' | 'harvest' | 'plant' | 'water' | 'build' | 'collect' | 'upgrade' | 'chop' | 'hunt' | 'expand';
+  kind: 'gather' | 'harvest' | 'plant' | 'water' | 'build' | 'collect' | 'upgrade' | 'chop' | 'hunt' | 'expand' | 'companions';
   buildingType?: BuildingType;
 }
-type Metric = 'gathers' | 'harvests' | 'plantings' | 'waterings' | 'chops' | 'deck' | 'collections' | 'building' | 'buildingTypes' | 'upgradedFacilities' | 'battlesWon';
+type Metric = 'gathers' | 'harvests' | 'plantings' | 'waterings' | 'chops' | 'deck' | 'collections' | 'building' | 'buildingTypes' | 'upgradedFacilities' | 'battlesWon' | 'highestFacilityLevel' | 'unlockedUnits' | 'maxTeamSize';
 export interface GrowthQuestDefinition {
   id: string;
   chapter: number;
@@ -35,6 +36,8 @@ export const GROWTH_CHAPTERS = [
   { id: 4, title: '보리와 도로 너머로', description: '반려견과 농장, 사냥을 함께 성장시켜요.', story: '보리와 함께 안전한 길을 찾아요. 돌아올 트럭 마을이 있어 든든해요.' },
   { id: 5, title: '여섯 이웃의 트럭', description: '온실과 감시소를 더해 생활 시설을 갖춰요.', story: '다양한 시설이 서로를 도우며 도로 위에서도 일상이 풍성해져요.' },
   { id: 6, title: '우리의 로드헤이븐', description: '시설을 개선하고 가장 넓은 마을을 완성해요.', story: '작은 씨앗 하나에서 시작한 우리집. 이제 이 트럭은 우리가 함께 살아가는 마을이에요.' },
+  { id: 7, title: '새 친구들과 더 먼 길로', description: '동료를 만나고 생산과 트럭을 한 단계 더 키워요.', story: '강아지와 고양이 곁에 새 친구들이 찾아왔어요. 저마다 다른 재능으로 함께 먼 길을 준비해요.' },
+  { id: 8, title: '끝없이 이어지는 우리집', description: '최고의 시설과 여덟 번째 데크를 완성해요.', story: '친구들의 기술과 마을의 생산이 함께 자라요. 먼 미래의 도로 위에서도 우리의 일상은 계속돼요.' },
 ] as const;
 
 function quest(id: string, chapter: number, title: string, description: string, metric: Metric, target: number,
@@ -57,7 +60,7 @@ export const GROWTH_QUESTS: readonly GrowthQuestDefinition[] = Object.freeze([
   quest('recycle-workshop', 3, '버려진 부품의 새 쓰임', '재활용 공방 건설하기', 'building', 1, { kind: 'build', buildingType: 'workshop' }, { resources: { wood: 10, scrap: 8 }, xp: 30 }, '데크 2단계에서 공방을 지어요. 목재를 고철로 바꾸는 생산 흐름을 만들어요.'),
   quest('steady-deliveries', 3, '마을의 생산이 이어져요', '생활 시설 생산품 총 4번 받기', 'collections', 4, { kind: 'collect' }, { resources: { food: 4, water: 6 }, xp: 30 }, '시설마다 한 묶음씩 생산해요. 완성품을 받고 다음 생산을 시작해 주세요.'),
   quest('better-facility', 3, '더 든든한 생활 시설', '시설 1곳을 2단계로 개선하기', 'upgradedFacilities', 1, { kind: 'upgrade' }, { resources: { wood: 24, scrap: 12 }, xp: 35 }, '생산품을 먼저 받은 뒤 시설을 개선해요. 한 번에 생산하는 양이 늘어나요.'),
-  quest('boris-home', 4, '보리에게도 작은 집', '보리의 오두막 건설하기', 'building', 1, { kind: 'build', buildingType: 'petHouse' }, { resources: { food: 4, wood: 8 }, xp: 35 }, '보리에게 간식을 주면 작은 나뭇가지를 모아 와요.'),
+  quest('boris-home', 4, '동물 친구들의 작은 집', '동료의 쉼터 건설하기', 'building', 1, { kind: 'build', buildingType: 'petHouse' }, { resources: { food: 4, wood: 8 }, xp: 35 }, '쉼터는 목재를 생산하고 모든 출전 동료의 공격력을 레벨마다 4%씩 높여요.'),
   quest('full-baskets', 4, '풍성해진 우리 텃밭', '작물 총 8밭 수확하기', 'harvests', 8, { kind: 'harvest' }, { resources: { water: 6 }, seeds: { corn: 3, strawberry: 3 }, xp: 40 }, '물 주기와 수확을 이어가요. 수확하면 같은 씨앗도 돌아와 다시 심을 수 있어요.'),
   quest('safe-road', 4, '돌아올 마을이 있어요', '동물 친구들과 전투 스테이지 1번 승리하기', 'battlesWon', 1, { kind: 'hunt' }, { resources: { wood: 20, scrap: 12 }, xp: 40 }, '강아지 보리와 고양이 나비가 싸워요. 건강한 동물 친구와 기력 16을 준비하고 기술을 사용해 보세요.'),
   quest('third-deck', 4, '새로운 이웃을 맞을 자리', '트럭 데크 3단계 만들기', 'deck', 3, { kind: 'expand' }, { resources: { wood: 30, scrap: 16 }, xp: 45 }, '목재와 고철을 모아 마을을 넓혀요. 새 시설 두 종류가 열려요.'),
@@ -69,6 +72,14 @@ export const GROWTH_QUESTS: readonly GrowthQuestDefinition[] = Object.freeze([
   quest('busy-village', 6, '물자가 오가는 마을', '생활 시설 생산품 총 12번 받기', 'collections', 12, { kind: 'collect' }, { resources: { wood: 32, scrap: 20, food: 8 }, xp: 60 }, '개선한 시설에서 더 많은 물자를 받아요. 받을 때마다 마을의 생산 실적이 쌓여요.'),
   quest('fifth-deck', 6, '우리집의 넓은 내일', '트럭 데크 5단계 만들기', 'deck', 5, { kind: 'expand' }, { resources: { wood: 80, scrap: 36 }, xp: 75 }, '마지막 확장을 준비해요. 부족한 목재는 벌목, 고철은 공방·감시소·탐색으로 보급해요.'),
   quest('road-haven', 6, '우리가 만든 로드헤이븐', '트럭 데크 6단계 완성하기', 'deck', 6, { kind: 'expand' }, { resources: { food: 20, water: 20 }, seeds: { carrot: 3, potato: 3, tomato: 3, corn: 3, strawberry: 3, pumpkin: 3 }, xp: 120 }, '가장 넓은 트럭 마을을 완성했어요. 새로운 농사와 배치로 나만의 일상을 이어가요.'),
+  quest('advanced-facility', 7, '더 빠르게 돌아가는 마을', '생활 시설 1곳을 Lv.4로 개선하기', 'highestFacilityLevel', 4, { kind: 'upgrade' }, { resources: { wood: 36, scrap: 18 }, xp: 75 }, '시설을 선택하면 현재와 다음 레벨의 생산량·시간·필요 재료를 볼 수 있어요. 물자를 받은 뒤 한 단계씩 개선해요.'),
+  quest('three-friend-team', 7, '셋이서 지키는 우리집', '동물 동료 3명으로 탐험 팀 편성하기', 'maxTeamSize', 3, { kind: 'companions' }, { resources: { food: 12, water: 12 }, xp: 75 }, '동료 창에서 만난 동물 중 서로 다른 세 명을 골라 편성을 저장해요. 한 번 완성한 편성 기록은 이후 바꿔도 남아요.'),
+  quest('six-animal-friends', 7, '저마다 다른 여섯 재능', '동물 동료 6명을 모두 만나기', 'unlockedUnits', 6, { kind: 'companions' }, { resources: { wood: 48, scrap: 24 }, xp: 80 }, '데크가 자라면 토끼·여우·멧돼지·부엉이를 만나요. 동료 창에서 역할과 고유 기술을 확인해 주세요.'),
+  quest('seventh-deck', 7, '도로 위의 새로운 자리', '트럭 데크 7단계 만들기', 'deck', 7, { kind: 'expand' }, { resources: { wood: 64, scrap: 32 }, xp: 90 }, '데크를 확장하면 건설 자리가 두 곳 더 열려요. 생산과 벌목으로 재료를 모으고 새 밭도 늘려요.'),
+  quest('fifth-level-facility', 8, '우리 마을의 최고 시설', '생활 시설 1곳을 Lv.5로 개선하기', 'highestFacilityLevel', 5, { kind: 'upgrade' }, { resources: { wood: 48, scrap: 24, water: 12 }, xp: 90 }, 'Lv.5 시설은 더 많은 물자를 빠르게 만들어요. 쉼터는 동료 공격력, 감시소는 적 피해 감소 효과도 커져요.'),
+  quest('twenty-four-deliveries', 8, '모두를 위한 풍성한 물자', '생활 시설 생산품 총 24번 받기', 'collections', 24, { kind: 'collect' }, { resources: { wood: 64, scrap: 32, food: 16 }, xp: 90 }, '개선한 정수소·부엌·공방의 생산을 이어가요. 새로 받은 생산품만 기록되며 완성품을 중복 수령할 수 없어요.'),
+  quest('five-road-victories', 8, '동료들의 든든한 발걸음', '동물 전투 스테이지 총 5번 승리하기', 'battlesWon', 5, { kind: 'hunt' }, { resources: { wood: 80, scrap: 40, food: 12 }, xp: 100 }, '앞줄 수호·공격·치유 역할을 함께 편성해 도전해요. 지친 친구는 트럭에서 쉬고, 승리한 동료들은 경험치를 얻어요.'),
+  quest('eighth-deck-home', 8, '끝없이 이어지는 우리집', '트럭 데크 8단계 완성하기', 'deck', 8, { kind: 'expand' }, { resources: { food: 24, water: 24 }, seeds: { carrot: 3, potato: 3, tomato: 3, corn: 3, strawberry: 3, pumpkin: 3 }, xp: 140 }, '여덟 번째 데크와 건설 자리 16곳을 완성했어요. 동료들의 편성과 최고 시설로 우리만의 생활을 이어가요.'),
 ]);
 
 function progress(state: GameState, definition: GrowthQuestDefinition): number {
@@ -78,6 +89,9 @@ function progress(state: GameState, definition: GrowthQuestDefinition): number {
     case 'buildingTypes': return getBuiltTypes(state).length;
     case 'collections': return getSettlement(state).stats?.collections ?? 0;
     case 'upgradedFacilities': return getUpgradedFacilityRecord(state);
+    case 'highestFacilityLevel': return getHighestFacilityLevel(state);
+    case 'unlockedUnits': return getUnlockedUnitIds(state).length;
+    case 'maxTeamSize': return getMaxTeamSize(state);
     default: return state.stats[definition.metric] ?? 0;
   }
 }
@@ -130,7 +144,8 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
     ...(state.settlement ? { settlement: getSettlement(state) } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
-    ...(state.facilityHistory ? { facilityHistory: { builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
+    ...cloneUnitProgressFields(state),
+    ...(state.facilityHistory ? { facilityHistory: getFacilityHistory(state) } : {}),
     expedition: null,
     growthQuests: { claimed: [...claimed, definition.id] },
     log: [`${state.day}일차 · 성장 목표 완료! ${definition.title} · 보상을 받았어요.`, ...state.log].slice(0, 30),

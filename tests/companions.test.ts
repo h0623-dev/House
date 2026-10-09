@@ -11,7 +11,7 @@ function storage(): SaveStorage {
   return { getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value); } };
 }
 function result(stage = 1, outcome: HuntResult['outcome'] = 'victory'): HuntResult {
-  return { outcome, stage, remainingHealth: 1, companionHealth: { dog: 61.25, cat: 0 }, enemiesDefeated: 8, duration: 7.5 };
+  return { outcome, stage, remainingHealth: 1, companionHealth: { dog: 61.25, cat: 0 }, reserveHealth: { rabbit: 100, fox: 100, boar: 100, owl: 100 }, enemiesDefeated: 8, duration: 7.5 };
 }
 function assertDetached(before: GameState, after: GameState) {
   assert.notEqual(after, before);
@@ -62,7 +62,7 @@ test('legacy saves discover a detached roster without resources, XP, health or o
   assert.equal(started.state.xp, old.xp);
   assert.equal(started.state.energy, old.energy - 16);
   assert.equal(started.state.totalMinutes, old.totalMinutes);
-  assert.deepEqual(started.state.expedition?.participantIds, ['dog', 'cat']);
+  assert.deepEqual(started.state.expedition?.unitParticipantIds, ['dog', 'cat']);
   assert.equal(JSON.stringify(old), before);
   assert.equal(saveGame(started.state, memory), true);
   const reloaded = loadGame(memory)!;
@@ -86,7 +86,7 @@ test('modern results preserve the farmer and award participating animals once in
   assert.equal(duplicate.ok, false);
   assert.equal(duplicate.state, won.state);
   const second = beginHunt(won.state, 2).state;
-  assert.deepEqual(second.expedition?.participantIds, ['dog']);
+  assert.deepEqual(second.expedition?.unitParticipantIds, ['dog']);
   assert.equal(finishHunt(second, result(2), 1).state, second);
   const secondWon = finishHunt(second, result(2), 2);
   assert.equal(secondWon.ok, true);
@@ -103,7 +103,7 @@ test('either healthy animal can explore alone while depleted partners cannot rec
     state.companions![other] = { health: 0, xp: 160 };
     const started = beginHunt(state, 1);
     assert.equal(started.ok, true);
-    assert.deepEqual(started.state.expedition!.participantIds, [solo]);
+    assert.deepEqual(started.state.expedition!.unitParticipantIds, [solo]);
     assert.equal(started.state.energy, 0);
     const wrong = { ...result(), companionHealth: { dog: 50, cat: 50 } };
     assert.equal(finishHunt(started.state, wrong, 1).state, started.state);
@@ -230,6 +230,7 @@ test('present corrupt rosters and invalid participation markers never receive le
     assert.equal(beginHunt(malformed, 1).state, malformed);
   }
   const pending = beginHunt(createGame(), 1).state;
+  pending.expedition = { id: 1, stage: 1, animalParty: true, participantIds: ['dog', 'cat'] };
   for (const patch of [{ animalParty: false }, { animalParty: 1 }, { participantIds: [] }, { participantIds: ['dog', 'dog'] },
     { participantIds: ['fox'] }, { participantIds: undefined }]) {
     memory.setItem(SAVE_KEY, JSON.stringify({ ...pending, expedition: { ...pending.expedition, ...patch } }));
@@ -293,9 +294,9 @@ test('every village mutation detaches animal progress without healing or experie
   const pending = beginHunt(state, 1).state;
   const cancelled = cancelHunt(pending).state;
   assertDetached(pending, cancelled);
-  const outside = pending.expedition!.participantIds!;
+  const outside = pending.expedition!.unitParticipantIds!;
   const copied = applyOfflineProgress(pending, 10).state;
-  assert.notEqual(copied.expedition!.participantIds, outside);
-  copied.expedition!.participantIds!.pop();
+  assert.notEqual(copied.expedition!.unitParticipantIds, outside);
+  copied.expedition!.unitParticipantIds!.pop();
   assert.deepEqual(outside, ['dog', 'cat']);
 });

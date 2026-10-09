@@ -6,6 +6,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 // 15-second batch; observation only reads UI text and never advances the clock.
 const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
+const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
+const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
 const startedAt = new Date();
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
@@ -77,7 +79,7 @@ try {
  await page.goto(baseUrl); await touch(page.locator('[data-start]')); await pauseWorld(); const fresh = await saved();
 
  await touch(page.locator('[data-nav="build"]'));
- for (const [type, seconds] of [['waterworks', 15], ['kitchen', 20], ['workshop', 25], ['petHouse', 20], ['greenhouse', 40], ['watchtower', 30]]) {
+ for (const [type, seconds] of [['waterworks', 7.5], ['kitchen', 10], ['workshop', 12.5], ['petHouse', 10], ['greenhouse', 20], ['watchtower', 15]]) {
   const card = page.locator(`[data-build-type="${type}"]`); await card.scrollIntoViewIfNeeded();
   assert.equal((await card.locator('.building-output small').innerText()).trim(), `· ${seconds}초`, `${type} shows actual active-play seconds`);
  }
@@ -90,7 +92,7 @@ try {
  }
  const seedCopy = await page.locator('#modal-root').innerText(); assert.doesNotMatch(seedCopy, /\d+\s*분/); assert.match(seedCopy, /물.{0,16}(?:준|주)/, 'seed timing explains the watering condition');
  await shot('seed-growth-seconds'); await closeModal();
- cases.push('All six facility durations15/20/25/20/40/30초 and watered seed growth durations30/40/45/50/60/70초 appear at3× gameplay pace.');
+ cases.push('All six facility durations7.5/10/12.5/10/20/15초 and watered seed growth durations30/40/45/50/60/70초 appear at3× gameplay pace.');
 
  const existing = productionFixture(fresh, 76); await loadFixture(existing, 'Declared valid old-schema production with76 game-minutes left'); await openFacility();
  const before = await saved(), remainingAtPause = existing.settlement.buildings[0].readyAt - before.totalMinutes;
@@ -136,9 +138,9 @@ try {
  assert.match(await page.locator('.battle-result-stats>div').nth(1).locator('b').innerText(), /^\d+초$/, 'battle result duration keeps its Korean seconds unit'); await touch(page.locator('[data-battle="finish"]'));
  cases.push('Actual battle skill activation displays4/4/8-second rounded cooldowns at3× pace; pause holds cooldowns; retreat results also use초.');
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
- await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual mobile touchscreen taps', clock: 'Real browser countdown ticks; no page.clock, synthetic clock, or direct game calls', deviceLimit: 'Chromium mobile emulation only; not a physical Android test', fixtures, cases, countdowns, screenshots, errors, failedAssets }, null, 2) + '\n');
+ await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, snapshotId, finalSnapshot, status: 'passed', baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual mobile touchscreen taps', clock: 'Real browser countdown ticks; no page.clock, synthetic clock, or direct game calls', deviceLimit: 'Chromium mobile emulation only; not a physical Android test', fixtures, cases, countdowns, screenshots, errors, failedAssets }, null, 2) + '\n');
  console.log(`PASS: ${assertionsExecuted} time display assertions; real seconds, pause, completion, collection and battle units.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', baseUrl, assertionsExecuted, fixtures, cases, countdowns, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n'); throw error;
+ await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, snapshotId, finalSnapshot, status: 'failed', baseUrl, assertionsExecuted, fixtures, cases, countdowns, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n'); throw error;
 } finally { await browser.close(); }

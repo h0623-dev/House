@@ -1,0 +1,47 @@
+/* Keep the town visible while choosing facilities and extending the truck. */
+.scene-card.planning-catalog,.scene-card.planning-expansion{--world-safe-top:54px;--world-safe-bottom:14px}
+.scene-card.planning-catalog .settlement-objective,.scene-card.planning-expansion .settlement-objective,.scene-card.construction-mode .settlement-objective{display:none!important}
+.modal-backdrop.planning-catalog,.modal-backdrop.planning-expansion{background:none;backdrop-filter:none;pointer-events:none;padding:0;display:block}
+.planning-catalog>.modal,.planning-expansion>.modal{pointer-events:auto;position:absolute;bottom:calc(76px + env(safe-area-inset-bottom));left:8px;right:8px;margin:auto;width:min(calc(100% - 16px),650px);max-height:min(32dvh,270px);padding:12px 12px 10px;overflow-y:auto;overscroll-behavior:contain;border-radius:16px;box-shadow:0 -3px 18px #19372d55}
+.planning-catalog>.modal::before,.planning-expansion>.modal::before,.planning-catalog .eyebrow,.planning-expansion .eyebrow{display:none}
+.planning-catalog .modal h2,.planning-expansion .modal h2{font-size:16px;padding-right:42px;margin:0 0 9px}
+.planning-catalog .modal-close,.planning-expansion .modal-close{top:5px;right:6px;width:44px;height:44px}
+.planning-catalog .modal-description,.planning-catalog .fine-print,.planning-catalog .activity-secondary{display:none}
+.planning-catalog .build-capacity{margin:0 42px 8px 0;padding:5px 7px;min-height:35px}
+.planning-catalog .building-catalog{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;padding:2px 2px 7px}
+.planning-catalog .building-card{min-width:140px;flex:0 0 140px;min-height:143px;gap:3px;padding:5px 8px 0;scroll-snap-align:start}
+.planning-catalog .building-card-art{width:78px;height:54px;margin:0}.planning-catalog .building-card-art .icon{width:78px;height:54px}
+.planning-catalog .building-description{display:none}.planning-catalog .building-unlock{font-size:7px;top:4px;right:3px}
+.planning-catalog .building-cost{margin:2px 0 4px}.planning-catalog .building-select{padding:5px}
+.scene-card.planning-catalog .settlement-objective,.scene-card.planning-expansion .settlement-objective,.scene-card.construction-mode .settlement-objective,
+.scene-card.planning-catalog .scene-weather,.scene-card.planning-expansion .scene-weather,.scene-card.construction-mode .scene-weather,
+.scene-card.planning-catalog .scene-tools,.scene-card.planning-expansion .scene-tools,.scene-card.construction-mode .scene-tools,
+.scene-card.planning-catalog .village-order-tool,.scene-card.planning-expansion .village-order-tool,.scene-card.construction-mode .village-order-tool,
+.scene-card.planning-catalog .farm-expand-tool,.scene-card.planning-expansion .farm-expand-tool,.scene-card.construction-mode .farm-expand-tool{display:none}
+.scene-card.construction-mode{--world-safe-top:54px;--world-safe-bottom:110px}
+.scene-card.construction-mode .construction-bar{min-height:86px;bottom:7px;padding:7px}
+.scene-card.construction-mode .camera-tool{bottom:106px}.scene-card.construction-mode.camera-open .map-controls{bottom:106px}
+.scene-card.construction-mode.camera-open .map-move-tool{bottom:176px}
+.expansion-dock-summary{display:flex;gap:8px;align-items:center;margin:0 0 8px}.expansion-dock-summary>span>.icon{width:46px;height:46px}
+.expansion-dock-summary strong{font-size:12px;color:#476342}.expansion-dock-summary small{display:block;font-size:10px;line-height:1.5;color:#7f6948;margin-top:3px}
+.expansion-dock-cost{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:11px;margin:8px 0 10px}.expansion-dock-cost>.icon{width:22px;height:22px}.expansion-dock-cost>span{margin-left:auto;display:flex;align-items:center}.expansion-dock-cost>span>.icon{width:14px;height:14px}
+.planning-expansion .button{min-height:44px;padding:10px;font-size:12px}
+.unit-team-heading{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:16px}.unit-team-heading strong{font-size:14px;color:#4e633d}.unit-team-heading b{font-size:12px;background:#dce5b8;padding:3px 7px;border-radius:8px}.unit-team-heading small{font-size:9px;color:#7f6b48}
+.unit-team .companion-card{position:relative;flex-wrap:wrap;text-align:left;min-height:150px;cursor:pointer;transition:border-color .15s,background .15s}
+.unit-team .unit-selected{border:2px solid #71914d;background:linear-gradient(145deg,#fbf6d9,#d9e4b8);padding:11px 9px}
+.unit-team .unit-locked{opacity:.6;cursor:default}.unit-team .unit-locked .companion-card-art{filter:saturate(.5)}
+.unit-selection-label{display:flex!important;align-items:center;gap:3px;font-weight:700;margin:6px 0 0!important;color:#65813e!important}.unit-selection-label>.icon{width:13px;height:13px}
+.unit-skill-description{flex-basis:100%;font-size:9px;line-height:1.5;color:#8a704b;border-top:1px solid #c4b27e66;padding-top:5px}
+.unit-village-bonus{font-size:11px;color:#5f7547;line-height:1.6;background:#e6e8ce;border:1px solid #bec896;border-radius:10px;padding:9px}.unit-village-bonus>.icon{width:18px;height:18px;vertical-align:middle}.unit-village-bonus small{display:block;color:#8b7754;font-size:9px}
+.unit-team-compact .companion-roster{grid-template-columns:repeat(var(--team-columns),minmax(0,1fr));gap:7px;margin:8px 0}
+.unit-team.unit-team-compact .companion-card{flex-direction:column;min-height:0;text-align:center;padding:8px 5px;gap:4px}
+.unit-team.unit-team-compact .companion-card-art{width:48px;flex-basis:auto}.unit-team.unit-team-compact .companion-card-info{width:100%}.unit-team.unit-team-compact .companion-card-info>strong{justify-content:center;font-size:12px}.unit-team.unit-team-compact .companion-card-info>span{font-size:9px;margin:3px 0}.unit-team.unit-team-compact .companion-card-info>b{font-size:10px}
+.unit-team-heading>button{display:flex;align-items:center;gap:5px;min-height:44px;font-size:11px;color:#617c41;border:1px solid #a9b27d;border-radius:9px;background:#ebefda;padding:7px 10px}.unit-team-heading>button>.icon{width:20px;height:20px}
+.modal-hunt::before,.modal-hunt>.eyebrow,.modal-hunt .explore-quick-links{display:none}
+.modal-hunt h2{margin-bottom:8px}.modal-hunt .modal-description{margin:0 0 10px;line-height:1.6}
+.modal-hunt .stage-list{gap:7px;margin:12px 0}.modal-hunt .stage-card{min-height:76px;padding:10px 12px;gap:10px;border-radius:12px}
+.modal-hunt .stage-card.selected{padding:9px 11px}.modal-hunt .stage-card-body{gap:5px}.modal-hunt .stage-number{font-size:26px;min-width:37px}.modal-hunt .stage-card-body>strong{font-size:13px}
+.modal-hunt .unit-team-heading{margin-top:9px}.modal-hunt .companion-party-note{margin:9px 0}.modal-hunt .battle-reward-preview{margin:8px 0}
+@media(orientation:landscape) and (max-height:600px){.scene-card.construction-mode{--world-safe-top:32px;--world-safe-bottom:14px}}
+@media(max-width:420px){.unit-team .companion-card{flex-direction:row;text-align:left;gap:7px;padding:8px}.unit-team .companion-card-art{width:42px;flex-basis:42px}.unit-team .companion-card-info{width:auto;min-width:0}.unit-team .companion-card-info>strong{font-size:12px;justify-content:flex-start;gap:3px}.unit-team .companion-card-info>strong>small{font-size:8px}.unit-team .companion-card-info>span{font-size:9px}.unit-team .companion-xp{font-size:8px}.unit-team-heading{align-items:flex-start}.unit-team-heading small{max-width:120px;text-align:right}}
+@media(orientation:landscape) and (max-height:600px){.planning-catalog>.modal,.planning-expansion>.modal{bottom:calc(52px + env(safe-area-inset-bottom));left:auto;right:8px;width:290px;max-height:calc(100dvh - 153px);padding:9px}.planning-catalog .building-card{min-width:126px;flex-basis:126px}.planning-catalog .modal h2,.planning-expansion .modal h2{font-size:14px}.scene-card.construction-mode .construction-bar{width:360px;left:8px;right:auto;min-height:80px}.scene-card.construction-mode .camera-tool{bottom:8px}.scene-card.construction-mode.camera-open .map-controls{bottom:8px}}

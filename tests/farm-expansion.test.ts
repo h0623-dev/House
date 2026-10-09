@@ -30,7 +30,7 @@ function assertRejectedWithoutMutation(state: GameState, expectedMessage: RegExp
   assert.equal(JSON.stringify(state), before);
 }
 
-test('farm capacity grows from three to eighteen while each deck expansion still grants one plot', () => {
+test('farm capacity grows from three to twenty-four while each deck expansion still grants one plot', () => {
   let state = legacyDeck(1);
   for (let level = 1; level <= MAX_DECK_LEVEL; level++) {
     assert.equal(state.deckLevel, level);
@@ -43,7 +43,7 @@ test('farm capacity grows from three to eighteen while each deck expansion still
       state = expanded.state;
       assert.equal(saveGame(state, memoryStorage()), true);
     }
-    assertRejectedWithoutMutation(state, level < MAX_DECK_LEVEL ? /트럭을 확장/ : /18칸/);
+    assertRejectedWithoutMutation(state, level < MAX_DECK_LEVEL ? /트럭을 확장/ : /24칸/);
     if (level < MAX_DECK_LEVEL) {
       state.energy = 100;
       const previous = state;
@@ -57,8 +57,8 @@ test('farm capacity grows from three to eighteen while each deck expansion still
       assert.deepEqual(farmExpansionCost(state), cost);
     }
   }
-  assert.equal(state.plots.length, 18);
-  assert.equal(new Set(state.plots.map(plot => plot.id)).size, 18);
+  assert.equal(state.plots.length, 24);
+  assert.equal(new Set(state.plots.map(plot => plot.id)).size, 24);
 });
 
 test('one farm purchase charges the displayed cost once and never counts as a deck or farming quest', () => {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { GAME_MINUTES_PER_SECOND, gameMinutesToSeconds, formatGameDuration } from '../src/game-time.ts';
 import { GAME_SPEED_MULTIPLIER, realDuration } from '../src/game-speed.ts';
 import { createGame, CROPS, CROP_IDS, getCropProgress, performAction, tick } from '../src/game.ts';
-import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, startProduction } from '../src/settlement.ts';
+import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getProductionMinutes, formatProductionDuration, startProduction } from '../src/settlement.ts';
 
 test('game durations display remaining real seconds, rounded up and never negative', () => {
   assert.equal(GAME_SPEED_MULTIPLIER, 3);
@@ -14,8 +14,8 @@ test('game durations display remaining real seconds, rounded up and never negati
   }
 });
 
-test('all six facility messages count real seconds until the unchanged production completion boundary', () => {
-  const expectedSeconds = { waterworks: 15, kitchen: 20, workshop: 25, petHouse: 20, greenhouse: 40, watchtower: 30 };
+test('all six facility messages show half-duration real seconds and collect at the exact new completion boundary', () => {
+  const expectedSeconds = { waterworks: 7.5, kitchen: 10, workshop: 12.5, petHouse: 10, greenhouse: 20, watchtower: 15 };
   for (const type of BUILDING_TYPES) {
     let state = createGame();
     state.resources.wood = 1_000;
@@ -26,9 +26,10 @@ test('all six facility messages count real seconds until the unchanged productio
     const started = startProduction(built.state, 1);
     assert.equal(started.ok, true, type);
     const production = started.state.settlement!.buildings[0];
-    const duration = BUILDINGS[type].minutes;
-    const seconds = gameMinutesToSeconds(duration);
-    assert.equal(seconds, expectedSeconds[type], `${type}: production needs one third of its original real time`);
+    const duration = getProductionMinutes(production);
+    const seconds = duration / GAME_MINUTES_PER_SECOND;
+    assert.equal(seconds, expectedSeconds[type], `${type}: a new level1 batch uses half its v16 real time`);
+    assert.equal(formatProductionDuration(production), `${expectedSeconds[type]}초`);
     assert.equal(production.startedAt, built.state.totalMinutes);
     assert.equal(production.readyAt, built.state.totalMinutes + duration);
     assert.ok(started.message.includes(`${seconds}초 뒤`), started.message);
@@ -51,6 +52,8 @@ test('all six facility messages count real seconds until the unchanged productio
 test('an existing 76-game-minute rainwater batch displays 13 seconds and completes at its unchanged stored boundary', () => {
   const built = buildFacility(createGame(), 'waterworks', 0);
   const started = startProduction(built.state, 1).state;
+  // Explicit earlier v16 paid batch; updating never shortens its stored readyAt.
+  started.settlement!.buildings[0].readyAt = started.settlement!.buildings[0].startedAt! + 90;
   const state = tick(started, realDuration(7));
   const remaining = state.settlement!.buildings[0].readyAt! - state.totalMinutes;
   assert.equal(remaining, 76);

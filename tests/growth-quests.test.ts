@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beginHunt, createGame, getSeedInventory, loadGame, performAction, SAVE_KEY, saveGame, tick, type ActionResult, type GameState, type SaveStorage } from '../src/game.ts';
+import { beginHunt, createGame, getSeedInventory, loadGame, performAction, setCompanionTeam, SAVE_KEY, saveGame, tick, type ActionResult, type GameState, type SaveStorage } from '../src/game.ts';
 import { CROP_IDS } from '../src/crops.ts';
 import { BUILDING_TYPES, buildFacility, collectProduction, getBuiltTypes, getSettlement, getUpgradedFacilityRecord, moveFacility, replaceFacility, startProduction, upgradeFacility } from '../src/settlement.ts';
 import { GROWTH_CHAPTERS, GROWTH_QUESTS, claimGrowthQuest, getActiveGrowthQuest, getGrowthQuests, validateGrowthQuests } from '../src/growth-quests.ts';
@@ -46,19 +46,25 @@ function claimCurrent(state: GameState, expectedId: string): GameState {
 /** A validated imported late-game history: real expansion/build/upgrade actions plus recorded lifetime work. */
 function achievedGame(): GameState {
   let state = createGame(); state.resources.wood = 10_000; state.resources.scrap = 10_000;
-  for (let level = 1; level < 6; level++) state = requireSuccess(performAction(state, 'expand'));
+  state.resources.food = 10_000; state.resources.water = 10_000;
+  for (let level = 1; level < 8; level++) {
+    if (state.energy < 15) state = requireSuccess(performAction(state, 'rest'));
+    state = requireSuccess(performAction(state, 'expand'));
+  }
   for (const [slot, type] of BUILDING_TYPES.entries()) state = requireSuccess(buildFacility(state, type, slot));
   for (const id of [1, 2, 3]) state = requireSuccess(upgradeFacility(state, id));
-  Object.assign(state.stats, { gathers: 1, harvests: 8, chops: 3, hunts: 1, battlesWon: 1, defeatedEnemies: 6, plantings: 2, waterings: 2 });
-  state.settlement!.stats!.productions = 12; state.settlement!.stats!.collections = 12;
+  for (let level = 2; level < 5; level++) state = requireSuccess(upgradeFacility(state, 1));
+  state = requireSuccess(setCompanionTeam(state, ['dog', 'cat', 'rabbit']));
+  Object.assign(state.stats, { gathers: 1, harvests: 8, chops: 3, hunts: 5, battlesWon: 5, defeatedEnemies: 40, plantings: 2, waterings: 2 });
+  state.settlement!.stats!.productions = 24; state.settlement!.stats!.collections = 24;
   assert.equal(saveGame(state, memoryStorage()), true, 'late-game fixture must satisfy real save validation');
   return state;
 }
 
-test('six chapters expose four sequential goals each, with isolated reward and shortcut views', () => {
+test('eight chapters expose four sequential goals each, with isolated reward and shortcut views', () => {
   const state = createGame(), before = JSON.stringify(state), views = getGrowthQuests(state);
-  assert.equal(GROWTH_CHAPTERS.length, 6); assert.equal(GROWTH_QUESTS.length, 24);
-  assert.equal(new Set(GROWTH_QUESTS.map(quest => quest.id)).size, 24);
+  assert.equal(GROWTH_CHAPTERS.length, 8); assert.equal(GROWTH_QUESTS.length, 32);
+  assert.equal(new Set(GROWTH_QUESTS.map(quest => quest.id)).size, 32);
   for (const chapter of GROWTH_CHAPTERS) assert.equal(views.filter(quest => quest.chapter === chapter.id).length, 4);
   assert.equal(getActiveGrowthQuest(state)!.id, 'road-supplies');
   assert.equal(views[0].status, 'active');
@@ -312,4 +318,41 @@ test('optional top-level history admits facilities added by an older engine and 
   const legacy = createGame();
   assert.equal(Object.hasOwn(legacy, 'facilityHistory'), false);
   assert.equal(Object.hasOwn(loadRaw(legacy)!, 'facilityHistory'), false);
+});
+
+test('v16 completed twenty-four-goal saves retain claims and resources before explicitly starting the two new chapters', () => {
+  let legacy = createGame();
+  legacy.resources.wood = 10_000; legacy.resources.scrap = 10_000;
+  for (let level = 1; level < 6; level++) legacy = requireSuccess(performAction(legacy, 'expand'));
+  for (const [slot, type] of BUILDING_TYPES.entries()) legacy = requireSuccess(buildFacility(legacy, type, slot));
+  for (const id of [1, 2, 3]) legacy = requireSuccess(upgradeFacility(legacy, id));
+  Object.assign(legacy.stats, { gathers: 1, harvests: 8, chops: 3, hunts: 1, battlesWon: 1, defeatedEnemies: 8, plantings: 2, waterings: 2 });
+  legacy.settlement!.stats = { productions: 12, collections: 12 };
+  legacy.growthQuests = { claimed: GROWTH_QUESTS.slice(0, 24).map(quest => quest.id) };
+  delete legacy.animalReserve; delete legacy.companionTeam; delete legacy.maxCompanionTeamSize;
+  legacy.companions = { dog: { health: 63, xp: 79 }, cat: { health: 31, xp: 159 } };
+  const before = JSON.stringify(legacy), loaded = loadRaw(legacy)!;
+  assert.ok(loaded);
+  assert.equal(JSON.stringify(legacy), before);
+  assert.deepEqual(loaded, legacy, 'v17 does not reset the old village or auto-pay the new goals');
+  assert.deepEqual(getGrowthQuests(loaded).slice(0, 24).map(quest => quest.status), Array(24).fill('claimed'));
+  assert.equal(getActiveGrowthQuest(loaded)!.id, 'advanced-facility');
+  assert.equal(getActiveGrowthQuest(loaded)!.current, 2);
+  assert.equal(getActiveGrowthQuest(loaded)!.status, 'active');
+  let progressed = loaded;
+  for (const level of [3, 4]) progressed = requireSuccess(upgradeFacility(progressed, 1));
+  progressed = claimCurrent(progressed, 'advanced-facility');
+  const repeated = claimGrowthQuest(progressed, 'advanced-facility');
+  assert.equal(repeated.state, progressed);
+  assert.equal(getActiveGrowthQuest(progressed)!.id, 'three-friend-team');
+  assert.equal(getActiveGrowthQuest(progressed)!.status, 'active');
+  progressed = requireSuccess(setCompanionTeam(progressed, ['dog', 'cat', 'rabbit']));
+  progressed = claimCurrent(progressed, 'three-friend-team');
+  progressed = requireSuccess(setCompanionTeam(progressed, ['cat']));
+  progressed = requireSuccess(replaceFacility(progressed, 1, 'watchtower'));
+  assert.equal(validateGrowthQuests(progressed.growthQuests, progressed), true, 'later team reduction and facility replacement do not invalidate paid achievements');
+  const memory = memoryStorage(); assert.equal(saveGame(progressed, memory), true);
+  assert.deepEqual(loadGame(memory)!.growthQuests, progressed.growthQuests);
+  assert.equal(progressed.maxCompanionTeamSize, 3);
+  assert.equal(progressed.facilityHistory!.highestFacilityLevel, 4);
 });

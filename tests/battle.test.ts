@@ -27,7 +27,7 @@ const closeTo = (actual: number, expected: number): void => assert.ok(Math.abs(a
 test('only animals fight; the saved roster determines each animal independently of survivor attributes', () => {
   const roster = { dog: { health: 50, xp: 80 }, cat: { health: 75, xp: 160 } };
   const battle = new BattleSimulation({ level: 99, health: 1, stage: 1, companions: roster });
-  assert.deepEqual(Object.keys(battle.state.allies), ['dog', 'cat']);
+  assert.deepEqual(battle.state.teamIds, ['dog', 'cat']);
   assert.equal(battle.state.allies.dog.name, '보리');
   assert.equal(battle.state.allies.cat.name, '나비');
   assert.equal(battle.state.allies.dog.level, 2);

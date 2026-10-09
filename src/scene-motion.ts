@@ -27,8 +27,10 @@ export interface MotionSample {
   climbing?: 'up' | 'down';
 }
 
-export const WALK_SPEED = 100 * GAME_SPEED_MULTIPLIER;
-export const CLIMB_SPEED = 60 * GAME_SPEED_MULTIPLIER;
+// Short chores stay responsive, while geometry still governs every visible step.
+export const FIELD_WORK_SPEED_MULTIPLIER = 2;
+export const WALK_SPEED = 100 * GAME_SPEED_MULTIPLIER * FIELD_WORK_SPEED_MULTIPLIER;
+export const CLIMB_SPEED = 60 * GAME_SPEED_MULTIPLIER * FIELD_WORK_SPEED_MULTIPLIER;
 const finitePoint = (point: MotionPoint): boolean => point.length === 2 && point.every(Number.isFinite);
 
 /** Geometry sets journey time; a long truck or ladder cannot become a faster walk. */
@@ -43,7 +45,7 @@ export function createMotionRoute(points: readonly MotionPoint[], climbSegments:
     segments.push({ from, to, distance, surface, seconds: distance / (surface === 'climb' ? CLIMB_SPEED : WALK_SPEED) });
   }
   const travelSeconds = segments.reduce((sum, segment) => sum + segment.seconds, 0);
-  const rampSeconds = Math.min(realDuration(.18), travelSeconds * .2);
+  const rampSeconds = Math.min(realDuration(.18) / FIELD_WORK_SPEED_MULTIPLIER, travelSeconds * .2);
   return { segments, origin: [...points[0]], destination: [...points[points.length - 1]],
     distance: segments.reduce((sum, segment) => sum + segment.distance, 0), travelSeconds, rampSeconds, duration: travelSeconds + rampSeconds };
 }

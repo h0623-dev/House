@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceTime, createGame, loadGame, performAction, SAVE_KEY, saveGame, type GameState, type SaveStorage } from '../src/game.ts';
-import { buildFacility, collectProduction, startProduction } from '../src/settlement.ts';
+import { advanceTime, createGame, loadGame, performAction, setCompanionTeam, SAVE_KEY, saveGame, type GameState, type SaveStorage } from '../src/game.ts';
+import { buildFacility, collectProduction, getHighestFacilityLevel, replaceFacility, startProduction, upgradeFacility } from '../src/settlement.ts';
 import { fulfillVillageOrder, getVillageOrder } from '../src/village-orders.ts';
 
 function memoryStorage(): SaveStorage {
@@ -137,4 +137,72 @@ test('request descriptions and costs can be rendered without granting mutation a
   const action = performAction(state, 'pet').state;
   action.villageOrders!.completed = 8;
   assert.equal(state.villageOrders!.completed, 0);
+});
+
+test('a paid delivery preserves replaced Lv5 history, three-member formation records and detached animal progress through reload', () => {
+  let state = createGame();
+  state.resources.wood = 10_000; state.resources.scrap = 10_000;
+  state.resources.food = 1_000; state.resources.water = 1_000;
+  for (let deck = 1; deck < 5; deck++) {
+    const expanded = performAction(state, 'expand');
+    assert.equal(expanded.ok, true, expanded.message);
+    state = expanded.state;
+  }
+  const built = buildFacility(state, 'waterworks', 0);
+  assert.equal(built.ok, true); state = built.state;
+  for (const level of [2, 3, 4, 5]) {
+    const improved = upgradeFacility(state, 1);
+    assert.equal(improved.ok, true);
+    state = improved.state;
+    assert.equal(getHighestFacilityLevel(state), level);
+  }
+  const replaced = replaceFacility(state, 1, 'kitchen');
+  assert.equal(replaced.ok, true); state = replaced.state;
+  assert.equal(state.settlement!.buildings[0].level, 1);
+  assert.equal(getHighestFacilityLevel(state), 5, 'the lifetime Lv5 record survives paid replacement');
+  state.companions = { dog: { health: 46, xp: 79 }, cat: { health: 71, xp: 159 } };
+  state.animalReserve = { rabbit: { health: 31, xp: 80 }, fox: { health: 0, xp: 160 }, boar: { health: 65, xp: 240 }, owl: { health: 12, xp: 320 } };
+  const three = setCompanionTeam(state, ['dog', 'cat', 'rabbit']);
+  assert.equal(three.ok, true); state = three.state;
+  const two = setCompanionTeam(state, ['fox', 'owl']);
+  assert.equal(two.ok, true); state = two.state;
+  assert.equal(state.maxCompanionTeamSize, 3);
+  const before = JSON.stringify(state), order = getVillageOrder(state);
+  const delivery = fulfillVillageOrder(state, order.id);
+  assert.equal(delivery.ok, true);
+  const next = delivery.state;
+  assert.equal(JSON.stringify(state), before, 'fulfilling a request cannot alter the original village');
+  assert.equal(next.resources.water, state.resources.water - 3);
+  assert.equal(next.resources.wood, state.resources.wood + 8);
+  assert.equal(next.resources.scrap, state.resources.scrap + 3);
+  assert.equal(next.xp, state.xp + 12);
+  assert.equal(next.totalMinutes, state.totalMinutes);
+  assert.equal(next.energy, state.energy);
+  for (const key of ['facilityHistory', 'companions', 'animalReserve', 'companionTeam'] as const) {
+    assert.deepEqual(next[key], state[key], `${key} retains every earned value`);
+    assert.notEqual(next[key], state[key], `${key} is copied independently`);
+  }
+  assert.equal(next.facilityHistory!.highestFacilityLevel, 5);
+  assert.equal(next.maxCompanionTeamSize, 3);
+  assert.notEqual(next.facilityHistory!.builtTypes, state.facilityHistory!.builtTypes);
+  assert.notEqual(next.facilityHistory!.upgradedFacilityIds, state.facilityHistory!.upgradedFacilityIds);
+  for (const id of ['dog', 'cat'] as const) assert.notEqual(next.companions![id], state.companions![id]);
+  for (const id of ['rabbit', 'fox', 'boar', 'owl'] as const) assert.notEqual(next.animalReserve![id], state.animalReserve![id]);
+  const storage = memoryStorage();
+  assert.equal(saveGame(next, storage), true);
+  const reloaded = loadGame(storage)!;
+  assert.ok(reloaded);
+  for (const key of ['facilityHistory', 'maxCompanionTeamSize', 'companions', 'animalReserve', 'companionTeam', 'villageOrders', 'resources', 'xp'] as const) {
+    assert.deepEqual(reloaded[key], next[key], `${key} survives delivery and reload without healing or XP gifts`);
+  }
+  assert.equal(getHighestFacilityLevel(reloaded), 5);
+  assert.equal(fulfillVillageOrder(reloaded, order.id).state, reloaded, 'the saved delivery token cannot award twice');
+  next.facilityHistory!.highestFacilityLevel = 4;
+  next.facilityHistory!.builtTypes.push('watchtower');
+  next.companionTeam!.pop();
+  next.companions!.dog.health = 0;
+  next.animalReserve!.rabbit.xp = 720;
+  assert.equal(JSON.stringify(state), before, 'changing the returned nested records cannot alter the input');
+  assert.equal(reloaded.facilityHistory!.highestFacilityLevel, 5);
+  assert.equal(reloaded.animalReserve!.rabbit.xp, 80);
 });

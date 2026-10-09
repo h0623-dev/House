@@ -7,6 +7,8 @@ import { GAME_SPEED_MULTIPLIER, realDuration } from '../src/game-speed.ts';
 // scene coordinates. The one declared empty-farm save fixture changes no resources.
 const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
+const snapshotId = process.env.TEST_SNAPSHOT_ID || null;
+const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === 'true' && snapshotId !== null;
 const startedAt = new Date();
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
@@ -141,7 +143,11 @@ try {
   await pan(`${width} drag from construction slot`, { x: 38, y: 25 }, { origin: await slotPoint(0) });
   assert.equal(await page.locator('[data-construction-confirm]').isDisabled(), true, 'a construction drag never selects a build slot'); assert.deepEqual((await saved()).resources, initial.resources);
   await resetView(); const slot = await slotPoint(0); await worldAt(slot); await page.touchscreen.tap(slot.x, slot.y); assert.equal(await page.locator('[data-construction-confirm]').isDisabled(), false, 'a subsequent ordinary tap still previews a slot');
-  await touch(page.locator('[data-construction-confirm]')); let built = await saved(); assert.equal(built.settlement.buildings.length, 1); assert.equal(built.resources.wood, initial.resources.wood - 12); assert.equal(built.resources.scrap, initial.resources.scrap - 4);
+  await touch(page.locator('[data-construction-confirm]'));
+  // The new facility has a real onsite finishing phase. Pan checks start only
+  // after this single confirmed job completes, rather than comparing a live site to its finished save.
+  await waitIdle(6000);
+  let built = await saved(); assert.equal(built.settlement.buildings.length, 1); assert.equal(built.resources.wood, initial.resources.wood - 12); assert.equal(built.resources.scrap, initial.resources.scrap - 4);
   await fits(`selected facility ${width}`); await touch(page.locator('[data-facility-close]')); await touch(nav('home')); await page.waitForTimeout(900); await resetView();
   await pan(`${width} drag starting on a facility`, { x: 32, y: 25 }, { origin: await slotPoint(0, true) });
   assert.equal(await page.locator('#facility-sheet').isVisible(), false, 'dragging a facility does not accidentally open its controls'); assert.equal(await page.locator('#modal-root').isVisible(), false); await noWork(built, 'facility drag'); await resetView();
@@ -164,7 +170,9 @@ try {
   const afterStroke = await saved(); assert.equal(afterStroke.stats.plantings, beforeFarm.stats.plantings + 3, 'normal planter-to-planter painting still plants continuously'); assert.equal(afterStroke.seedInventory.potato, beforeFarm.seedInventory.potato - 3); assert.equal(afterStroke.energy, beforeFarm.energy - 12); assert.ok(afterStroke.plots.every(plot => plot.cropId === 'potato'));
   assert.equal(await page.locator('#planting-toolbar').getAttribute('data-farm-mode'), 'plant'); await shot(`farm-pan-tool-${width}`); await touch(page.locator('[data-plant-cancel]'));
 
-  await touch(nav('hunt')); await touch(page.locator('[data-zone="grove"]')); await page.waitForTimeout(900); await resetView(); await pan(`${width} grove`, { x: 41, y: 23 }); await shot(`grove-panned-${width}`); await resetView();
+  // Hunting now has a compact party screen; the visible village menu leads to the grove.
+  await touch(page.locator('[data-open="menu"]')); await touch(page.locator('#modal-root [data-open="grove"]')); await touch(page.locator('#modal-root [data-look-grove]'));
+  await page.waitForTimeout(900); await resetView(); await pan(`${width} grove`, { x: 41, y: 23 }); await shot(`grove-panned-${width}`); await resetView();
   const beforeGather = await saved(), gatherStart = Date.now();
   await page.evaluate(() => {
    window.__panGatherSamples = [];
@@ -207,9 +215,9 @@ try {
   await context.close();
  }
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
- await writeFile(`artifacts/map-pan-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual CDP touchscreen touchStart/touchMove/touchEnd/touchCancel, actual mouse down/move/up; no synthetic DOM pointer events or direct scene calls', clock: 'Real animation time', fixture: 'One saved empty-farm fixture per viewport; all resource quantities preserved', viewports: ['360×740', '390×844', '844×390'], cases, movements, timings, screenshots, errors, failedAssets }, null, 2) + '\n');
+ await writeFile(`artifacts/map-pan-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', baseUrl, snapshotId, finalSnapshot, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual CDP touchscreen touchStart/touchMove/touchEnd/touchCancel, actual mouse down/move/up; no synthetic DOM pointer events or direct scene calls', clock: 'Real animation time', fixture: 'One saved empty-farm fixture per viewport; all resource quantities preserved', viewports: ['360×740', '390×844', '844×390'], cases, movements, timings, screenshots, errors, failedAssets }, null, 2) + '\n');
  console.log(`PASS: ${assertionsExecuted} map panning assertions across ${movements.length} physical drags.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/map-pan-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', baseUrl, assertionsExecuted, cases, movements, timings, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n'); throw error;
+ await writeFile(`artifacts/map-pan-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', baseUrl, snapshotId, finalSnapshot, assertionsExecuted, cases, movements, timings, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n'); throw error;
 } finally { await browser.close(); }

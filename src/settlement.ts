@@ -1,6 +1,7 @@
 import type { ActionResult, GameState, Resource } from './game';
-import { formatGameDuration } from './game-time';
 import { cloneCompanions } from './companions';
+import { cloneUnitProgressFields } from './units';
+import { GAME_MINUTES_PER_SECOND } from './game-time';
 
 export const BUILDING_TYPES = ['waterworks', 'kitchen', 'workshop', 'petHouse', 'greenhouse', 'watchtower'] as const;
 export type BuildingType = typeof BUILDING_TYPES[number];
@@ -20,7 +21,12 @@ export interface Settlement {
   stats?: { productions: number; collections: number };
 }
 /** Kept at GameState's top level so the original Android8 fallback preserves it. */
-export interface FacilityHistory { builtTypes: BuildingType[]; upgradedFacilityIds: number[] }
+export interface FacilityHistory {
+  builtTypes: BuildingType[];
+  upgradedFacilityIds: number[];
+  /** Lifetime paid level achievements survive replacement; absent old saves use their current facilities. */
+  highestFacilityLevel?: number;
+}
 export type SettlementResult = ActionResult;
 export interface BuildingDefinition {
   name: string;
@@ -41,15 +47,15 @@ export interface BuildingDefinition {
   recipe?: Partial<Record<Resource, number>>;
 }
 export const BUILDINGS: Record<BuildingType, BuildingDefinition> = {
-  waterworks: { name: '빗물 정수소', description: '빗물을 모아 텃밭과 생활에 쓸 깨끗한 물을 만들어요.', resource: 'water', icon: 'water', wood: 12, scrap: 4, unlockLevel: 1, minutes: 90, yieldResource: 'water', yieldAmount: 4, maxLevel: 3, sprite: 'waterworks' },
-  kitchen: { name: '트럭 부엌', description: '물을 사용해 따뜻한 식량을 준비해요.', resource: 'food', icon: 'food', wood: 16, scrap: 6, unlockLevel: 1, minutes: 120, yieldResource: 'food', yieldAmount: 5, maxLevel: 3, sprite: 'kitchen', recipe: { water: 2 } },
-  workshop: { name: '재활용 공방', description: '모아 온 목재로 버려진 부품을 손질해 고철을 얻어요.', resource: 'scrap', icon: 'hammer', wood: 22, scrap: 10, unlockLevel: 2, minutes: 150, yieldResource: 'scrap', yieldAmount: 4, maxLevel: 3, sprite: 'workshop', recipe: { wood: 3 } },
-  petHouse: { name: '보리의 오두막', description: '보리에게 간식을 주면 주변에서 작은 나뭇가지를 모아 와요.', resource: 'wood', icon: 'paw', wood: 18, scrap: 6, unlockLevel: 2, minutes: 120, yieldResource: 'wood', yieldAmount: 6, maxLevel: 3, sprite: 'petHouse', recipe: { food: 1 } },
-  greenhouse: { name: '작은 온실', description: '물을 공급해 정성껏 돌본 작물을 식량으로 거둬요.', resource: 'food', icon: 'seeds', wood: 28, scrap: 12, unlockLevel: 3, minutes: 240, yieldResource: 'food', yieldAmount: 6, maxLevel: 3, sprite: 'greenhouse', recipe: { water: 2 } },
-  watchtower: { name: '도로 감시소', description: '도로 스캐너로 쓸 만한 폐부품을 찾아 고철을 모아요.', resource: 'scrap', icon: 'shield', wood: 26, scrap: 14, unlockLevel: 3, minutes: 180, yieldResource: 'scrap', yieldAmount: 3, maxLevel: 3, sprite: 'watchtower' },
+  waterworks: { name: '빗물 정수소', description: '빗물을 모아 텃밭과 생활에 쓸 깨끗한 물을 만들어요.', resource: 'water', icon: 'water', wood: 12, scrap: 4, unlockLevel: 1, minutes: 90, yieldResource: 'water', yieldAmount: 4, maxLevel: 5, sprite: 'waterworks' },
+  kitchen: { name: '트럭 부엌', description: '물을 사용해 따뜻한 식량을 준비해요.', resource: 'food', icon: 'food', wood: 16, scrap: 6, unlockLevel: 1, minutes: 120, yieldResource: 'food', yieldAmount: 5, maxLevel: 5, sprite: 'kitchen', recipe: { water: 2 } },
+  workshop: { name: '재활용 공방', description: '모아 온 목재로 버려진 부품을 손질해 고철을 얻어요.', resource: 'scrap', icon: 'hammer', wood: 22, scrap: 10, unlockLevel: 2, minutes: 150, yieldResource: 'scrap', yieldAmount: 4, maxLevel: 5, sprite: 'workshop', recipe: { wood: 3 } },
+  petHouse: { name: '동료의 쉼터', description: '간식을 나누며 목재를 모아요. 동료 공격력이 레벨마다 4% 높아져요.', resource: 'wood', icon: 'paw', wood: 18, scrap: 6, unlockLevel: 2, minutes: 120, yieldResource: 'wood', yieldAmount: 6, maxLevel: 5, sprite: 'petHouse', recipe: { food: 1 } },
+  greenhouse: { name: '작은 온실', description: '물을 공급해 정성껏 돌본 작물을 식량으로 거둬요.', resource: 'food', icon: 'seeds', wood: 28, scrap: 12, unlockLevel: 3, minutes: 240, yieldResource: 'food', yieldAmount: 6, maxLevel: 5, sprite: 'greenhouse', recipe: { water: 2 } },
+  watchtower: { name: '도로 감시소', description: '고철을 찾고 위험을 알려줘요. 동료가 받는 피해가 레벨마다 3% 줄어요.', resource: 'scrap', icon: 'shield', wood: 26, scrap: 14, unlockLevel: 3, minutes: 180, yieldResource: 'scrap', yieldAmount: 3, maxLevel: 5, sprite: 'watchtower' },
 };
 const labels: Record<Resource, string> = { wood: '목재', scrap: '고철', food: '식량', water: '물', seeds: '씨앗' };
-const MAX_SLOTS = 12;
+const MAX_SLOTS = 16;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isNumber = (value: unknown, min: number, max: number): value is number => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 const isInteger = (value: unknown, min: number, max: number): value is number => isNumber(value, min, max) && Number.isInteger(value);
@@ -72,10 +78,15 @@ export function getBuiltTypes(state: Pick<GameState, 'settlement' | 'facilityHis
   ])];
 }
 export function getFacilityHistory(state: Pick<GameState, 'settlement' | 'facilityHistory'>): FacilityHistory {
+  const highest = Math.max(state.facilityHistory?.highestFacilityLevel ?? 1,
+    ...state.settlement?.buildings.map(building => building.level) ?? []);
   return { builtTypes: getBuiltTypes(state), upgradedFacilityIds: [...new Set([
     ...(state.facilityHistory?.upgradedFacilityIds ?? []),
     ...(state.settlement?.buildings.filter(building => building.level >= 2).map(building => building.id) ?? []),
-  ])] };
+  ])], ...(highest > 3 || state.facilityHistory?.highestFacilityLevel !== undefined ? { highestFacilityLevel: highest } : {}) };
+}
+export function getHighestFacilityLevel(state: Pick<GameState, 'settlement' | 'facilityHistory'>): number {
+  return Math.max(state.facilityHistory?.highestFacilityLevel ?? 1, ...state.settlement?.buildings.map(building => building.level) ?? []);
 }
 export function getUpgradedFacilityRecord(state: Pick<GameState, 'settlement' | 'facilityHistory'>): number {
   return getFacilityHistory(state).upgradedFacilityIds.length;
@@ -84,8 +95,10 @@ function recordFacilityProgress(state: GameState) {
   state.facilityHistory = getFacilityHistory(state);
 }
 export function validateFacilityHistory(value: unknown, state: Pick<GameState, 'deckLevel' | 'settlement'>): value is FacilityHistory {
-  if (!isRecord(value) || Object.keys(value).length !== 2 || !Array.isArray(value.builtTypes)
+  if (!isRecord(value) || Object.keys(value).some(key => !['builtTypes', 'upgradedFacilityIds', 'highestFacilityLevel'].includes(key)) || !Array.isArray(value.builtTypes)
     || !Array.isArray(value.upgradedFacilityIds)) return false;
+  if (Object.hasOwn(value, 'highestFacilityLevel') && (!isInteger(value.highestFacilityLevel, 1, 5)
+    || value.highestFacilityLevel < Math.max(1, ...state.settlement?.buildings.map(building => building.level) ?? []))) return false;
   const types = value.builtTypes, upgradedIds = value.upgradedFacilityIds;
   const ids = new Set(state.settlement?.buildings.map(building => building.id) ?? []);
   return types.length <= BUILDING_TYPES.length && new Set(types).size === types.length
@@ -108,9 +121,16 @@ export function validateSettlement(value: unknown, state: Pick<GameState, 'deckL
     if (definition.unlockLevel > state.deckLevel || !isInteger(building.level, 1, definition.maxLevel)) return false;
     if (building.startedAt === null || building.readyAt === null) {
       if (building.startedAt !== null || building.readyAt !== null) return false;
-    } else if (!isNumber(building.startedAt, 0, state.totalMinutes)
-      || !isNumber(building.readyAt, 0, 1_440_000_000 + definition.minutes)
-      || Math.abs(building.readyAt - building.startedAt - definition.minutes) > 0.0001) return false;
+    } else {
+      if (!isNumber(building.startedAt, 0, state.totalMinutes)
+        || !isNumber(building.readyAt, 0, 1_440_000_000 + definition.minutes)
+        || building.readyAt <= building.startedAt) return false;
+      const duration = building.readyAt - building.startedAt;
+      // Completed paid batches keep their original timestamps. Active batches may
+      // use the earlier base duration or the new duration for their saved level.
+      if (building.readyAt > state.totalMinutes && Math.abs(duration - definition.minutes) > 0.0001
+        && Math.abs(duration - getProductionMinutes(building as unknown as Building)) > 0.0001) return false;
+    }
     ids.add(building.id); slots.add(building.slot);
   }
   return true;
@@ -123,6 +143,7 @@ function copy(state: GameState): GameState {
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
+    ...cloneUnitProgressFields(state),
     ...(state.facilityHistory ? { facilityHistory: getFacilityHistory(state) } : {}),
     expedition: state.expedition ? { ...state.expedition, ...(state.expedition.participantIds ? { participantIds: [...state.expedition.participantIds] } : {}) } : null,
     settlement: getSettlement(state),
@@ -144,8 +165,16 @@ function slotAvailable(state: GameState, slot: number, exceptId?: number): boole
     && !getSettlement(state).buildings.some(building => building.slot === slot && building.id !== exceptId);
 }
 export function getUpgradeCost(building: Building): { wood: number; scrap: number } {
-  const definition = BUILDINGS[building.type], level = building.level + 1;
-  return { wood: definition.wood * level, scrap: definition.scrap * level };
+  const definition = BUILDINGS[building.type], multiplier = Math.ceil((building.level + 1) * .6);
+  return { wood: definition.wood * multiplier, scrap: definition.scrap * multiplier };
+}
+/** Saved production clocks remain game minutes; only new batches use this faster duration. */
+export function getProductionMinutes(building: Pick<Building, 'type' | 'level'>): number {
+  return BUILDINGS[building.type].minutes / (2 * (1 + .25 * (building.level - 1)));
+}
+/** Preview actual real seconds, including half seconds, rather than rounding a new batch up. */
+export function formatProductionDuration(building: Pick<Building, 'type' | 'level'>): string {
+  return `${Number((getProductionMinutes(building) / GAME_MINUTES_PER_SECOND).toFixed(1))}초`;
 }
 export function getProductionCost(building: Building): Partial<Record<Resource, number>> {
   const recipe: Partial<Record<Resource, number>> = {};
@@ -221,9 +250,9 @@ export function startProduction(state: GameState, id: number): SettlementResult 
   const next = copy(state);
   for (const [resource, amount] of Object.entries(recipe)) next.resources[resource as Resource] -= amount!;
   const target = next.settlement!.buildings.find(item => item.id === id)!;
-  target.startedAt = next.totalMinutes; target.readyAt = next.totalMinutes + definition.minutes;
+  target.startedAt = next.totalMinutes; target.readyAt = next.totalMinutes + getProductionMinutes(building);
   next.settlement!.stats!.productions += 1;
-  return success(next, `${definition.name} 생산을 시작했어요. ${formatGameDuration(definition.minutes)} 뒤 ${labels[definition.yieldResource]} ${definition.yieldAmount * building.level}개를 받을 수 있어요.`);
+  return success(next, `${definition.name} 생산을 시작했어요. ${formatProductionDuration(building)} 뒤 ${labels[definition.yieldResource]} ${definition.yieldAmount * building.level}개를 받을 수 있어요.`);
 }
 export function collectProduction(state: GameState, id: number): SettlementResult {
   const unavailable = blocked(state); if (unavailable) return unavailable;

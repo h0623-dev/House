@@ -1,6 +1,6 @@
 import type { ActionResult, GameState, Resource } from './game';
 import { getSettlement } from './settlement';
-import { cloneCompanions } from './companions';
+import { cloneUnitProgressFields } from './units';
 
 /** Optional in older saves. A counter stores only deliveries actually paid for. */
 export interface VillageOrderProgress { completed: number }
@@ -78,9 +78,9 @@ export function fulfillVillageOrder(state: GameState, expectedId: string): Actio
     ...state, resources: { ...state.resources },
     ...(state.seedInventory ? { seedInventory: { ...state.seedInventory } } : {}),
     ...(state.settlement ? { settlement: getSettlement(state) } : {}),
-    ...(state.facilityHistory ? { facilityHistory: { builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
+    ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
-    ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
+    ...cloneUnitProgressFields(state),
     plots: state.plots.map(plot => ({ ...plot })), quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
     expedition: null,
     villageOrders: { completed: completed + 1 },

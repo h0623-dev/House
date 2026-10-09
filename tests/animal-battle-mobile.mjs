@@ -7,6 +7,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 // methods, alters simulation time, or writes health after a fight has started.
 const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
+const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
+const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
 const startedAt = new Date();
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
@@ -56,9 +58,9 @@ async function enter(stage = 1) {
  await touch(page.locator('[data-start-hunt]')); await page.locator('.battle-screen').waitFor();
  await page.waitForFunction(() => document.querySelector('.battle-screen canvas')?.dataset.battleActors && document.querySelector('.battle-screen canvas')?.dataset.battleArtReady === 'true');
  assert.equal(await page.locator('.battle-screen canvas').getAttribute('data-battle-art-ready'), 'true', 'both gameplay animal atlases have loaded and decoded');
- const state = await saved(); assert.ok(state.expedition?.animalParty, 'the pending animal expedition is saved before combat');
+ const state = await saved(); assert.ok(state.expedition?.unitParty, 'the pending animal expedition is saved before combat');
  assert.equal(await page.locator('#app').evaluate(element => element.inert), true, 'home actions are held during combat');
- assert.deepEqual((await actors()).map(actor => actor.id).sort(), ['cat', 'dog'], 'the battle renders only the two animal allies');
+ assert.deepEqual((await actors()).map(actor => actor.id).sort(), [...state.expedition.unitParticipantIds].sort(), 'the battle renders exactly the participating healthy animals');
  return state;
 }
 async function observeBattle(label) {
@@ -111,7 +113,7 @@ async function fit(width, height) {
  }
 }
 async function receipt(status, failure) {
- await writeFile(`artifacts/animal-battle-v${version}-verification.json`, JSON.stringify({ version, status, baseUrl, assertionsExecuted,
+ await writeFile(`artifacts/animal-battle-v${version}-verification.json`, JSON.stringify({ version, snapshotId, finalSnapshot, status, baseUrl, assertionsExecuted,
   startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual touchscreen coordinates in Chromium mobile emulation',
   clock: 'Natural requestAnimationFrame and wall time; no page.clock, combat method calls, simulation-time writes, or health writes during combat',
   deviceLimit: 'Mobile Chromium emulation only; no physical Android device', fixtures, cases, screenshots, battles, errors, failedAssets,
@@ -207,7 +209,7 @@ try {
  }
  await touch(page.locator('[data-nav="hunt"]'));
  assert.match(await page.locator('[data-companion-card="dog"]').innerText(), /Lv\.2/); assert.match(await page.locator('[data-companion-card="cat"]').innerText(), /Lv\.3/);
- const stageText = await page.locator('#modal-root').innerText(); assert.match(stageText, /다음 레벨까지 경험치/); await closeModal();
+ await touch(page.locator('#modal-root [data-open="pet"]')); const stageText = await page.locator('#modal-root').innerText(); assert.match(stageText, /다음 레벨까지 경험치/); await closeModal();
  await page.reload(); await page.locator('#resident-name').waitFor(); await pauseVillage(); assert.deepEqual((await saved()).companions, leveled.companions, 'crossed animal level and injury persist on reload');
  cases.push('Declared dog79XP/cat159XP party wins naturally and advances toLv2/Lv3, adds20XP once, preserves exact post-combat health percentages rather than gaining a level-up heal, and shows new levels in stage preparation.');
 
@@ -215,12 +217,12 @@ try {
  for (const alive of ['dog', 'cat']) {
   const down = alive === 'dog' ? 'cat' : 'dog', ownSkill = alive === 'dog' ? 'dash' : 'sweep', downSkill = down === 'dog' ? 'dash' : 'sweep';
   const solo = await fixture(`${alive} 단독 출전 fixture`, { health: 5, energy: 100, companions: { dog: { health: alive === 'dog' ? 60 : 0, xp: 0 }, cat: { health: alive === 'cat' ? 60 : 0, xp: 0 } } });
-  const soloPending = await enter(); assert.deepEqual(soloPending.expedition.participantIds, [alive], 'only the healthy animal is eligible for victory XP');
+  const soloPending = await enter(); assert.deepEqual(soloPending.expedition.unitParticipantIds, [alive], 'only the healthy animal is eligible for victory XP');
   await observeBattle(`${alive} survives while ${down} is down`); await ready(ownSkill);
-  assert.equal(await page.locator(`[data-skill="${downSkill}"]`).isDisabled(), true, 'a down animal cannot activate its attack skill');
-  const soloBefore = await actors(); assert.equal(soloBefore.find(actor => actor.id === down).health, 0, 'entry never resurrects the down animal');
+  assert.equal(await page.locator(`[data-skill="${downSkill}"]`).count(), 0, 'an animal outside the actual healthy team has no attack skill control');
+  const soloBefore = await actors(); assert.equal(soloBefore.some(actor => actor.id === down), false, 'entry does not spawn an incapacitated animal');
   await touch(page.locator(`[data-skill="${ownSkill}"]`)); await touch(page.locator('[data-skill="heal"]')); await page.waitForTimeout(1000);
-  const soloAfter = await actors(); assert.equal(soloAfter.find(actor => actor.id === down).health, 0, 'team recovery cannot revive a down animal');
+  const soloAfter = await actors(); assert.equal(soloAfter.some(actor => actor.id === down), false, 'team recovery cannot revive or spawn an incapacitated animal');
   await shot(`solo-${alive}`); await retreat(); const soloRecord = await observation();
   assert.ok(soloRecord.events.some(event => event.owner === alive && ['attack', 'dog', 'sweep', 'dash'].includes(event.kind)), 'the surviving animal continues to fight');
   assert.equal(soloRecord.events.some(event => event.owner === down && ['attack', 'dog', 'sweep', 'dash', 'heal'].includes(event.kind)), false, 'the down animal creates no attacks or healing');

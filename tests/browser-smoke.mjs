@@ -2,6 +2,8 @@ import { chromium } from '@playwright/test';
 import strictAssert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
+const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
+const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
 const startedAt = new Date();
 let assertionsExecuted = 0;
 const assert = new Proxy(strictAssert, {
@@ -84,14 +86,14 @@ const screenshot = name => {
 async function writeReceipt(status, failure) {
  const finishedAt = new Date();
  await writeFile('artifacts/browser-v' + appVersion + '-verification.json', JSON.stringify({
-  version: appVersion, status,
+  version: appVersion, snapshotId, finalSnapshot, status,
   baseUrl: process.env.TEST_BASE_URL || 'http://127.0.0.1:5173',
   startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(),
   elapsedMs: finishedAt.getTime() - startedAt.getTime(), assertionsExecuted,
   viewports: ['360×740', '390×844', '844×390', '1440×1100'],
   loadedIllustrationCount: loadedIllustrations.size,
   loadedIllustrations: [...loadedIllustrations].sort(),
-  maxDeckCase: 'Valid local late-game fixture: deck level 6 and eight plots, day and night',
+  legacyDeckCase: 'Valid local late-game fixture: deck level 6 and eight plots, day and night',
   screenshots, errors, failedAssets, canceledImageRequests,
   ...(failure ? { failure: String(failure) } : {}),
  }, null, 2) + '\n');
@@ -179,8 +181,8 @@ async function chore(button, assertNotApplied, { workScreenshot, repeatTap = fal
  }
  await page.clock.runFor(100);
  const motion = await page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneAction));
- const baseWork = { plant: 1.9, water: 2.1, harvest: 2.2, chop: 4, gather: 3.8, expand: 2.4 }[motion.kind];
- assert.ok(baseWork && Math.abs(motion.work - baseWork / 3) < .005, 'the visible work phase uses one third of its original real duration');
+ const expectedWork = { plant: .5, water: .5, harvest: .55, chop: .85, gather: .8, expand: .6 }[motion.kind];
+ assert.ok(expectedWork && Math.abs(motion.work - expectedWork) < .005, 'the faster work phase still retains its readable action duration');
  assert.ok(Math.abs(motion.total - (motion.walk * 2 + motion.work)) < .005, 'shortened outbound, work and return still form one complete chore');
  if (assertNotApplied) await assertNotApplied();
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true');
@@ -200,7 +202,7 @@ async function enterBattle(stage = 1) {
  await page.locator('[data-start-hunt]').click();
  await page.locator('.battle-screen').waitFor();
  assert.ok((await save()).expedition, 'battle entry must be persisted before fighting');
- assert.equal((await save()).expedition.animalParty, true, 'the battle saves the participating animal party');
+ assert.equal((await save()).expedition.unitParty, true, 'the battle saves the participating animal party');
  assert.equal(await page.locator('[data-battle-ally="dog"]').isVisible(), true, 'the dog has an individual party card');
  assert.equal(await page.locator('[data-battle-ally="cat"]').isVisible(), true, 'the cat has an individual party card');
 }
@@ -290,8 +292,8 @@ try {
  await chore(quick('chop'), async () => assert.equal((await save()).resources.wood, wood), { workScreenshot: 'mobile-woodcutting' });
  assert.equal((await save()).resources.wood, wood + 18);
  assert.equal((await save()).stats.chops, 1);
- await nav('hunt').click();
- await page.locator('#modal-root [data-zone="grove"]').click();
+ await menuItem('grove');
+ await page.locator('#modal-root [data-look-grove]').click();
  await page.clock.runFor(2000);
  await screenshot('mobile-grove');
  await menuItem('grove');

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createGame, getCropProgress, performAction, saveGame, tick, type SaveStorage } from '../src/game.ts';
 import { buildFacility, collectProduction, startProduction } from '../src/settlement.ts';
 import { realDuration } from '../src/game-speed.ts';
+import { GAME_MINUTES_PER_SECOND } from '../src/game-time.ts';
 
 function memoryStorage(): SaveStorage {
   const values = new Map<string, string>();
@@ -28,11 +29,11 @@ test('an animated gathering commit awards one result without replaying elapsed t
   assert.equal(completed.state.xp, state.xp + 12);
   assert.equal(completed.state.energy, state.energy - 10);
   assert.equal(completed.state.stats.gathers, state.stats.gathers + 1);
-  assert.equal(completed.state.settlement!.buildings[0].readyAt! - completed.state.totalMinutes, 70);
+  assert.equal(completed.state.settlement!.buildings[0].readyAt! - completed.state.totalMinutes, 25, 'new45-minute batch keeps its remaining25 minutes after20 elapsed');
   assert.equal(collectProduction(completed.state, 1).ok, false);
-  const nearlyReady = tick(completed.state, realDuration(34));
+  const nearlyReady = tick(completed.state, 25 / GAME_MINUTES_PER_SECOND - .125);
   assert.equal(collectProduction(nearlyReady, 1).ok, false);
-  const ready = tick(nearlyReady, realDuration(1));
+  const ready = tick(nearlyReady, .125);
   const collected = collectProduction(ready, 1);
   assert.equal(collected.ok, true);
   assert.equal(collected.state.resources.water, completed.state.resources.water + 4);
