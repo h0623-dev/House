@@ -41,3 +41,12 @@ v0.14·v0.15·v0.16 콘텐츠 ZIP·체크섬은 아래 기존 공개 커밋의 �
 | [v0.14 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.14.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.14.0-content.zip.sha256) | 46,346,954 | `c0dcf880ca84c165507e51b0ea76fbeb0f4c987b9f6e7c5abc9b57d4afbd4e45` |
 | [v0.15 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.15.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.15.0-content.zip.sha256) | 46,347,011 | `0eef40b76c7632d5ac8f86f6c8176778534554d26b930575a916eb164e513e02` |
 | [v0.16 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.16.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.16.0-content.zip.sha256) | 48,007,391 | `b66212829ebb500618296053bb98933a6535b59e4d5a3193ea124c42766ca336` |
+
+## v0.19 보관
+
+v0.17·v0.18 콘텐츠 ZIP·체크섬은 아래 기존 공개 커밋의 고정 주소에 그대로 보관합니다. 전체 파일을 정상 HTTPS로 받아 이전 게시 파일의 바이트 수·SHA-256과 일치하는지 확인했습니다. 기존 APK 전체와 최신 v0.19 콘텐츠를 현재 트리에 유지하고 Git 이력은 삭제하거나 다시 쓰지 않습니다. 최신 앱 업데이트는 서명된 현재 game-update.json을 사용하며 이 보관 URL을 자동 롤백 대상으로 설정하지 않습니다.
+
+| 콘텐츠 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| [v0.17 ZIP](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.17.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.17.0-content.zip.sha256) | 49,434,259 | `b5efc6bb8ec0b14538adf0a0cbd06a0ec253faef592645469ac37d04c61dfb03` |
+| [v0.18 ZIP](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.18.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/9dd4de9d616a7248b9fb452ac48397b8b892d423/content/road-haven-0.18.0-content.zip.sha256) | 52,699,032 | `a9ac407ed479c903c2a7680679136ded689b57fee85f262aa4ff5f52f75d915d` |
