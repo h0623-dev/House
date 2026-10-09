@@ -1,9 +1,9 @@
 {
-  "version": "0.19.0",
-  "versionCode": 19,
+  "version": "0.20.0",
+  "versionCode": 20,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.19.0-debug.apk",
-  "sha256": "e005a8af4881529bf54fff06a5cf48d579cf13094bb45057b12b2c1e84096931",
-  "notes": "이동·농사·채집·성장·시설 생산·전투의 공통 속도를 3배에서 2배로 조정하고 남은 시간을 실제 초에 맞췄습니다. 기존 앱·웹 앱의 자동 패치와 저장을 유지합니다.",
-  "publishedAt": "2026-10-09T11:00:12.058Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.20.0-debug.apk",
+  "sha256": "a522c28d38d439ca63add08731f4140070cfc1a6bbc362aa9b95d8e46de65e3d",
+  "notes": "트럭의 빈 바닥을 눌러 이동하고, 반려동물이 걷고 멈추는 동작을 자연스럽게 개선했습니다. 기존 2배 속도·저장·앱과 웹 앱의 자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-09T12:31:04.787Z"
 }
