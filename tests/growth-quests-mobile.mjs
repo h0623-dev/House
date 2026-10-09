@@ -193,11 +193,11 @@ try {
   await claim('road-supplies', { repeat: true, reloadAfter: true }); await uiStatus('first-carrot', 'active'); await uiStatus('rainwater-home', 'locked');
   start = Date.now(); before = await go('first-carrot', { works: true }); await waitIdle(`quest-first-harvest-${width}`, start); assert.equal((await saved()).stats.harvests, 1); assert.equal((await saved()).resources.food, before.resources.food + 4); await claim('first-carrot');
   const waterworks = await buildForQuest('rainwater-home', 0); await claim('rainwater-home'); await go('first-delivery'); await page.locator(`[data-facility-start="${waterworks}"]`).waitFor();
-  before = await saved(); await touch(page.locator(`[data-facility-start="${waterworks}"]`)); let state = await saved(); assert.deepEqual(state.resources, before.resources); assert.equal(state.settlement.stats.productions, 1); assert.equal(facilities(state)[0].readyAt - facilities(state)[0].startedAt, 45); assert.match(await page.locator('[data-production-status]').innerText(), /8초/, 'the faster first batch needs eight rounded-up real seconds');
+  before = await saved(); await touch(page.locator(`[data-facility-start="${waterworks}"]`)); let state = await saved(); assert.deepEqual(state.resources, before.resources); assert.equal(state.settlement.stats.productions, 1); assert.equal(facilities(state)[0].readyAt - facilities(state)[0].startedAt, 45); assert.match(await page.locator('[data-production-status]').innerText(), /12초/, 'the first batch at2× pace needs twelve rounded-up real seconds');
   if (width === 360) {
    start = Date.now(); await setPaused(false); await page.locator(`[data-facility-collect="${waterworks}"]`).waitFor({ state: 'visible', timeout: 23000 });
-   const elapsedMs = Date.now() - start; await pauseWorld(); timings.push({ name: 'quest-first-production-natural-eight-seconds', elapsedMs });
-   assert.ok(elapsedMs >= 6000 && elapsedMs <= 12000, 'the first quest batch matures in7.5 real seconds with one-second tick and menu-travel tolerance');
+   const elapsedMs = Date.now() - start; await pauseWorld(); timings.push({ name: 'quest-first-production-natural-twelve-rounded-seconds', elapsedMs });
+   assert.ok(elapsedMs >= 9750 && elapsedMs <= 15750, 'the first quest batch matures in11.25 real seconds with the same one-second tick and menu-travel tolerance');
   }
   else { state = await saved(); state.name = '390 생산 시간 경과'; state.totalMinutes = facilities(state)[0].readyAt; state.day = Math.floor(state.totalMinutes / 1440) + 1; state.minutes = state.totalMinutes % 1440; await reload(state); await go('first-delivery'); }
   await touch(page.locator(`[data-facility-collect="${waterworks}"]`)); state = await saved(); assert.equal(state.resources.water, before.resources.water + 4); assert.equal(state.settlement.stats.collections, 1); await claim('first-delivery');

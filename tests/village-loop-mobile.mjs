@@ -7,8 +7,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const startedAt = new Date();
-const expectedGameMinutesPerSecond = 6;
-const expectedSpeedMultiplier = 3;
+const expectedGameMinutesPerSecond = 4;
+const expectedSpeedMultiplier = 2;
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
 const assert = new Proxy(strictAssert, { get(target, key) { const value = Reflect.get(target, key); return typeof value === 'function' ? (...args) => { assertionsExecuted++; return value(...args); } : value; } });
@@ -18,7 +18,7 @@ let context, page;
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-haven-save-v1')));
 const geometry = () => page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneGeometry));
 async function touchPointFor(locator) {
- // One DOM measurement keeps phone taps responsive at the actual 3x chore
+ // One DOM measurement keeps phone taps responsive at the actual 2x chore
  // speed. Modal scrolling remains real; no game calls or fake clock are used.
  const measure = element => {
   const rect = element.getBoundingClientRect(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
@@ -165,7 +165,7 @@ try {
  assert.deepEqual((await saved()).resources, beforeOpen.resources, 'reading a request awards nothing');
  await shot('first-request'); await closeModal();
 
- const running = productionFixture(fresh, 18); await loadFixture(running, 'Declared older save: no delivery counter, paid rainwater batch declared with3 real seconds left at6 game minutes/second');
+ const running = productionFixture(fresh, 12); await loadFixture(running, 'Declared older save: no delivery counter, paid rainwater batch declared with3 real seconds left at4 game minutes/second');
  await touch(page.locator('[data-open="orders"]'));
  assert.equal(await page.locator('[data-order-deliver="village-order-1"]').isDisabled(), true, 'a water request cannot send missing water');
  await touch(page.locator('[data-order-source]'));
@@ -234,7 +234,7 @@ try {
 
  const away = productionFixture(fresh, 6); away.name = '복귀 생산 검사'; away.lastSaved = Date.now() - 6000;
  const resumed = await loadFixture(away, 'Declared6-second absence for an existing paid production batch', { offline: true });
- assert.ok(resumed.totalMinutes >= away.totalMinutes + 6 * expectedGameMinutesPerSecond && (resumed.totalMinutes - away.totalMinutes) / expectedGameMinutesPerSecond <= (resumed.lastSaved - away.lastSaved) / 1000 + 1, 'the explicit saved absence advances real seconds at the expected6-minute rate');
+ assert.ok(resumed.totalMinutes >= away.totalMinutes + 6 * expectedGameMinutesPerSecond && (resumed.totalMinutes - away.totalMinutes) / expectedGameMinutesPerSecond <= (resumed.lastSaved - away.lastSaved) / 1000 + 1, 'the explicit saved absence advances real seconds at the expected4-minute rate');
  assert.deepEqual(resumed.resources, away.resources, 'a completed batch after absence is not automatically collected');
  assert.equal(resumed.settlement.stats.collections, 0);
  assert.equal(resumed.villageOrders, undefined);
@@ -245,15 +245,15 @@ try {
  assert.ok((resumedAgain.totalMinutes - resumed.totalMinutes) / expectedGameMinutesPerSecond <= (resumedAgain.lastSaved - resumed.lastSaved) / 1000 + 1, 'a second reload cannot replay the original6-second absence');
  assert.deepEqual(resumedAgain.resources, resumed.resources, 'repeat resume does not collect or deliver anything');
  await shot('offline-ready-without-free-resources');
- const cappedAway = productionFixture(fresh, 18); cappedAway.name = '빠른 마을 복귀 한도'; cappedAway.lastSaved = Date.now() - 90000;
+ const cappedAway = productionFixture(fresh, 18); cappedAway.name = '빠른 마을 복귀 한도'; cappedAway.lastSaved = Date.now() - 135000;
  const capStartedAt = Date.now();
- const cappedResume = await loadFixture(cappedAway, 'Declared90-second absence; only70 real seconds /420 game minutes of catch-up are allowed', { offline: true });
+ const cappedResume = await loadFixture(cappedAway, 'Declared135-second absence; only105 real seconds /420 game minutes of catch-up are allowed', { offline: true });
  const cappedProgress = cappedResume.totalMinutes - cappedAway.totalMinutes;
- assert.ok(cappedProgress >= 70 * expectedGameMinutesPerSecond, 'the offline cap preserves420 game minutes of mature-crop/production progress');
- assert.ok(cappedProgress <= 70 * expectedGameMinutesPerSecond + (Math.ceil((Date.now() - capStartedAt) / 1000) + 1) * expectedGameMinutesPerSecond, 'a90-second saved absence is capped at70 real seconds plus actual loading time');
+ assert.ok(cappedProgress >= 105 * expectedGameMinutesPerSecond, 'the offline cap preserves420 game minutes of mature-crop/production progress');
+ assert.ok(cappedProgress <= 105 * expectedGameMinutesPerSecond + (Math.ceil((Date.now() - capStartedAt) / 1000) + 1) * expectedGameMinutesPerSecond, 'a135-second saved absence is capped at105 real seconds plus actual loading time');
  assert.equal(cappedResume.settlement.stats.collections, 0, 'capped offline production still waits for an explicit collection');
  assert.deepEqual(cappedResume.resources, cappedAway.resources, 'the faster capped absence invents no resources or delivery rewards');
- cases.push('Explicit saved absence progresses at6 game minutes/second with70-second /420-minute cap; no automatic resources, repeated baseline does not replay elapsed time, and pause holds the resumed village.');
+ cases.push('Explicit saved absence progresses at4 game minutes/second with105-second /420-minute cap; no automatic resources, repeated baseline does not replay elapsed time, and pause holds the resumed village.');
  await context.close();
 
  for (const [width, height, label] of [[360, 800, '360px'], [844, 390, 'landscape']]) {

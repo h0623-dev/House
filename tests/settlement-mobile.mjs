@@ -133,7 +133,7 @@ async function chore(action) {
  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'true', null, { timeout: 1500 });
  assert.equal(await page.locator('.chore-status').isVisible(), true);
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 30000 });
- timings.push({ name: action, elapsedMs: Date.now() - before }); assert.ok(Date.now() - before >= 2500 / 3, 'ordinary resource work retains visible real-time animation at three times the original pace');
+ timings.push({ name: action, elapsedMs: Date.now() - before }); assert.ok(Date.now() - before >= 2500 / 2, 'ordinary resource work retains visible real-time animation at twice the original pace');
 }
 async function fit(width, height, selectors) {
  if (selectors.some(selector => selector.includes('data-map-')) && await page.locator('[data-camera-toggle]').getAttribute('aria-expanded') !== 'true') await touch(page.locator('[data-camera-toggle]'));
@@ -276,18 +276,18 @@ try {
   await catalog('kitchen'); await tapSlot(1, true); assert.equal(await page.locator('[data-construction-confirm]').isDisabled(), true); assert.equal(buildings(await saved()).length, 1); await touch(page.locator('[data-construction-cancel]'));
   const insufficient = await saved(); await catalog('kitchen'); await tapSlot(0); await touch(page.locator('[data-construction-confirm]')); assert.equal(buildings(await saved()).length, 1, 'insufficient materials cannot confirm construction'); assert.deepEqual((await saved()).resources, insufficient.resources); assert.equal(await page.locator('#construction-bar').isVisible(), true); await touch(page.locator('[data-construction-cancel]'));
   await selectFacility(1); await move(1, 0); const beforeStart = await saved(); await touch(page.locator('[data-facility-start="1"]')); let state = await saved(), facility = buildings(state)[0];
-  assert.deepEqual(state.resources, beforeStart.resources); assert.equal(facility.readyAt - facility.startedAt, 45); assert.match(await page.locator('[data-production-status]').innerText(), /8초/, 'the new45-game-minute batch displays eight rounded-up real seconds'); assert.equal(state.settlement.stats.productions, 1); assert.equal(await page.locator('[data-facility-start="1"]').isDisabled(), true);
+  assert.deepEqual(state.resources, beforeStart.resources); assert.equal(facility.readyAt - facility.startedAt, 45); assert.match(await page.locator('[data-production-status]').innerText(), /12초/, 'the new45-game-minute batch displays twelve rounded-up real seconds'); assert.equal(state.settlement.stats.productions, 1); assert.equal(await page.locator('[data-facility-start="1"]').isDisabled(), true);
   await touch(page.locator('[data-facility-start="1"]')); assert.deepEqual(buildings(await saved())[0], facility); assert.equal((await saved()).settlement.stats.productions, 1);
   await touch(page.locator('[data-facility-upgrade="1"]')); assert.equal(await page.locator('[data-upgrade-confirm]').count(), 0); assert.deepEqual((await saved()).resources, state.resources);
   await move(1, 1); await reload(); assert.deepEqual(buildings(await saved())[0], { ...facility, slot: 1 });
   if (width === 360) {
    await selectFacility(1);
    const expectedRemainingSeconds = Number((await page.locator('[data-production-status]').innerText()).match(/(\d+)초/)?.[1]);
-   assert.ok(expectedRemainingSeconds > 0 && expectedRemainingSeconds <= 15, 'the partially elapsed 90-minute batch has at most fifteen actual seconds left');
+   assert.ok(expectedRemainingSeconds > 0 && expectedRemainingSeconds <= 23, 'the partially elapsed 90-minute batch has at most23 rounded actual seconds left');
    const cycleStart = Date.now(); await setPaused(false);
-   await page.locator('[data-facility-collect="1"]').waitFor({ state: 'visible', timeout: 23000 });
+   await page.locator('[data-facility-collect="1"]').waitFor({ state: 'visible', timeout: 31000 });
    const elapsedMs = Date.now() - cycleStart; await pauseWorld();
-   timings.push({ name: 'naturally-grown-waterworks-90-game-minutes-at-6-minutes-per-second', elapsedMs, expectedRemainingSeconds });
+   timings.push({ name: 'naturally-grown-waterworks-90-game-minutes-at-4-minutes-per-second', elapsedMs, expectedRemainingSeconds });
    assert.ok(elapsedMs >= Math.max(0, expectedRemainingSeconds - 2) * 1000 && elapsedMs <= (expectedRemainingSeconds + 4) * 1000, 'real production follows its displayed countdown, allowing menu travel and the one-second tick boundary');
   } else await reload(matureProduction(await saved()));
   const readyWater = (await saved()).resources.water; await reload(); state = await saved(); assert.ok(state.totalMinutes >= buildings(state)[0].readyAt); assert.equal(state.resources.water, readyWater, 'ready production is not silently awarded by loading');

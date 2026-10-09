@@ -6,6 +6,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 // broader browser smoke suite, this test never installs or advances page.clock.
 const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
 const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
+const expectedSpeedMultiplier = 2;
+const expectedGameMinutesPerSecond = 4;
 const startedAt = new Date();
 const appVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
@@ -79,6 +81,14 @@ async function worldPoint(x, y) {
  }, { x, y });
 }
 async function chore(name, trigger, { noCommit, repeatedTouches, screenshot } = {}) {
+ await page.evaluate(() => {
+  const canvas = document.querySelector('#world'); window.__touchMotionFrames = [];
+  window.__touchMotionObserver = new MutationObserver(() => {
+   const frame = JSON.parse(canvas.dataset.sceneAction || 'null');
+   if (frame?.kind) window.__touchMotionFrames.push(frame);
+  });
+  window.__touchMotionObserver.observe(canvas, { attributes: true, attributeFilter: ['data-scene-action'] });
+ });
  const started = Date.now();
  await trigger();
  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'true', null, { timeout: 1500 });
@@ -90,7 +100,26 @@ async function chore(name, trigger, { noCommit, repeatedTouches, screenshot } = 
  if (screenshot) { await page.waitForTimeout(1100); await shot(screenshot); }
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 30000 });
  const elapsedMs = Date.now() - started;
- timings.push({ name, elapsedMs });
+ const frames = await page.evaluate(() => { window.__touchMotionObserver.disconnect(); return window.__touchMotionFrames; });
+ const expectedWork = { chop: 1.275, gather: 1.2, plant: .75, water: .75, harvest: .825, expand: .9, expandFarm: .9, build: .825, upgrade: .825 };
+ assert.ok(frames.length > 0, `${name}: genuine rendered movement is observed`);
+ assert.ok(frames.every(frame => Math.abs(frame.work - expectedWork[frame.kind]) < .002), `${name}: actual work uses the shared2× pace`);
+ if (name.startsWith('painted-tree-')) {
+  for (const [surface, expected] of [['walk', 400], ['climb', 240]]) {
+   const velocities = frames.slice(1).flatMap((frame, index) => {
+    const prior = frames[index], seconds = frame.elapsed - prior.elapsed;
+    return prior.phase === 'outbound' && frame.phase === 'outbound' && prior.pose === surface && frame.pose === surface && seconds > .008
+     ? [Math.hypot(frame.x - prior.x, frame.y - prior.y) / seconds] : [];
+   }).sort((a, b) => a - b);
+   assert.ok(velocities.length >= 3, `${name}: ${surface} has multiple actual motion samples`);
+   const median = velocities[Math.floor(velocities.length / 2)];
+   assert.ok(median > expected * .9 && median < expected * 1.1, `${name}: ${surface} follows the shared2× pace and existing field-work multiplier`);
+  }
+  const working = frames.filter(frame => frame.phase === 'working');
+  assert.ok(working.length >= 3, `${name}: a visible work animation has multiple actual frames`);
+  assert.ok(working.every(frame => Math.abs(frame.gaitTime - (frame.elapsed - frame.walk) * expectedSpeedMultiplier) < .006), `${name}: the work animation clock follows2× pace`);
+ }
+ timings.push({ name, elapsedMs, motionFrames: frames });
  assert.ok(elapsedMs < 32000, `${name} should finish promptly using real requestAnimationFrame: ${elapsedMs} ms`);
  assert.equal(await page.locator('.chore-status').isVisible(), false, `${name} must release its work indicator`);
  assert.equal(await nav('build').isDisabled(), false, `${name} must restore navigation`);
@@ -416,7 +445,7 @@ try {
  assert.deepEqual(errors, []);
  assert.deepEqual(failedAssets, []);
  await writeFile(`artifacts/mobile-real-time-v${appVersion}-verification.json`, JSON.stringify({
-  version: appVersion, snapshotId, finalSnapshot, status: 'passed', baseUrl, clock: 'Real browser timers and requestAnimationFrame; no page.clock',
+  version: appVersion, snapshotId, finalSnapshot, expectedSpeedMultiplier, expectedGameMinutesPerSecond, status: 'passed', baseUrl, clock: 'Real browser timers and requestAnimationFrame; no page.clock',
   input: 'Touchscreen tap coordinates on mobile contexts', viewports: ['360×740', '390×844'],
   slowRenderingCase: 'Actual requestAnimationFrame callbacks delayed by 350 ms with original browser timestamps',
   startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt.getTime(),
@@ -425,7 +454,7 @@ try {
  console.log(`PASS: ${assertionsExecuted} real-touch assertions; ${timings.length} bounded real-time chores; tree/context/modal/quick woodcutting, gathering, targeted farming, rest, expansion, battle controls, low-energy/low-supply recovery and legacy level6 save persistence.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/mobile-real-time-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, snapshotId, finalSnapshot, status: 'failed', baseUrl, assertionsExecuted, timings, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n');
+ await writeFile(`artifacts/mobile-real-time-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, snapshotId, finalSnapshot, expectedSpeedMultiplier, expectedGameMinutesPerSecond, status: 'failed', baseUrl, assertionsExecuted, timings, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n');
  throw error;
 } finally {
  await browser.close();

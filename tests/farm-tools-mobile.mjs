@@ -5,8 +5,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 // The controls are exercised through real phone-style taps and drag gestures.
 // No browser clock is faked; saved mature crops only avoid the growing wait.
 const startedAt = new Date();
-const expectedGameMinutesPerSecond = 6;
-const expectedSpeedMultiplier = 3;
+const expectedGameMinutesPerSecond = 4;
+const expectedSpeedMultiplier = 2;
 const appVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const snapshotId = process.env.TEST_SNAPSHOT_ID || null;
@@ -31,7 +31,7 @@ const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const toolbar = () => page.locator('#planting-toolbar');
 async function touchPointFor(locator) {
- // One DOM measurement keeps phone taps responsive at the actual 3x chore
+ // One DOM measurement keeps phone taps responsive at the actual 2x chore
  // speed. Modal scrolling remains real; no game calls or fake clock are used.
  const measure = element => {
   const rect = element.getBoundingClientRect(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;

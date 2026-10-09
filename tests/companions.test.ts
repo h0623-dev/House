@@ -80,7 +80,7 @@ test('modern results preserve the farmer and award participating animals once in
   assert.equal(won.state.health, 7);
   assert.deepEqual(won.state.companions, { dog: { health: 61.25, xp: 100 }, cat: { health: 0, xp: MAX_COMPANION_XP } });
   assert.equal(getCompanionLevel(won.state.companions!.dog), 2);
-  assert.equal(won.state.totalMinutes, initial.totalMinutes + 45);
+  assert.equal(won.state.totalMinutes, initial.totalMinutes + 30);
   assert.equal(JSON.stringify(started), snapshot);
   const duplicate = finishHunt(won.state, result(2), 1);
   assert.equal(duplicate.ok, false);

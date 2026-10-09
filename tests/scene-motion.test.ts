@@ -25,7 +25,7 @@ test('walking takes time proportional to distance and slows on the ladder in bot
   assert.equal(sampleMotionRoute(route, route.duration - realDuration(.5)).pose, 'walk');
 });
 
-test('responsive field work halves v0.16 movement time without changing route, gait, ladder direction or endpoints', () => {
+test('responsive field work retains its v17 improvement at twofold pace without changing route, gait, ladder direction or endpoints', () => {
   // Literal v0.16 timing for this fixed path, independent of the new speed helper.
   const original: MotionRoute = {
     segments: [
@@ -37,11 +37,13 @@ test('responsive field work halves v0.16 movement time without changing route, g
     travelSeconds: 4 / 3, rampSeconds: .06, duration: 4.18 / 3,
   };
   const faster = createMotionRoute([[0, 0], [100, 0], [100, 120], [200, 120]], [1]);
-  assert.equal(WALK_SPEED, 600); assert.equal(CLIMB_SPEED, 360);
-  close(faster.duration, original.duration / 2);
-  close(faster.rampSeconds, .03);
+  assert.equal(WALK_SPEED, 400); assert.equal(CLIMB_SPEED, 240);
+  // The historical fixture ran at 3x; current 2x with the retained 2x field
+  // improvement runs at 4x, so its path takes 3/4 of that historical time.
+  close(faster.duration, original.duration * .75);
+  close(faster.rampSeconds, .045);
   for (const returning of [false, true]) for (let elapsed = 0; elapsed <= original.duration; elapsed += .025) {
-    const before = sampleMotionRoute(original, elapsed, returning), after = sampleMotionRoute(faster, elapsed / 2, returning);
+    const before = sampleMotionRoute(original, elapsed, returning), after = sampleMotionRoute(faster, elapsed * .75, returning);
     close(after.point[0], before.point[0]); close(after.point[1], before.point[1]);
     close(after.distance, before.distance); close(after.progress, before.progress);
     assert.equal(after.pose, before.pose); assert.equal(after.facing, before.facing); assert.equal(after.climbing, before.climbing);
@@ -73,19 +75,19 @@ test('actual truck paths provide readable road work and comfortable single-plot 
   for (let deck = 1; deck <= 8; deck++) {
     const front = deckFronts[deck - 1];
     const road = createMotionRoute([home, p(-168, 16), p(-176, front - 13), p(-225, front - 3), [140, 527], [181, 549], [211, 578]], [3]);
-    const total = road.duration * 2 + .8;
+    const total = road.duration * 2 + realDuration(2.4);
     gatherTotals.push(total);
-    assert.ok(total >= 2.5 && total <= 4.1, `deck ${deck} road gathering lasts ${total}s`);
+    assert.ok(total >= 3.75 && total <= 6.15, `deck ${deck} road gathering lasts ${total}s`);
     const ladder = road.segments.find(segment => segment.surface === 'climb')!;
-    assert.ok(ladder.seconds >= .24, 'both climbing directions preserve separate steps at the faster speed');
+    assert.ok(ladder.seconds >= .36, 'both climbing directions preserve separate steps at the twofold pace');
   }
   assert.ok(gatherTotals[5] > gatherTotals[0], 'a larger deck no longer speeds up the survivor');
   for (const [u, v] of [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]]) {
     const farm = createMotionRoute([home, p(u - 9, 12), p(u - 9, v + 39)]);
-    const total = farm.duration * 2 + .55;
-    assert.ok(total >= .85 && total <= 1.7, `plot ${u}/${v} lasts ${total}s`);
+    const total = farm.duration * 2 + realDuration(1.65);
+    assert.ok(total >= 1.275 && total <= 2.55, `plot ${u}/${v} lasts ${total}s`);
     const previous = farm.duration * 4 + realDuration(2.2);
-    assert.ok(total < previous * .75, 'each original plot takes at least 25% less time than v0.16');
+    assert.ok(total < previous * .75, 'the retained field-work improvement saves at least 25% against the pre-v17 routine at the same shared pace');
   }
 });
 

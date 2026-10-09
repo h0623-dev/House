@@ -366,7 +366,7 @@ export class Scene {
     const [u, v] = SETTLEMENT_SLOTS[slot];
     // These narrow aisles run along the edges of every existing footprint.
     const path: Point[] = [this.p(-74, 14, 95), this.p(u + 67, 14, 95), this.p(u + 67, v + 67, 95)];
-    const route = createMotionRoute(path), walk = route.duration, work = .55;
+    const route = createMotionRoute(path), walk = route.duration, work = realDuration(1.65);
     this.zone = 'home'; this.lastFrame = performance.now();
     return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk * 2 + work, walk, work, path,
       route, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, resolve }; });

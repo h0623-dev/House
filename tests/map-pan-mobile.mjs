@@ -205,7 +205,7 @@ try {
   // visible production completion by a full save interval.
   await page.waitForFunction(() => JSON.parse(document.querySelector('#world').dataset.settlementSlots).find(slot => slot.buildingId === 1)?.action === 'facility-collect', null, { timeout: realDuration(55000) + 3000 });
   const productionElapsed = Date.now() - productionStart, expectedProductionMs = (beforeClockResume.settlement.buildings[0].readyAt - beforeClockResume.totalMinutes) / (2 * GAME_SPEED_MULTIPLIER) * 1000;
-  assert.ok(productionElapsed >= expectedProductionMs - 1500 && productionElapsed <= expectedProductionMs + 3500, `production completes at three times the original real-time rate (${productionElapsed}ms observed, ${expectedProductionMs}ms expected)`);
+  assert.ok(productionElapsed >= expectedProductionMs - 1500 && productionElapsed <= expectedProductionMs + 3500, `production completes at twice the original real-time rate (${productionElapsed}ms observed, ${expectedProductionMs}ms expected)`);
   timings.push({ name: `naturally completed faster production ${width}`, elapsedMs: productionElapsed, expectedMs: expectedProductionMs });
   await pauseWorld(); await resetView(); const readyBubble = await facilityActionPoint(1); assert.equal(readyBubble.action, 'facility-collect'); const beforeCollect = await saved(); await worldAt(readyBubble); await page.touchscreen.tap(readyBubble.x, readyBubble.y);
   const collected = await saved(); assert.equal(collected.resources.water, beforeCollect.resources.water + 4, 'the ready map bubble collects the naturally completed water batch'); assert.equal(collected.settlement.buildings[0].readyAt, null); assert.equal(await page.locator('#facility-sheet').isVisible(), false, 'direct collection keeps the village map available');

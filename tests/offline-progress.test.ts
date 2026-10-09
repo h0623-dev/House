@@ -9,7 +9,7 @@ function memoryStorage(): SaveStorage {
 }
 
 test('resuming advances existing crops and paid production without auto-harvest or free resources', () => {
-  assert.equal(MAX_OFFLINE_SECONDS, 70, 'the faster clock keeps the former 420-game-minute offline ceiling');
+  assert.equal(MAX_OFFLINE_SECONDS, 105, 'the twofold clock keeps the former 420-game-minute offline ceiling');
   let state = createGame();
   state = performAction(state, 'plant', 3, 'pumpkin').state;
   state = performAction(state, 'water', 3).state;
@@ -40,14 +40,14 @@ test('small absences use whole real seconds, while very long absences cross at m
   state.lastSaved = 100_000;
   const short = applyOfflineProgress(state, 102_999);
   assert.equal(short.secondsApplied, 2);
-  assert.equal(short.state.totalMinutes, state.totalMinutes + 12);
+  assert.equal(short.state.totalMinutes, state.totalMinutes + 8);
   assert.equal(short.state.lastSaved, 102_999);
   const repeated = applyOfflineProgress(short.state, 103_999);
   assert.equal(repeated.secondsApplied, 1);
   state.totalMinutes = 1430;
   state.minutes = 1430;
   const long = applyOfflineProgress(state, 100_000 + 20 * 86_400_000);
-  assert.equal(long.secondsApplied, 70);
+  assert.equal(long.secondsApplied, 105);
   assert.equal(long.state.day, 2);
   assert.equal(long.state.minutes, 410);
   assert.equal(long.state.resources.food, state.resources.food - 2);

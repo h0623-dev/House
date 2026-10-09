@@ -3,11 +3,13 @@ import strictAssert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 // Real mobile taps and browser time. Declared production fixtures avoid a full
-// 15-second batch; observation only reads UI text and never advances the clock.
+// 22.5-second legacy batch; observation only reads UI text and never advances the clock.
 const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
 const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
+const expectedSpeedMultiplier = 2;
+const expectedGameMinutesPerSecond = 4;
 const startedAt = new Date();
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
@@ -79,28 +81,28 @@ try {
  await page.goto(baseUrl); await touch(page.locator('[data-start]')); await pauseWorld(); const fresh = await saved();
 
  await touch(page.locator('[data-nav="build"]'));
- for (const [type, seconds] of [['waterworks', 7.5], ['kitchen', 10], ['workshop', 12.5], ['petHouse', 10], ['greenhouse', 20], ['watchtower', 15]]) {
+ for (const [type, seconds] of [['waterworks', 11.3], ['kitchen', 15], ['workshop', 18.8], ['petHouse', 15], ['greenhouse', 30], ['watchtower', 22.5]]) {
   const card = page.locator(`[data-build-type="${type}"]`); await card.scrollIntoViewIfNeeded();
   assert.equal((await card.locator('.building-output small').innerText()).trim(), `· ${seconds}초`, `${type} shows actual active-play seconds`);
  }
  assert.doesNotMatch(await page.locator('#modal-root').innerText(), /\d+\s*분/, 'the catalog has no game-minute waiting labels');
  await shot('catalog-seconds'); await closeModal();
  await touch(page.locator('[data-nav="farm"]')); await touch(page.locator('[data-quick="plant"]'));
- for (const [crop, seconds] of [['carrot', 30], ['potato', 40], ['tomato', 45], ['corn', 50], ['strawberry', 60], ['pumpkin', 70]]) {
+ for (const [crop, seconds] of [['carrot', 45], ['potato', 60], ['tomato', 68], ['corn', 75], ['strawberry', 90], ['pumpkin', 105]]) {
   const card = page.locator(`[data-select-seed="${crop}"]`); await card.scrollIntoViewIfNeeded();
   assert.equal(await card.locator('small').innerText(), `성장 ${seconds}초`, `${crop} growth is shown in real active-play seconds`);
  }
  const seedCopy = await page.locator('#modal-root').innerText(); assert.doesNotMatch(seedCopy, /\d+\s*분/); assert.match(seedCopy, /물.{0,16}(?:준|주)/, 'seed timing explains the watering condition');
  await shot('seed-growth-seconds'); await closeModal();
- cases.push('All six facility durations7.5/10/12.5/10/20/15초 and watered seed growth durations30/40/45/50/60/70초 appear at3× gameplay pace.');
+ cases.push('All six facility durations11.3/15/18.8/15/30/22.5초 and watered seed growth durations45/60/68/75/90/105초 appear at2× gameplay pace.');
 
  const existing = productionFixture(fresh, 76); await loadFixture(existing, 'Declared valid old-schema production with76 game-minutes left'); await openFacility();
  const before = await saved(), remainingAtPause = existing.settlement.buildings[0].readyAt - before.totalMinutes;
- assert.ok(remainingAtPause > 58 && remainingAtPause <= 76, 'only actual loading and settings navigation may consume active village time');
- const secondsAtPause = Math.ceil(remainingAtPause / 6), pausedLabel = `생산 중 · ${secondsAtPause}초 남음`;
- assert.equal(await status(), pausedLabel, 'the unchanged old completion boundary displays actual remaining game-minutes divided by6, rounded up');
+ assert.ok(remainingAtPause > 64 && remainingAtPause <= 76, 'only actual loading and settings navigation may consume active village time');
+ const secondsAtPause = Math.ceil(remainingAtPause / expectedGameMinutesPerSecond), pausedLabel = `생산 중 · ${secondsAtPause}초 남음`;
+ assert.equal(await status(), pausedLabel, 'the unchanged old completion boundary displays actual remaining game-minutes divided by4, rounded up');
  await page.waitForTimeout(2300); assert.equal(await status(), pausedLabel, 'pausing freezes the countdown'); assert.deepEqual(await saved(), before, 'pausing does not secretly advance or award production');
- await shot('13-seconds-paused'); await resumeWorld(); await openFacility(); await observeCountdown();
+ await shot('19-seconds-paused'); await resumeWorld(); await openFacility(); await observeCountdown();
  await page.waitForFunction(() => window.__timeDisplaySamples.length >= 4, null, { timeout: 6000 });
  const observed = await stopObservation(); countdowns.push({ label: '76 game-minute fixture, real unpaused countdown', samples: observed });
  const numbers = observed.map(sample => Number(sample.text.match(/(\d+)초/)?.[1]));
@@ -112,10 +114,10 @@ try {
  assert.deepEqual((await saved()).growthQuests, existing.growthQuests, 'the time-label change preserves claimed growth progress');
  cases.push(`Old76-game-minute production retains its completion boundary; after real loading and settings navigation, ${remainingAtPause} game-minutes display ${secondsAtPause}초, hold while paused, and decrease1 displayed second per real tick.`);
 
- const nearReady = productionFixture(fresh, 30); await loadFixture(nearReady, 'Declared production fixture with5 real seconds left'); await openFacility();
+ const nearReady = productionFixture(fresh, 20); await loadFixture(nearReady, 'Declared production fixture with5 real seconds left'); await openFacility();
  const nearReadyRemaining = nearReady.settlement.buildings[0].readyAt - (await saved()).totalMinutes;
- assert.ok(nearReadyRemaining > 12 && nearReadyRemaining <= 30, 'actual loading and pause navigation leave time to observe the final seconds');
- assert.equal(await status(), `생산 중 · ${Math.ceil(nearReadyRemaining / 6)}초 남음`);
+ assert.ok(nearReadyRemaining > 8 && nearReadyRemaining <= 20, 'actual loading and pause navigation leave time to observe the final seconds');
+ assert.equal(await status(), `생산 중 · ${Math.ceil(nearReadyRemaining / expectedGameMinutesPerSecond)}초 남음`);
  const readyStart = Date.now(); await resumeWorld(); await openFacility(); await observeCountdown(); await page.locator('[data-facility-collect="1"]').waitFor({ state: 'visible', timeout: 6500 });
  const completion = await stopObservation(); countdowns.push({ label: 'Natural completion from5seconds', elapsedMs: Date.now() - readyStart, samples: completion });
  await pauseWorld(); await openFacility();
@@ -129,18 +131,18 @@ try {
  await touch(page.locator('[data-nav="hunt"]')); await touch(page.locator('[data-start-hunt]')); await page.locator('.battle-screen').waitFor();
  assert.match(await page.locator('.battle-progress [data-battle-time]').innerText(), /^\d+초$/, 'the battle elapsed-time HUD also uses seconds');
  await page.waitForFunction(() => !document.querySelector('[data-skill="sweep"]').disabled, null, { timeout: 5000 });
- for (const [skill, limit] of [['sweep', 4], ['dash', 4], ['heal', 8]]) {
+ for (const [skill, limit] of [['sweep', 6], ['dash', 5], ['heal', 12]]) {
   await touch(page.locator(`[data-skill="${skill}"]`)); const text = await page.locator(`[data-skill="${skill}"] .battle-skill-cooldown`).innerText();
-  assert.match(text, /^\d+초$/, 'battle skills use the same Korean seconds unit'); assert.ok(Number(text.slice(0, -1)) >= limit - 1 && Number(text.slice(0, -1)) <= limit, 'battle cooldowns show rounded-up real seconds at3× pace');
+  assert.match(text, /^\d+초$/, 'battle skills use the same Korean seconds unit'); assert.ok(Number(text.slice(0, -1)) >= limit - 1 && Number(text.slice(0, -1)) <= limit, 'battle cooldowns show rounded-up real seconds at2× pace');
  }
  await touch(page.locator('[data-battle="pause"]')); const cooldowns = await page.locator('.battle-skill-cooldown').allInnerTexts(); await page.waitForTimeout(1200); assert.deepEqual(await page.locator('.battle-skill-cooldown').allInnerTexts(), cooldowns, 'battle pause also holds the second-based cooldowns');
  await shot('battle-seconds'); await touch(page.locator('[data-battle="resume"]')); await touch(page.locator('[data-battle="retreat"]')); await touch(page.locator('[data-battle="confirm-retreat"]')); await page.locator('.battle-result-layer').waitFor({ state: 'visible' });
  assert.match(await page.locator('.battle-result-stats>div').nth(1).locator('b').innerText(), /^\d+초$/, 'battle result duration keeps its Korean seconds unit'); await touch(page.locator('[data-battle="finish"]'));
- cases.push('Actual battle skill activation displays4/4/8-second rounded cooldowns at3× pace; pause holds cooldowns; retreat results also use초.');
+ cases.push('Actual battle skill activation displays6/5/12-second rounded cooldowns at2× pace; pause holds cooldowns; retreat results also use초.');
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
- await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, snapshotId, finalSnapshot, status: 'passed', baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual mobile touchscreen taps', clock: 'Real browser countdown ticks; no page.clock, synthetic clock, or direct game calls', deviceLimit: 'Chromium mobile emulation only; not a physical Android test', fixtures, cases, countdowns, screenshots, errors, failedAssets }, null, 2) + '\n');
+ await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, snapshotId, finalSnapshot, expectedSpeedMultiplier, expectedGameMinutesPerSecond, status: 'passed', baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual mobile touchscreen taps', clock: 'Real browser countdown ticks; no page.clock, synthetic clock, or direct game calls', deviceLimit: 'Chromium mobile emulation only; not a physical Android test', fixtures, cases, countdowns, screenshots, errors, failedAssets }, null, 2) + '\n');
  console.log(`PASS: ${assertionsExecuted} time display assertions; real seconds, pause, completion, collection and battle units.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, snapshotId, finalSnapshot, status: 'failed', baseUrl, assertionsExecuted, fixtures, cases, countdowns, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n'); throw error;
+ await writeFile(`artifacts/time-display-v${version}-verification.json`, JSON.stringify({ version, snapshotId, finalSnapshot, expectedSpeedMultiplier, expectedGameMinutesPerSecond, status: 'failed', baseUrl, assertionsExecuted, fixtures, cases, countdowns, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n'); throw error;
 } finally { await browser.close(); }

@@ -150,7 +150,7 @@ async function fixture(mode, { existing = false, width = 390, height = 844, stor
 }
 async function assertVillageAfterPlayable() {
  const after = await saved(), seconds = Math.ceil((Date.now() - fixtureStartedAt) / 1000) + 2;
- assert.ok(after.totalMinutes >= originalSave.totalMinutes && after.totalMinutes - originalSave.totalMinutes <= seconds * 6, 'after fallback, only the bounded real elapsed time may advance the village clock');
+ assert.ok(after.totalMinutes >= originalSave.totalMinutes && after.totalMinutes - originalSave.totalMinutes <= seconds * 4, 'after fallback, only the bounded real elapsed time may advance the village clock');
  assert.equal(after.day, Math.floor(after.totalMinutes / 1440) + 1); assert.equal(after.minutes, after.totalMinutes % 1440);
  assert.deepEqual(stableSave(after), stableSave({ ...originalSave, day: after.day, minutes: after.minutes, totalMinutes: after.totalMinutes }), 'playable startup preserves inventory, crops, buildings, quests, stats and rewards exactly');
 }
@@ -160,7 +160,7 @@ function assertClockOnly(after, before, maximumAdvance, message) {
  assert.deepEqual(stableSave(after), stableSave({ ...before, day: after.day, minutes: after.minutes, totalMinutes: after.totalMinutes }), 'clock catch-up neither collects crops nor grants resources, XP, stats, quests or facility rewards');
 }
 function assertCappedAbsence(activated) {
- assert.equal(activated.totalMinutes, offlineOriginalSave.totalMinutes + 420, '300 seconds away consumes exactly the 70-second cap before native activation');
+ assert.equal(activated.totalMinutes, offlineOriginalSave.totalMinutes + 420, '300 seconds away consumes exactly the 105-second cap before native activation');
  assertClockOnly(activated, offlineOriginalSave, 420, 'the full capped absence is applied once');
  const previouslyGrowing = offlineOriginalSave.plots.find(plot => plot.plantedAt !== null && plot.watered && getCropProgress(offlineOriginalSave, plot) < 1);
  assert.ok(previouslyGrowing); assert.equal(getCropProgress(activated, activated.plots.find(plot => plot.id === previouslyGrowing.id)), 1, 'the previously growing crop is mature after catch-up and remains uncollected');
@@ -168,7 +168,7 @@ function assertCappedAbsence(activated) {
 async function record(name) { await noApk(); cases.push(name); }
 
 try {
- assert.equal(MAX_OFFLINE_SECONDS, 70, 'the triple-speed offline cap is seventy real seconds');
+ assert.equal(MAX_OFFLINE_SECONDS, 105, 'the double-speed offline cap is 105 real seconds');
  // A legitimate save produced through the actual welcome UI, not injected stats.
  const web = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
  page = await web.newPage(); attachErrors(page); await page.goto(baseUrl); await beginGame(); originalSave = await saved();
@@ -215,15 +215,15 @@ try {
  assert.deepEqual(stableSave(await saved()), stableSave(originalSave));
  await record('Native ready completion crossing an older busy snapshot activates once immediately, preserving the saved village without waiting for fallback'); await context.close();
 
- // An uncapped absence proves the six-minute rate independently of the unchanged cap.
+ // An uncapped absence proves the four-minute rate independently of the unchanged game-minute cap.
  context = await fixture('cached', { existing: true, absenceSeconds: 30 });
  await page.waitForFunction(() => window.__startupFixture.calls.some(call => call.method === 'activate'));
  const shortActivation = JSON.parse((await callsFor('activate')).at(-1).save), shortInitial = JSON.parse((await bridgeCalls()).find(call => call.save)?.save);
  const shortAbsenceSeconds = Math.floor((shortActivation.lastSaved - shortInitial.lastSaved) / 1000);
- assert.ok(shortAbsenceSeconds >= 30 && shortAbsenceSeconds < 70, 'the declared short absence remains below the real-time cap');
- assert.equal(shortActivation.totalMinutes - shortInitial.totalMinutes, shortAbsenceSeconds * 6, 'uncapped offline growth uses six game minutes for each actual second');
- assertClockOnly(shortActivation, offlineOriginalSave, shortAbsenceSeconds * 6, 'short offline growth changes only the clock before activation');
- await record('A thirty-second uncapped absence advances at six game minutes per actual second, before cached native activation, without rewards'); await context.close();
+ assert.ok(shortAbsenceSeconds >= 30 && shortAbsenceSeconds < 105, 'the declared short absence remains below the real-time cap');
+ assert.equal(shortActivation.totalMinutes - shortInitial.totalMinutes, shortAbsenceSeconds * 4, 'uncapped offline growth uses four game minutes for each actual second');
+ assertClockOnly(shortActivation, offlineOriginalSave, shortAbsenceSeconds * 4, 'short offline growth changes only the clock before activation');
+ await record('A thirty-second uncapped absence advances at four game minutes per actual second, before cached native activation, without rewards'); await context.close();
 
  // Existing villages must consume their absence before a cached update saves/reloads them.
  context = await fixture('cached', { existing: true, absenceSeconds: 300 });
@@ -232,17 +232,17 @@ try {
  await page.waitForTimeout(1500); assert.equal((await callsFor('activate')).length, 1); assert.equal(await page.locator('#app').evaluate(app => app.inert), true);
  await page.reload(); await waitPlayable(); await pauseWorld();
  assert.equal((await callsFor('activate')).length, 1, 'the successful cached patch does not request activation twice');
- assertClockOnly(await saved(), activationSave, (Math.ceil((Date.now() - activationSave.lastSaved) / 1000) + 2) * 6, 'manual native reload consumes only the short new absence, never the original 300 seconds again');
+ assertClockOnly(await saved(), activationSave, (Math.ceil((Date.now() - activationSave.lastSaved) / 1000) + 2) * 4, 'manual native reload consumes only the short new absence, never the original 300 seconds again');
  await record('Cached update after 300 seconds away saves the capped +420 game minutes before activation; crops mature without rewards and the simulated native reload never repeats the old absence'); await context.close();
 
  context = await fixture('activation-error', { existing: true, absenceSeconds: 300 });
  await page.waitForFunction(() => window.__startupFixture.calls.some(call => call.method === 'activate'));
  activationSave = JSON.parse((await callsFor('activate')).at(-1).save); assertCappedAbsence(activationSave);
  await waitPlayable(); await pauseWorld();
- assertClockOnly(await saved(), activationSave, (Math.ceil((Date.now() - activationSave.lastSaved) / 1000) + 2) * 6, 'activation rejection continues the already-caught-up village without another catch-up');
+ assertClockOnly(await saved(), activationSave, (Math.ceil((Date.now() - activationSave.lastSaved) / 1000) + 2) * 4, 'activation rejection continues the already-caught-up village without another catch-up');
  const afterRejected = await saved(); await page.reload(); await waitPlayable(); await pauseWorld();
  assert.equal((await callsFor('activate')).length, 2, 'a later launch retries the rejected patch once');
- assertClockOnly(await saved(), afterRejected, (Math.ceil((Date.now() - afterRejected.lastSaved) / 1000) + 2) * 6, 'reloading after a rejected patch cannot replay the old capped absence');
+ assertClockOnly(await saved(), afterRejected, (Math.ceil((Date.now() - afterRejected.lastSaved) / 1000) + 2) * 4, 'reloading after a rejected patch cannot replay the old capped absence');
  await record('Rejected cached activation preserves the already-consumed offline clock and original inventory; continuation and later relaunch cannot replay the 300-second absence'); await context.close();
 
  context = await fixture('cached');

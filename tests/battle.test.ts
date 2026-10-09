@@ -67,7 +67,7 @@ test('healthy animals win the first expedition with basic attacks across all thr
   assert.equal(battle.state.result?.enemiesDefeated, 8);
   assert.ok(battle.state.result!.companionHealth.dog > 0);
   assert.ok(battle.state.result!.companionHealth.cat > 0);
-  assert.ok(battle.state.result!.duration >= 20 && battle.state.result!.duration <= 35);
+  assert.ok(battle.state.result!.duration >= 30 && battle.state.result!.duration <= 53);
 });
 
 test('normal enemies strike the front dog while runners independently flank the rear cat', () => {
@@ -254,12 +254,12 @@ test('invalid constructor numbers and frame deltas remain finite and bounded', (
   assert.equal(JSON.stringify(battle.state), snapshot);
 });
 
-test('animal skill cooldowns preserve threefold real-time pace and result duration excludes virtual acceleration', () => {
+test('animal skill cooldowns preserve twofold real-time pace and result duration excludes virtual acceleration', () => {
   const battle = new BattleSimulation({ level: 1, health: 80, stage: 3 });
   runFor(battle, realDuration(1.5));
   assert.equal(battle.useSkill('sweep'), true);
   assert.equal(battle.state.cooldowns.sweep, 12);
-  assert.equal(Math.ceil(realDuration(battle.state.cooldowns.sweep)), 4);
+  assert.equal(Math.ceil(realDuration(battle.state.cooldowns.sweep)), 6);
   runFor(battle, realDuration(11.5));
   assert.ok(battle.state.cooldowns.sweep > 0 && battle.state.cooldowns.sweep < 0.51);
   assert.equal(Math.ceil(realDuration(battle.state.cooldowns.sweep)), 1);

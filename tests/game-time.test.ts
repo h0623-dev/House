@@ -6,16 +6,17 @@ import { createGame, CROPS, CROP_IDS, getCropProgress, performAction, tick } fro
 import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getProductionMinutes, formatProductionDuration, startProduction } from '../src/settlement.ts';
 
 test('game durations display remaining real seconds, rounded up and never negative', () => {
-  assert.equal(GAME_SPEED_MULTIPLIER, 3);
-  assert.equal(GAME_MINUTES_PER_SECOND, 6);
-  for (const [minutes, seconds] of [[90, 15], [76, 13], [75.9, 13], [1, 1], [0.1, 1], [0, 0], [-3, 0]]) {
+  assert.equal(GAME_SPEED_MULTIPLIER, 2);
+  assert.equal(GAME_MINUTES_PER_SECOND, 4);
+  for (const [minutes, seconds] of [[90, 23], [76, 19], [75.9, 19], [1, 1], [0.1, 1], [0, 0], [-3, 0]]) {
     assert.equal(gameMinutesToSeconds(minutes), seconds);
     assert.equal(formatGameDuration(minutes), `${seconds}초`);
   }
 });
 
-test('all six facility messages show half-duration real seconds and collect at the exact new completion boundary', () => {
-  const expectedSeconds = { waterworks: 7.5, kitchen: 10, workshop: 12.5, petHouse: 10, greenhouse: 20, watchtower: 15 };
+test('all six facility messages show their twofold-pace preview and collect at the exact fractional completion boundary', () => {
+  const expectedSeconds = { waterworks: 11.25, kitchen: 15, workshop: 18.75, petHouse: 15, greenhouse: 30, watchtower: 22.5 };
+  const expectedPreview = { waterworks: '11.3초', kitchen: '15초', workshop: '18.8초', petHouse: '15초', greenhouse: '30초', watchtower: '22.5초' };
   for (const type of BUILDING_TYPES) {
     let state = createGame();
     state.resources.wood = 1_000;
@@ -28,11 +29,11 @@ test('all six facility messages show half-duration real seconds and collect at t
     const production = started.state.settlement!.buildings[0];
     const duration = getProductionMinutes(production);
     const seconds = duration / GAME_MINUTES_PER_SECOND;
-    assert.equal(seconds, expectedSeconds[type], `${type}: a new level1 batch uses half its v16 real time`);
-    assert.equal(formatProductionDuration(production), `${expectedSeconds[type]}초`);
+    assert.equal(seconds, expectedSeconds[type], `${type}: the v17 batch improvement remains at the twofold shared pace`);
+    assert.equal(formatProductionDuration(production), expectedPreview[type]);
     assert.equal(production.startedAt, built.state.totalMinutes);
     assert.equal(production.readyAt, built.state.totalMinutes + duration);
-    assert.ok(started.message.includes(`${seconds}초 뒤`), started.message);
+    assert.ok(started.message.includes(`${expectedPreview[type]} 뒤`), started.message);
     assert.equal(started.message.includes('게임 시간'), false);
     assert.equal(started.message.includes(`${duration}분`), false);
 
@@ -49,7 +50,7 @@ test('all six facility messages show half-duration real seconds and collect at t
   }
 });
 
-test('an existing 76-game-minute rainwater batch displays 13 seconds and completes at its unchanged stored boundary', () => {
+test('an existing 76-game-minute rainwater batch displays 19 seconds and completes at its unchanged stored boundary', () => {
   const built = buildFacility(createGame(), 'waterworks', 0);
   const started = startProduction(built.state, 1).state;
   // Explicit earlier v16 paid batch; updating never shortens its stored readyAt.
@@ -57,13 +58,13 @@ test('an existing 76-game-minute rainwater batch displays 13 seconds and complet
   const state = tick(started, realDuration(7));
   const remaining = state.settlement!.buildings[0].readyAt! - state.totalMinutes;
   assert.equal(remaining, 76);
-  assert.equal(formatGameDuration(remaining), '13초');
-  assert.equal(collectProduction(tick(state, 12), 1).ok, false);
+  assert.equal(formatGameDuration(remaining), '19초');
+  assert.equal(collectProduction(tick(state, 18.75), 1).ok, false);
   assert.equal(collectProduction(tick(state, remaining / GAME_MINUTES_PER_SECOND), 1).ok, true);
 });
 
-test('all six watered crops ripen at the displayed seconds without changing stored growth minutes', () => {
-  const expectedSeconds = { carrot: 30, potato: 40, tomato: 45, corn: 50, strawberry: 60, pumpkin: 70 };
+test('all six watered crops ripen at the exact twofold deadline with a rounded seconds display and unchanged stored growth minutes', () => {
+  const expectedSeconds = { carrot: 45, potato: 60, tomato: 67.5, corn: 75, strawberry: 90, pumpkin: 105 };
   for (const cropId of CROP_IDS) {
     const state = createGame();
     const plot = state.plots[2];
@@ -71,8 +72,9 @@ test('all six watered crops ripen at the displayed seconds without changing stor
     plot.plantedAt = state.totalMinutes;
     plot.watered = true;
     const before = JSON.stringify(state);
-    const seconds = gameMinutesToSeconds(CROPS[cropId].growMinutes);
-    assert.equal(seconds, expectedSeconds[cropId], `${cropId}: growth needs one third of its original real time`);
+    const seconds = CROPS[cropId].growMinutes / GAME_MINUTES_PER_SECOND;
+    assert.equal(seconds, expectedSeconds[cropId], `${cropId}: growth needs half its original real time`);
+    assert.equal(gameMinutesToSeconds(CROPS[cropId].growMinutes), Math.ceil(expectedSeconds[cropId]));
     const almost = tick(state, seconds - 1);
     assert.ok(getCropProgress(almost, almost.plots[2]) < 1, cropId);
     const ripe = tick(almost, 1);

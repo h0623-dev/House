@@ -150,9 +150,9 @@ try {
  await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
  await ready('sweep'); await touch(page.locator('[data-skill="sweep"]'));
  assert.equal(await page.locator('[data-skill="sweep"]').isDisabled(), true, 'a cat skill cannot be repeatedly fired');
- assert.match(await page.locator('[data-skill="sweep"] .battle-skill-cooldown').innerText(), /^[34]초$/, 'the cat skill keeps the3× real-second cooldown');
+ assert.match(await page.locator('[data-skill="sweep"] .battle-skill-cooldown').innerText(), /^[56]초$/, 'the cat skill keeps the2× real-second cooldown');
  await touch(page.locator('[data-skill="dash"]')); await touch(page.locator('[data-battle="auto"]'));
- await page.locator('.battle-result-layer').waitFor({ state: 'visible', timeout: 40000 });
+ await page.locator('.battle-result-layer').waitFor({ state: 'visible', timeout: 60000 });
  assert.match(await page.locator('.battle-result-layer').innerText(), /함께 해냈어요/, 'the unboosted dog and cat can win the first stage');
  await shot('fresh-animal-victory'); const first = await observation();
  assert.equal(first.samples.every(sample => sample.actors.every(actor => ['dog', 'cat'].includes(actor.id) && actor.owner === actor.id)), true, 'all rendered allies belong to animals throughout the entire fight');
@@ -167,7 +167,7 @@ try {
  }).sort((a, b) => a - b);
  assert.ok(frameRates.length > 20, 'many naturally rendered advancing frames are available for pace observation');
  const medianPace = frameRates[Math.floor(frameRates.length / 2)]; first.medianSimulationSecondsPerRealSecond = medianPace;
- assert.ok(medianPace > 2.6 && medianPace < 3.4, 'animal combat retains the shared3× real-frame pace');
+ assert.ok(medianPace > 1.6 && medianPace < 2.4, 'animal combat retains the shared2× real-frame pace');
  const afterFirst = await finish();
  assert.equal(afterFirst.health, beforeFresh.health, 'animal victory preserves farmer HP'); assert.equal(afterFirst.stats.battlesWon, beforeFresh.stats.battlesWon + 1);
  assert.equal(afterFirst.stats.defeatedEnemies, beforeFresh.stats.defeatedEnemies + 8, 'the actual three waves contain eight zombies');
@@ -196,11 +196,11 @@ try {
  assert.equal(healed.stats.battlesWon, injured.stats.battlesWon); assert.deepEqual(healed.resources, injured.resources, 'retreat provides no victory loot');
  for (const id of ['dog', 'cat']) { assert.equal(healed.companions[id].xp, injured.companions[id].xp, 'retreat grants no pet XP'); assert.ok(healed.companions[id].health > injured.companions[id].health && healed.companions[id].health < 100, 'actual healed percentage persists without being reset to full'); }
  await page.reload(); await page.locator('#resident-name').waitFor(); await pauseVillage(); assert.deepEqual((await saved()).companions, healed.companions, 'startup does not gift full pet HP');
- cases.push('Farmer3HP does not block animal entry; dogLv2/catLv3 get29 actual HP each,8-second team recovery holds while paused, retreat persists actual percentages and XP without loot or reload healing.');
+ cases.push('Farmer3HP does not block animal entry; dogLv2/catLv3 get29 actual HP each,12-second team recovery holds while paused, retreat persists actual percentages and XP without loot or reload healing.');
 
  const threshold = await fixture('동물 레벨 성장 경계 fixture', { health: 73, energy: 100, companions: { dog: { health: 80, xp: 79 }, cat: { health: 80, xp: 159 } } });
  await enter(); await observeBattle('Natural victory crosses declared pet XP boundaries'); await ready(); await touch(page.locator('[data-battle="auto"]'));
- await page.locator('.battle-result-layer').waitFor({ state: 'visible', timeout: 40000 });
+ await page.locator('.battle-result-layer').waitFor({ state: 'visible', timeout: 60000 });
  assert.match(await page.locator('.battle-result-layer').innerText(), /함께 해냈어요/); const thresholdActors = await actors(); await observation(); const leveled = await finish();
  for (const id of ['dog', 'cat']) {
   assert.equal(leveled.companions[id].xp, threshold.companions[id].xp + 20, 'one natural victory crosses the next level boundary');

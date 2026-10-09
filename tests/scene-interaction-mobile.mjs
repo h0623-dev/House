@@ -88,14 +88,14 @@ async function recordMotion(action, width) {
  const samples = await page.evaluate(() => { clearInterval(window.__sceneMotionTimer); return window.__sceneMotion; });
  const frames = samples.filter(sample => sample.frame?.kind === action), work = frames.filter(sample => sample.frame.phase === 'working');
  assert.ok(frames.length > Math.ceil(70 / GAME_SPEED_MULTIPLIER), 'the faster route remains observable over genuine animation frames');
- assert.ok(work.length >= Math.ceil(35 / GAME_SPEED_MULTIPLIER), 'the faster gathering still has a visible work phase');
- assert.ok(elapsedMs > realDuration(9500) && elapsedMs < realDuration(32000), 'the road journey and gathering finish within the faster real-time bounds');
- assert.ok(work.at(-1).at - work[0].at >= realDuration(3300), 'the work animation lasts at least the scaled real duration');
- assert.ok(work.every(sample => Math.abs(sample.frame.work - (action === 'gather' ? 3.8 : 4) / 3) < .002), 'the actual chore work duration is one third of its v0.14 duration');
+ assert.ok(work.length >= Math.ceil(30 / GAME_SPEED_MULTIPLIER), 'the gathering work phase has multiple70ms observations across its1.2-second duration');
+ assert.ok(elapsedMs > realDuration(9000) && elapsedMs < realDuration(32000), 'the road journey and gathering finish within the faster real-time bounds');
+ assert.ok(work.at(-1).at - work[0].at >= realDuration(2100), 'the work animation remains visible for at least1.05 real seconds, allowing70ms sample boundaries');
+ assert.ok(work.every(sample => Math.abs(sample.frame.work - (action === 'gather' ? 2.4 : 2.55) / 2) < .002), 'the current chore work duration uses the shared2× pace');
  assert.deepEqual([...new Set(frames.map(sample => sample.frame.phase))], ['outbound', 'working', 'returning'], 'the full journey has departure, sustained work, and return');
  assert.ok(work.every(sample => sample.frame.pose === action), 'the work phase uses its specific gathering or chopping pose');
  assert.ok(new Set(work.map(sample => sample.frame.progress)).size >= Math.ceil(25 / GAME_SPEED_MULTIPLIER), 'the work pose advances through a visible animation cycle');
- assert.ok(work.every(sample => Math.abs(sample.frame.gaitTime - (sample.frame.elapsed - sample.frame.walk) * 3) < .005), 'the work pose clock runs at three times elapsed real time');
+ assert.ok(work.every(sample => Math.abs(sample.frame.gaitTime - (sample.frame.elapsed - sample.frame.walk) * 2) < .005), 'the work pose clock runs at twice elapsed real time');
  for (const direction of ['down', 'up']) {
   const steps = frames.filter(sample => sample.frame.climbing === direction);
   assert.ok(steps.length > Math.ceil(15 / GAME_SPEED_MULTIPLIER), `the ${direction} ladder trip has multiple visible foot placements`);
@@ -106,7 +106,7 @@ async function recordMotion(action, width) {
  for (let index = 1; index < frames.length; index++) {
   const previous = frames[index - 1].frame, current = frames[index].frame, seconds = current.elapsed - previous.elapsed;
   assert.ok(seconds >= 0, 'animation time progresses monotonically');
-  const speed = (previous.climbing && previous.climbing === current.climbing ? 65 : 105) * GAME_SPEED_MULTIPLIER;
+  const speed = (previous.climbing && previous.climbing === current.climbing ? 60 : 100) * GAME_SPEED_MULTIPLIER * 2;
   assert.ok(Math.hypot(current.x - previous.x, current.y - previous.y) <= seconds * speed + .4, 'world-position samples stay continuous at walking or climbing speed');
  }
 

@@ -8,8 +8,8 @@ const version = JSON.parse(await readFile(new URL('../package.json', import.meta
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const legacyBaseUrl = process.env.LEGACY_TEST_BASE_URL || null;
 const startedAt = new Date();
-const expectedGameMinutesPerSecond = 6;
-const expectedSpeedMultiplier = 3;
+const expectedGameMinutesPerSecond = 4;
+const expectedSpeedMultiplier = 2;
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
 const assert = new Proxy(strictAssert, { get(target, key) { const value = Reflect.get(target, key); return typeof value === 'function' ? (...args) => { assertionsExecuted++; return value(...args); } : value; } });
@@ -22,7 +22,7 @@ const plots = () => page.locator('#world').evaluate(canvas => JSON.parse(canvas.
 const nav = section => page.locator(`[data-nav="${section}"]`);
 async function shot(name) { await page.waitForTimeout(80); const path = `artifacts/v${version}-farm-expansion-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
 async function touchPointFor(locator) {
- // One DOM measurement keeps phone taps responsive at the actual 3x chore
+ // One DOM measurement keeps phone taps responsive at the actual 2x chore
  // speed. Modal scrolling remains real; no game calls or fake clock are used.
  const measure = element => {
   const rect = element.getBoundingClientRect(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
@@ -118,7 +118,7 @@ async function buyPlot(label, wood, scrap) {
  for (const resource of ['food', 'water', 'seeds']) assert.equal(after.resources[resource], before.resources[resource]);
  assert.deepEqual(after.plots.at(-1), { id: before.plots.length + 1, plantedAt: null, watered: false });
  await assertContinuity(before, after, label); await page.waitForTimeout(500); assert.deepEqual((await saved()).resources, after.resources, 'construction never charges a second time');
- assert.ok(Date.now() - start > 1000 / expectedSpeedMultiplier, 'farm construction keeps a visible work animation at the actual 3x speed');
+ assert.ok(Date.now() - start > 1000 / expectedSpeedMultiplier, 'farm construction keeps a visible work animation at the actual 2x speed');
  return after;
 }
 async function worldAt(point, label) { assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, `${label}: a finger touches visible painted map`); }

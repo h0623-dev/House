@@ -181,7 +181,7 @@ async function chore(button, assertNotApplied, { workScreenshot, repeatTap = fal
  }
  await page.clock.runFor(100);
  const motion = await page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneAction));
- const expectedWork = { plant: .5, water: .5, harvest: .55, chop: .85, gather: .8, expand: .6 }[motion.kind];
+ const expectedWork = { plant: .75, water: .75, harvest: .825, chop: 1.275, gather: 1.2, expand: .9 }[motion.kind];
  assert.ok(expectedWork && Math.abs(motion.work - expectedWork) < .005, 'the faster work phase still retains its readable action duration');
  assert.ok(Math.abs(motion.total - (motion.walk * 2 + motion.work)) < .005, 'shortened outbound, work and return still form one complete chore');
  if (assertNotApplied) await assertNotApplied();
@@ -306,7 +306,8 @@ try {
  const food = (await save()).resources.food;
  await enterBattle(1);
  assert.equal((await save()).resources.food, food, 'entry must not grant the eventual battle reward');
- await page.clock.runFor(600);
+ // Preserve the same simulated entry transition at the two-times game pace.
+ await page.clock.runFor(900);
  await page.getByRole('button', { name: '전투 일시정지', exact: true }).click();
  const pausedTime = await page.locator('.battle-progress [data-battle-time]').textContent();
  await page.clock.runFor(3000);
@@ -314,7 +315,7 @@ try {
  await page.locator('[data-battle="resume"]').click();
  await page.locator('[data-skill="sweep"]').click();
  assert.equal(await page.locator('[data-skill="sweep"]').isDisabled(), true);
- assert.equal(await page.locator('[data-skill="sweep"] .battle-skill-cooldown').textContent(), '4초', 'the original 12-second skill displays its actual four-second cooldown');
+ assert.equal(await page.locator('[data-skill="sweep"] .battle-skill-cooldown').textContent(), '6초', 'the original 12-second skill displays its actual six-second cooldown');
  await page.locator('[data-battle="auto"]').click();
  await screenshot('mobile-battle');
  await page.setViewportSize({ width: 844, height: 390 });
@@ -330,7 +331,7 @@ try {
  let capturedBoss = false;
  for (let attempt = 0; attempt < 24; attempt++) {
   if (await page.locator('[data-battle="finish"]').count()) break;
-  await page.clock.runFor(1667);
+  await page.clock.runFor(2500);
   assert.equal(await page.locator('.battle-screen').count(), 1, 'battle remains open until the player returns');
   if (!capturedBoss && await page.locator('.battle-boss-label').isVisible()) {
    await screenshot('mobile-boss');
@@ -439,6 +440,8 @@ try {
  assert.ok(pending.expedition);
  await page.reload();
  await page.locator('#resident-name').getByText('노을').waitFor();
+ // The HUD renders before asynchronous startup patch checks persist recovery.
+ await page.getByText('이전 원정에서 안전하게 귀환했어요. 트럭에서 다시 출발할 수 있어요.', { exact: true }).waitFor();
  assert.equal((await save()).expedition, null);
  assert.equal((await save()).resources.food, pending.resources.food);
  assert.equal((await save()).energy, pending.energy);
