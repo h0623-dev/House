@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import strictAssert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { GAME_SPEED_MULTIPLIER, realDuration } from '../src/game-speed.ts';
 
 // Physical touch streams and real animation time; no fabricated pointer events,
 // browser clock advancement, direct game calls, or reward-producing saved fixtures.
@@ -86,24 +87,26 @@ async function recordMotion(action, width) {
  const elapsedMs = Date.now() - start, after = await saved();
  const samples = await page.evaluate(() => { clearInterval(window.__sceneMotionTimer); return window.__sceneMotion; });
  const frames = samples.filter(sample => sample.frame?.kind === action), work = frames.filter(sample => sample.frame.phase === 'working');
- assert.ok(frames.length > 70, 'the route is observable over many genuine animation frames');
- assert.ok(work.length >= 35, 'gathering includes a sustained visible work phase');
- assert.ok(elapsedMs > 9500 && elapsedMs < 32000, 'the road journey and gathering have an intentional bounded duration');
- assert.ok(work.at(-1).at - work[0].at >= 3300, 'the work animation lasts at least 3.3 real seconds');
+ assert.ok(frames.length > Math.ceil(70 / GAME_SPEED_MULTIPLIER), 'the faster route remains observable over genuine animation frames');
+ assert.ok(work.length >= Math.ceil(35 / GAME_SPEED_MULTIPLIER), 'the faster gathering still has a visible work phase');
+ assert.ok(elapsedMs > realDuration(9500) && elapsedMs < realDuration(32000), 'the road journey and gathering finish within the faster real-time bounds');
+ assert.ok(work.at(-1).at - work[0].at >= realDuration(3300), 'the work animation lasts at least the scaled real duration');
+ assert.ok(work.every(sample => Math.abs(sample.frame.work - (action === 'gather' ? 3.8 : 4) / 3) < .002), 'the actual chore work duration is one third of its v0.14 duration');
  assert.deepEqual([...new Set(frames.map(sample => sample.frame.phase))], ['outbound', 'working', 'returning'], 'the full journey has departure, sustained work, and return');
  assert.ok(work.every(sample => sample.frame.pose === action), 'the work phase uses its specific gathering or chopping pose');
- assert.ok(new Set(work.map(sample => sample.frame.progress)).size >= 25, 'the work pose advances through a visible animation cycle');
+ assert.ok(new Set(work.map(sample => sample.frame.progress)).size >= Math.ceil(25 / GAME_SPEED_MULTIPLIER), 'the work pose advances through a visible animation cycle');
+ assert.ok(work.every(sample => Math.abs(sample.frame.gaitTime - (sample.frame.elapsed - sample.frame.walk) * 3) < .005), 'the work pose clock runs at three times elapsed real time');
  for (const direction of ['down', 'up']) {
   const steps = frames.filter(sample => sample.frame.climbing === direction);
-  assert.ok(steps.length > 15, `the ${direction} ladder trip has multiple visible foot placements`);
+  assert.ok(steps.length > Math.ceil(15 / GAME_SPEED_MULTIPLIER), `the ${direction} ladder trip has multiple visible foot placements`);
   assert.ok(steps.every(sample => sample.frame.pose === 'climb'), 'ladder travel has a dedicated climbing pose');
-  assert.ok(steps.at(-1).at - steps[0].at > 1100, 'the ladder is traversed steadily instead of jumping between its ends');
+  assert.ok(steps.at(-1).at - steps[0].at > realDuration(1100), 'the faster ladder trip remains continuous between its ends');
   assert.ok(direction === 'down' ? steps.at(-1).frame.y > steps[0].frame.y : steps.at(-1).frame.y < steps[0].frame.y, 'ladder direction agrees with the drawn feet');
  }
  for (let index = 1; index < frames.length; index++) {
   const previous = frames[index - 1].frame, current = frames[index].frame, seconds = current.elapsed - previous.elapsed;
   assert.ok(seconds >= 0, 'animation time progresses monotonically');
-  const speed = previous.climbing && previous.climbing === current.climbing ? 65 : 105;
+  const speed = (previous.climbing && previous.climbing === current.climbing ? 65 : 105) * GAME_SPEED_MULTIPLIER;
   assert.ok(Math.hypot(current.x - previous.x, current.y - previous.y) <= seconds * speed + .4, 'world-position samples stay continuous at walking or climbing speed');
  }
 

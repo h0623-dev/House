@@ -1,4 +1,5 @@
 import { formatGameDuration, gameMinutesToSeconds } from './game-time';
+import { GAME_SPEED_MULTIPLIER, realDuration } from './game-speed';
 import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, type GameState, type Plot } from './game';
 import { drawHero, type HeroPose } from './actors';
 import { drawPet, drawZombie } from './creatures';
@@ -87,7 +88,7 @@ export class Scene {
     const elapsed = this.lastFrame ? Math.max(0, (timestamp - this.lastFrame) / 1000) : 0;
     const delta = Math.min(elapsed, .1);
     this.lastFrame = timestamp;
-    this.time += delta;
+    this.time += delta * GAME_SPEED_MULTIPLIER;
     if (this.action) {
       this.action.elapsed += elapsed;
       if (this.action.kind === 'chop' && this.action.elapsed >= this.action.walk + this.action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
@@ -317,6 +318,7 @@ export class Scene {
       path = [home, this.p(-156, 16, 95), this.p(-157, this.deckBounds().front - 19, 95)];
       work = 2.4;
     }
+    work = realDuration(work);
     const route = createMotionRoute(path, climbSegments), walk = route.duration;
     this.zone = 'home';
     this.lastFrame = performance.now();
@@ -557,7 +559,7 @@ export class Scene {
     }
     const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather' };
     return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
-      progress: this.actionProgress(), time: action.elapsed - action.walk };
+      progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
   private heroOnDeck() {
     const action = this.action;

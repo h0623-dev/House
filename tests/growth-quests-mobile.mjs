@@ -190,8 +190,12 @@ try {
   await claim('road-supplies', { repeat: true, reloadAfter: true }); await uiStatus('first-carrot', 'active'); await uiStatus('rainwater-home', 'locked');
   start = Date.now(); before = await go('first-carrot', { works: true }); await waitIdle(`quest-first-harvest-${width}`, start); assert.equal((await saved()).stats.harvests, 1); assert.equal((await saved()).resources.food, before.resources.food + 4); await claim('first-carrot');
   const waterworks = await buildForQuest('rainwater-home', 0); await claim('rainwater-home'); await go('first-delivery'); await page.locator(`[data-facility-start="${waterworks}"]`).waitFor();
-  before = await saved(); await touch(page.locator(`[data-facility-start="${waterworks}"]`)); let state = await saved(); assert.deepEqual(state.resources, before.resources); assert.equal(state.settlement.stats.productions, 1); assert.equal(facilities(state)[0].readyAt - facilities(state)[0].startedAt, 90);
-  if (width === 360) { start = Date.now(); await setPaused(false); await page.locator(`[data-facility-collect="${waterworks}"]`).waitFor({ state: 'visible', timeout: 55000 }); await pauseWorld(); timings.push({ name: 'quest-first-production-natural-90-minutes', elapsedMs: Date.now() - start }); assert.ok(Date.now() - start >= 42000); }
+  before = await saved(); await touch(page.locator(`[data-facility-start="${waterworks}"]`)); let state = await saved(); assert.deepEqual(state.resources, before.resources); assert.equal(state.settlement.stats.productions, 1); assert.equal(facilities(state)[0].readyAt - facilities(state)[0].startedAt, 90); assert.match(await page.locator('[data-production-status]').innerText(), /15초/, 'the unchanged first recipe now needs fifteen real seconds');
+  if (width === 360) {
+   start = Date.now(); await setPaused(false); await page.locator(`[data-facility-collect="${waterworks}"]`).waitFor({ state: 'visible', timeout: 23000 });
+   const elapsedMs = Date.now() - start; await pauseWorld(); timings.push({ name: 'quest-first-production-natural-fifteen-seconds', elapsedMs });
+   assert.ok(elapsedMs >= 13000 && elapsedMs <= 19000, 'the first quest production matures in fifteen real seconds with one-second tick and menu-travel tolerance');
+  }
   else { state = await saved(); state.name = '390 생산 시간 경과'; state.totalMinutes = facilities(state)[0].readyAt; state.day = Math.floor(state.totalMinutes / 1440) + 1; state.minutes = state.totalMinutes % 1440; await reload(state); await go('first-delivery'); }
   await touch(page.locator(`[data-facility-collect="${waterworks}"]`)); state = await saved(); assert.equal(state.resources.water, before.resources.water + 4); assert.equal(state.settlement.stats.collections, 1); await claim('first-delivery');
   assert.equal(await page.locator('[data-growth-board]').getAttribute('data-current-quest'), 'new-seeds', 'claiming the chapter finale directly displays the next task');

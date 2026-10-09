@@ -410,7 +410,7 @@ test('time ticks reject invalid elapsed time and aggregate multi-day costs', () 
   assert.equal(tick(state, NaN), state);
   assert.equal(advanceTime(state, Infinity), state);
   assert.equal(advanceTime(state, -1), state);
-  assert.equal(tick(state, 0.5).totalMinutes, state.totalMinutes + 1);
+  assert.equal(tick(state, 0.5).totalMinutes, state.totalMinutes + 3);
   const jump = advanceTime(state, 1440 * 8);
   assert.equal(jump.day, 9);
   assert.equal(jump.resources.food, 0);
@@ -590,7 +590,7 @@ test('victories grant stage-specific loot once and record the actual health and 
   assert.equal(won.state.stats.hunts, 1);
   assert.equal(won.state.stats.battlesWon, 1);
   assert.equal(won.state.stats.defeatedEnemies, 12);
-  assert.equal(won.state.totalMinutes, initial.totalMinutes + 85);
+  assert.equal(won.state.totalMinutes, initial.totalMinutes + 255);
   assert.equal(started.expedition?.id, 1);
   assert.equal(finishHunt(won.state, result, 1).ok, false);
   assert.equal(finishHunt(won.state, result, 1).state, won.state);

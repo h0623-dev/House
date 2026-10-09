@@ -1,3 +1,5 @@
+import { GAME_SPEED_MULTIPLIER, realDuration } from './game-speed';
+
 export type MotionPoint = readonly [number, number];
 export type MotionSurface = 'walk' | 'climb';
 export interface MotionSegment {
@@ -25,8 +27,8 @@ export interface MotionSample {
   climbing?: 'up' | 'down';
 }
 
-export const WALK_SPEED = 100;
-export const CLIMB_SPEED = 60;
+export const WALK_SPEED = 100 * GAME_SPEED_MULTIPLIER;
+export const CLIMB_SPEED = 60 * GAME_SPEED_MULTIPLIER;
 const finitePoint = (point: MotionPoint): boolean => point.length === 2 && point.every(Number.isFinite);
 
 /** Geometry sets journey time; a long truck or ladder cannot become a faster walk. */
@@ -41,7 +43,7 @@ export function createMotionRoute(points: readonly MotionPoint[], climbSegments:
     segments.push({ from, to, distance, surface, seconds: distance / (surface === 'climb' ? CLIMB_SPEED : WALK_SPEED) });
   }
   const travelSeconds = segments.reduce((sum, segment) => sum + segment.seconds, 0);
-  const rampSeconds = Math.min(.18, travelSeconds * .2);
+  const rampSeconds = Math.min(realDuration(.18), travelSeconds * .2);
   return { segments, origin: [...points[0]], destination: [...points[points.length - 1]],
     distance: segments.reduce((sum, segment) => sum + segment.distance, 0), travelSeconds, rampSeconds, duration: travelSeconds + rampSeconds };
 }

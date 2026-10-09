@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, createGame, loadGame, performAction, SAVE_KEY, saveGame, tick, type GameState, type SaveStorage } from '../src/game.ts';
 import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getBuiltTypes, getUpgradedFacilityRecord, getFacilityHistory, validateFacilityHistory, getProductionCost, getSettlement, getSettlementGoals, getUnlockedSlots, getUpgradeCost, moveFacility, replaceFacility, startProduction, upgradeFacility, validateSettlement, type BuildingType } from '../src/settlement.ts';
+import { GAME_MINUTES_PER_SECOND } from '../src/game-time.ts';
 
 function memoryStorage(): SaveStorage {
   const values = new Map<string, string>();
@@ -186,7 +187,7 @@ test('production is capped at one batch and can only be collected once at the ex
   const initial = startProduction(withBuilding(), 1).state;
   const duplicate = startProduction(initial, 1);
   assert.equal(duplicate.ok, false); assert.equal(duplicate.state, initial);
-  const almost = tick(initial, BUILDINGS.waterworks.minutes / 2 - 0.5);
+  const almost = tick(initial, BUILDINGS.waterworks.minutes / GAME_MINUTES_PER_SECOND - 0.5);
   const tooEarly = collectProduction(almost, 1);
   assert.equal(tooEarly.ok, false); assert.equal(tooEarly.state, almost);
   const ready = tick(almost, 0.5);

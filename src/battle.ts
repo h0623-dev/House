@@ -1,3 +1,5 @@
+import { GAME_SPEED_MULTIPLIER, realDuration } from './game-speed';
+
 /** Small deterministic combat engine. No DOM, wall clock or random state. */
 export type BattleOutcome = 'victory' | 'defeat' | 'retreat';
 export type BattleSkill = 'sweep' | 'dash' | 'heal';
@@ -6,7 +8,7 @@ export interface BattleResult {
   stage: number;
   remainingHealth: number;
   enemiesDefeated: number;
-  /** Active battle time, in seconds; pauses and hidden time never count. */
+  /** Active elapsed real seconds; pauses and hidden time never count. */
   duration: number;
 }
 export interface BattleEnemy {
@@ -31,6 +33,7 @@ export interface BattleEvent {
 export interface BattleState {
   stage: number;
   wave: number;
+  /** Simulation seconds at the original combat pace. */
   time: number;
   health: number;
   maxHealth: number;
@@ -78,7 +81,8 @@ export class BattleSimulation {
   tick(delta: number): void {
     const s = this.state;
     if (s.paused || s.result || !Number.isFinite(delta) || delta <= 0) return;
-    let remaining = Math.min(delta, 0.1);
+    // Clamp elapsed real time before accelerating, so a resumed frame cannot catch up.
+    let remaining = Math.min(delta, 0.1) * GAME_SPEED_MULTIPLIER;
     // Fixed maximum internal step means movement, hits and cooldowns stay stable.
     while (remaining > 0.000001 && !s.result) {
       const step = Math.min(remaining, 1 / 60);
@@ -214,6 +218,6 @@ export class BattleSimulation {
 
   private finish(outcome: BattleOutcome): void {
     const s = this.state;
-    s.result = { outcome, stage: s.stage, remainingHealth: Math.max(1, Math.round(s.health)), enemiesDefeated: s.enemiesDefeated, duration: Math.round(s.time) };
+    s.result = { outcome, stage: s.stage, remainingHealth: Math.max(1, Math.round(s.health)), enemiesDefeated: s.enemiesDefeated, duration: Math.round(realDuration(s.time)) };
   }
 }

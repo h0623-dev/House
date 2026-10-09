@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import strictAssert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { GAME_SPEED_MULTIPLIER, realDuration } from '../src/game-speed.ts';
 
 // Real CDP touch streams and mouse drags, genuine animation time, read-only
 // scene coordinates. The one declared empty-farm save fixture changes no resources.
@@ -32,7 +33,9 @@ async function setWorldPaused(paused) {
  await touch(page.locator('[data-open="menu"]')); await touch(page.locator('#modal-root [data-open="settings"]'));
  const button = page.locator('#modal-root [data-pause]'); const currentlyPaused = (await button.innerText()).trim() === '계속하기';
  if (currentlyPaused !== paused) await touch(button);
+ const changedAt = Date.now();
  await touch(page.locator('#modal-root .modal-close'));
+ return changedAt;
 }
 async function pauseWorld() { await setWorldPaused(true); }
 async function resetView() { await touch(page.locator('[data-map-reset]')); await page.waitForTimeout(850); assert.equal((await geometry()).mapZoom, 1); }
@@ -162,22 +165,40 @@ try {
   assert.equal(await page.locator('#planting-toolbar').getAttribute('data-farm-mode'), 'plant'); await shot(`farm-pan-tool-${width}`); await touch(page.locator('[data-plant-cancel]'));
 
   await touch(nav('hunt')); await touch(page.locator('[data-zone="grove"]')); await page.waitForTimeout(900); await resetView(); await pan(`${width} grove`, { x: 41, y: 23 }); await shot(`grove-panned-${width}`); await resetView();
-  const beforeGather = await saved(), gatherStart = Date.now(); await touch(page.locator('[data-quick="gather"]')); await waitWork(); await page.waitForFunction(() => JSON.parse(document.querySelector('#world').dataset.sceneAction || 'null')?.elapsed > 1, null, { timeout: 3000 });
+  const beforeGather = await saved(), gatherStart = Date.now();
+  await page.evaluate(() => {
+   window.__panGatherSamples = [];
+   window.__panGatherTimer = setInterval(() => {
+    const canvas = document.querySelector('#world');
+    window.__panGatherSamples.push({ at: performance.now(), busy: document.querySelector('#app')?.getAttribute('aria-busy') === 'true',
+     action: JSON.parse(canvas?.dataset.sceneAction || 'null'), state: JSON.parse(localStorage.getItem('road-haven-save-v1')) });
+   }, 50);
+  });
+  await touch(page.locator('[data-quick="gather"]')); await waitWork(); await page.waitForFunction(minimum => JSON.parse(document.querySelector('#world').dataset.sceneAction || 'null')?.elapsed > minimum, realDuration(1), { timeout: 3000 });
   await handMode(true); await fits(`working ${width}`);
-  const held = await pan(`${width} ongoing gathering`, { x: 38, y: -24 }); const phases = [];
+  const held = await pan(`${width} ongoing gathering`, { x: 38, y: -24 }), heldAt = await page.evaluate(() => performance.now());
   for (;;) {
    const snapshot = await page.evaluate(() => ({ busy: document.querySelector('#app').getAttribute('aria-busy') === 'true', geometry: JSON.parse(document.querySelector('#world').dataset.sceneGeometry), action: JSON.parse(document.querySelector('#world').dataset.sceneAction || 'null'), state: JSON.parse(localStorage.getItem('road-haven-save-v1')) }));
    if (!snapshot.busy) break;
    const current = snapshot.geometry, action = snapshot.action;
    assert.ok(Math.abs(current.dx - held.dx) < 2 && Math.abs(current.dy - held.dy) < 2 && Math.abs(current.scale - held.scale) < .004, 'the manually placed camera stays fixed while walking, climbing, working and returning');
-   assert.deepEqual(snapshot.state.resources, beforeGather.resources, 'moving the view cannot grant materials before work finishes'); if (action) phases.push(action.phase);
-   assert.ok(Date.now() - gatherStart < 35000, 'camera control never stalls the actual gathering task'); await page.waitForTimeout(270);
+   assert.deepEqual(snapshot.state.resources, beforeGather.resources, 'moving the view cannot grant materials before work finishes');
+   assert.ok(Date.now() - gatherStart < realDuration(35000), 'camera control never stalls the faster gathering task'); await page.waitForTimeout(realDuration(270));
   }
+  const gatherSamples = await page.evaluate(() => { clearInterval(window.__panGatherTimer); return window.__panGatherSamples; });
+  const actualGather = gatherSamples.filter(sample => sample.action?.kind === 'gather'), phases = actualGather.map(sample => sample.action.phase);
+  assert.ok(actualGather.some(sample => sample.at >= heldAt && sample.busy), 'the manual camera is held during the faster live chore');
+  for (const sample of actualGather.filter(sample => sample.busy)) assert.deepEqual(sample.state.resources, beforeGather.resources, 'the faster departure, work and return do not pay early');
   const gathered = await saved(), finished = await geometry(); assert.ok(phases.includes('working') && phases.includes('returning')); assert.ok(Math.abs(finished.dx - held.dx) < 2 && Math.abs(finished.dy - held.dy) < 2, 'finishing the chore does not snap a user-controlled view back');
   assert.equal(gathered.stats.gathers, beforeGather.stats.gathers + 1); assert.equal(gathered.resources.wood, beforeGather.resources.wood + 10); assert.equal(gathered.resources.scrap, beforeGather.resources.scrap + 5); assert.equal(gathered.resources.seeds, beforeGather.resources.seeds + 3); assert.equal(gathered.energy, beforeGather.energy - 10); await page.waitForTimeout(450); assert.deepEqual((await saved()).resources, gathered.resources, 'a moved camera does not duplicate the reward');
   timings.push({ name: `complete gathering while camera held ${width}`, elapsedMs: Date.now() - gatherStart }); await shot(`finished-work-held-view-${width}`); await resetView();
-  await touch(nav('home')); await setWorldPaused(false);
-  await page.waitForFunction(() => { const state = JSON.parse(localStorage.getItem('road-haven-save-v1')); return state.totalMinutes >= state.settlement.buildings[0].readyAt; }, null, { timeout: 55000 });
+  await touch(nav('home')); const beforeClockResume = await saved(), productionStart = await setWorldPaused(false);
+  // Read the live map state. Saves occur every ten seconds and can lag the
+  // visible production completion by a full save interval.
+  await page.waitForFunction(() => JSON.parse(document.querySelector('#world').dataset.settlementSlots).find(slot => slot.buildingId === 1)?.action === 'facility-collect', null, { timeout: realDuration(55000) + 3000 });
+  const productionElapsed = Date.now() - productionStart, expectedProductionMs = (beforeClockResume.settlement.buildings[0].readyAt - beforeClockResume.totalMinutes) / (2 * GAME_SPEED_MULTIPLIER) * 1000;
+  assert.ok(productionElapsed >= expectedProductionMs - 1500 && productionElapsed <= expectedProductionMs + 3500, `production completes at three times the original real-time rate (${productionElapsed}ms observed, ${expectedProductionMs}ms expected)`);
+  timings.push({ name: `naturally completed faster production ${width}`, elapsedMs: productionElapsed, expectedMs: expectedProductionMs });
   await pauseWorld(); await resetView(); const readyBubble = await facilityActionPoint(1); assert.equal(readyBubble.action, 'facility-collect'); const beforeCollect = await saved(); await worldAt(readyBubble); await page.touchscreen.tap(readyBubble.x, readyBubble.y);
   const collected = await saved(); assert.equal(collected.resources.water, beforeCollect.resources.water + 4, 'the ready map bubble collects the naturally completed water batch'); assert.equal(collected.settlement.buildings[0].readyAt, null); assert.equal(await page.locator('#facility-sheet').isVisible(), false, 'direct collection keeps the village map available');
   await touch(nav('home')); await page.waitForTimeout(900); await fits(`home after chore ${width}`); await shot(`home-controls-${width}`);

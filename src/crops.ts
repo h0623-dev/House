@@ -5,7 +5,7 @@ export interface CropDefinition {
   id: CropId;
   name: string;
   seedName: string;
-  /** In-game minutes; one real second advances the clock by two minutes. */
+  /** Stored game minutes; the shared village pace determines elapsed real seconds. */
   growMinutes: number;
   food: number;
   seedReturn: number;

@@ -5,6 +5,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 // Exercise the seed-selection and queued planting flow with actual touch input
 // and browser time. Mature-crop fixtures only skip the crop-growing wait.
 const startedAt = new Date();
+const expectedGameMinutesPerSecond = 6;
+const expectedSpeedMultiplier = 3;
 const appVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const crops = [
@@ -31,14 +33,25 @@ const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-ha
 const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const plantingMode = () => page.locator('#planting-toolbar');
+async function touchPointFor(locator) {
+ // One DOM measurement keeps phone taps responsive at the actual 3x chore
+ // speed. Modal scrolling remains real; no game calls or fake clock are used.
+ const measure = element => {
+  const rect = element.getBoundingClientRect(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+  return { x, y, width: rect.width, height: rect.height, onScreen: rect.x >= 0 && rect.y >= 0 && rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1,
+   farmTray: Boolean(element.closest('#farm-tray')), reached: document.elementFromPoint(x, y)?.closest('button') === element };
+ };
+ let point = await locator.evaluate(measure);
+ if ((!point.width || !point.height) && point.farmTray) { await touch(nav('farm')); point = await locator.evaluate(measure); }
+ if (!point.onScreen && point.width && point.height) { await locator.scrollIntoViewIfNeeded(); point = await locator.evaluate(measure); }
+ assert.ok(point.width > 0 && point.height > 0, 'a touchscreen control is rendered');
+ assert.equal(point.reached, true, 'the actual finger coordinate reaches its intended control');
+ return { x: point.x, y: point.y };
+}
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(nav('farm'));
- await locator.scrollIntoViewIfNeeded();
- const box = await locator.boundingBox();
- assert.ok(box, 'the intended touch target is rendered');
- const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
- assert.equal(await locator.evaluate((button, point) => button === document.elementFromPoint(point.x, point.y)?.closest('button'), point), true, 'the intended touch must reach this button');
+ const point = await touchPointFor(locator);
  await page.touchscreen.tap(point.x, point.y);
+ return point;
 }
 async function shot(name) {
  const path = `artifacts/v${appVersion}-seeds-${name}.png`;
@@ -107,6 +120,12 @@ async function plotPoint(id) {
   return { x: rect.left + geometry.dx + x * geometry.scale, y: rect.top + geometry.dy + y * geometry.scale };
  }, id);
 }
+async function preparePlotPoints(ids) {
+ const points = new Map(await Promise.all(ids.map(async id => [id, await plotPoint(id)])));
+ for (const [id, point] of points) assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, `plot ${id} is physically reachable before the fast touch sequence`);
+ return points;
+}
+async function tapPreparedPlot(points, id) { const point = points.get(id); await page.touchscreen.tap(point.x, point.y); }
 async function touchPlot(id) {
  const point = await plotPoint(id);
  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, `painted plot ${id} stays clear of the mobile HUD`);
@@ -116,7 +135,7 @@ async function waitBusy() {
  await page.waitForFunction(() => document.querySelector('#app').getAttribute('aria-busy') === 'true', null, { timeout: 1500 });
  assert.equal(await page.locator('.chore-status').isVisible(), true, 'the character visibly performs planting');
 }
-async function waitIdle(label, started, timeout = 30000) {
+async function waitIdle(label, started, timeout = 18000) {
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout });
  const elapsedMs = Date.now() - started;
  timings.push({ name: label, elapsedMs });
@@ -144,7 +163,7 @@ async function assertInventoryLayout(width, height) {
   assert.ok(box && box.width >= 44 && box.height >= 44, `${crop.name} seed has a finger-sized target`);
   assert.ok(box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${crop.name} card is reachable by scrolling the inventory`);
   assert.match(await card.innerText(), new RegExp(crop.name));
-  assert.match(await card.innerText(), new RegExp(`${Math.ceil(crop.minutes / 2)}초`));
+  assert.match(await card.innerText(), new RegExp(`${Math.ceil(crop.minutes / expectedGameMinutesPerSecond)}초`));
   const sources = await card.locator('img, svg image').evaluateAll(images => images.map(image => image.getAttribute('src') || image.getAttribute('href')).filter(Boolean));
   assert.ok(sources.length, `${crop.name} has illustrated seed art`);
   assert.equal(await card.locator('.crop-icon').getAttribute('aria-label'), `${crop.name} 씨앗`, 'crop art describes the actual chosen species');
@@ -197,14 +216,15 @@ try {
   await fixture(empty);
   await chooseSeed('corn');
   await assertPlantingLayout(width, height);
+  const queuePoints = await preparePlotPoints([1, 2, 3]);
   const queueStart = Date.now();
-  await touchPlot(1);
+  await tapPreparedPlot(queuePoints, 1);
   await waitBusy();
-  await touchPlot(2);
-  await touchPlot(2); // The same queued plot may be selected only once.
-  await touchPlot(3);
-  await touchPlot(1); // The currently worked plot also may not be queued again.
-  await page.waitForTimeout(350);
+  await tapPreparedPlot(queuePoints, 2);
+  await tapPreparedPlot(queuePoints, 2); // The same queued plot may be selected only once.
+  await tapPreparedPlot(queuePoints, 3);
+  await tapPreparedPlot(queuePoints, 1); // The current plot may not be queued again.
+  await page.waitForTimeout(100);
   assert.equal((await saved()).resources.seeds, 24, 'queued planting does not give an early resource commit');
   assert.equal((await saved()).plots.every(plot => plot.plantedAt === null), true);
   await shot(`queued-working-${width}`);
@@ -223,7 +243,7 @@ try {
   const continueStart = Date.now();
   await touchPlot(8);
   await waitBusy();
-  await waitIdle(`continued-plot-eight-${width}`, continueStart, 14000);
+  await waitIdle(`continued-plot-eight-${width}`, continueStart, 9000);
   state = await saved();
   assert.equal(state.plots[7].cropId, 'corn', 'the eighth painted plot accepts a continuous-mode touch');
   assert.equal(state.seedInventory.corn, 0);
@@ -251,17 +271,19 @@ try {
 
   await fixture(empty);
   await chooseSeed('potato');
+  const cancelPoints = await preparePlotPoints([1, 2, 3]);
+  const homePoint = await touchPointFor(nav('home')), farmPoint = await touchPointFor(nav('farm')), stopPoint = await touchPointFor(page.locator('[data-plant-cancel]'));
   const cancelStart = Date.now();
-  await touchPlot(1);
+  await tapPreparedPlot(cancelPoints, 1);
   await waitBusy();
-  await touchPlot(2);
-  await touchPlot(3);
-  await touch(nav('home'));
+  await tapPreparedPlot(cancelPoints, 2);
+  await tapPreparedPlot(cancelPoints, 3);
+  await page.touchscreen.tap(homePoint.x, homePoint.y);
   assert.equal(await nav('home').getAttribute('aria-current'), 'page', 'home can be viewed while the chosen planting job is active');
-  await touch(nav('farm'));
+  await page.touchscreen.tap(farmPoint.x, farmPoint.y);
   assert.equal(await plantingMode().getAttribute('data-farm-mode'), 'plant', 'reopening the farm during work keeps the selected seed tool');
-  await touch(page.locator('[data-plant-cancel]'));
-  await waitIdle(`home-farm-then-explicit-cancel-only-future-work-${width}`, cancelStart, 14000);
+  await page.touchscreen.tap(stopPoint.x, stopPoint.y);
+  await waitIdle(`home-farm-then-explicit-cancel-only-future-work-${width}`, cancelStart, 9000);
   state = await saved();
   assert.equal(state.plots[0].cropId, 'potato');
   assert.equal(state.plots.slice(1).every(plot => plot.plantedAt === null), true, 'cancel discards every queued planting after the current visible job');
@@ -272,11 +294,12 @@ try {
   if (width === 360) {
    await fixture(empty);
    await chooseSeed('potato');
+   const changePoints = await preparePlotPoints([1, 2]), changePoint = await touchPointFor(plantingMode().locator('[data-seed-change]'));
    const changeStart = Date.now();
-   await touchPlot(1);
+   await tapPreparedPlot(changePoints, 1);
    await waitBusy();
-   await touchPlot(2);
-   await touch(plantingMode().locator('[data-seed-change]'));
+   await tapPreparedPlot(changePoints, 2);
+   await page.touchscreen.tap(changePoint.x, changePoint.y);
    assert.equal((await page.locator('[data-seed-count="potato"]').innerText()).trim(), '3', 'the old queued plot releases its seed reservation while the current job keeps one');
    await touch(page.locator('[data-select-seed="strawberry"]'));
    // Opening seed selection lets the actor camera move while work continues.
@@ -294,13 +317,14 @@ try {
 
    await fixture(empty);
    await chooseSeed('tomato');
+   const navPoints = await preparePlotPoints([1, 2]), homePoint = await touchPointFor(nav('home'));
    const navStart = Date.now();
-   await touchPlot(1);
+   await tapPreparedPlot(navPoints, 1);
    await waitBusy();
-   await touchPlot(2);
-   await touch(nav('home'));
+   await tapPreparedPlot(navPoints, 2);
+   await page.touchscreen.tap(homePoint.x, homePoint.y);
    assert.equal(await nav('home').getAttribute('aria-current'), 'page', 'requested home view opens during the current chore');
-   await waitIdle('home-view-preserves-chosen-queued-planting', navStart, 18000);
+   await waitIdle('home-view-preserves-chosen-queued-planting', navStart, 14000);
    state = await saved();
    assert.equal(state.plots[0].cropId, 'tomato');
    assert.equal(state.plots[1].cropId, 'tomato', 'viewing home preserves the planting job already chosen by the player');
@@ -322,7 +346,7 @@ try {
    const recoveryStart = Date.now();
    await touch(page.locator('[data-rest-retry="plant"]'));
    await waitBusy();
-   await waitIdle('rest-and-plant-selected-pumpkin', recoveryStart, 14000);
+   await waitIdle('rest-and-plant-selected-pumpkin', recoveryStart, 9000);
    state = await saved();
    assert.equal(state.plots[0].cropId, 'pumpkin', 'recovery keeps the user-selected seed');
    assert.equal(state.seedInventory.pumpkin, 3);
@@ -340,7 +364,7 @@ try {
    await touch(page.locator('[data-plant-all]'));
    await waitBusy();
    await touch(page.locator('[data-plant-all]'));
-   await waitIdle('plant-all-reserves-only-available-seeds', allStart, 60000);
+   await waitIdle('plant-all-reserves-only-available-seeds', allStart, 30000);
    state = await saved();
    assert.equal(state.plots.filter(plot => plot.cropId === 'carrot').length, 4);
    assert.equal(state.plots.slice(4).every(plot => plot.plantedAt === null), true);
@@ -391,9 +415,9 @@ try {
     const before = await saved(), harvestStart = Date.now();
     await touch(page.locator('#plot-action'));
     await waitBusy();
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(80);
     assert.equal((await saved()).resources.food, before.resources.food, 'harvest waits for visible work before awarding food');
-    await waitIdle(`harvest-${crop.id}`, harvestStart, 14000);
+    await waitIdle(`harvest-${crop.id}`, harvestStart, 9000);
     state = await saved();
     assert.equal(state.resources.food, before.resources.food + crop.food, `${crop.name} awards its documented food amount`);
     assert.equal(state.seedInventory[crop.id], before.seedInventory[crop.id] + 2, `${crop.name} returns its own seeds`);
@@ -455,7 +479,7 @@ try {
  assert.deepEqual(errors, []);
  assert.deepEqual(failedAssets, []);
  await writeFile(`artifacts/seed-inventory-v${appVersion}-verification.json`, JSON.stringify({
-  version: appVersion, status: 'passed', baseUrl,
+  version: appVersion, status: 'passed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl,
   input: 'Actual touchscreen tap coordinates in mobile browser contexts',
   clock: 'Real browser timers and requestAnimationFrame; no page.clock',
   growthFixtures: 'Only crop-growing wait is skipped using valid half-grown and mature saved plots',
@@ -469,7 +493,7 @@ try {
  console.log(`PASS: ${assertionsExecuted} real-touch seed-inventory assertions; ${timings.length} real-time work sequences; six varieties, continued canvas planting, queue/cancel/change/navigation, resource recovery, crop-specific growth/harvest and legacy save migration.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
-  await writeFile(`artifacts/seed-inventory-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, status: 'failed', baseUrl, assertionsExecuted, cases, timings, screenshots, errors, failedAssets, canceledImageRequests, failure: String(error) }, null, 2) + '\n');
+  await writeFile(`artifacts/seed-inventory-v${appVersion}-verification.json`, JSON.stringify({ version: appVersion, status: 'failed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, assertionsExecuted, cases, timings, screenshots, errors, failedAssets, canceledImageRequests, failure: String(error) }, null, 2) + '\n');
  throw error;
 } finally {
  await browser.close();

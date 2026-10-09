@@ -1,4 +1,5 @@
 import { BattleSimulation, SKILL_COOLDOWNS, STAGE_NAMES, type BattleEnemy, type BattleResult, type BattleSkill } from './battle';
+import { realDuration } from './game-speed';
 import { drawHero } from './actors';
 import { drawPet, drawZombie } from './creatures';
 import { drawBattleLandscape } from './battle-art';
@@ -201,7 +202,7 @@ export class BattleView {
   private renderHUD(): void {
     const s = this.simulation.state;
     this.root.querySelector('[data-battle-wave]')!.textContent = `WAVE ${s.wave} / 3`;
-    this.root.querySelector('[data-battle-time]')!.textContent = `${Math.floor(s.time)}초`;
+    this.root.querySelector('[data-battle-time]')!.textContent = `${Math.floor(realDuration(s.time))}초`;
     this.root.querySelectorAll('.battle-wave-dots i').forEach((dot, i) => { dot.className = i < s.wave - 1 ? 'done' : i === s.wave - 1 ? 'current' : ''; });
     this.root.querySelector('[data-battle-health-label]')!.textContent = `${Math.ceil(s.health)} / 100`;
     const health = this.root.querySelector<HTMLElement>('.battle-health-track')!;
@@ -216,7 +217,7 @@ export class BattleView {
       const remaining = s.cooldowns[skill.id];
       button.disabled = remaining > 0 || s.paused || s.transition > 0 || !!s.result || (skill.id === 'heal' && s.health >= 100);
       button.style.setProperty('--cooldown', `${remaining / SKILL_COOLDOWNS[skill.id] * 100}%`);
-      button.querySelector('.battle-skill-cooldown')!.textContent = remaining > 0 ? `${Math.ceil(remaining)}초` : skill.id === 'heal' && s.health >= 100 ? '체력 가득' : 'READY';
+      button.querySelector('.battle-skill-cooldown')!.textContent = remaining > 0 ? `${Math.ceil(realDuration(remaining))}초` : skill.id === 'heal' && s.health >= 100 ? '체력 가득' : 'READY';
     }
     const banner = this.root.querySelector<HTMLElement>('.battle-wave-banner')!;
     banner.classList.toggle('visible', s.transition > 0 && !s.result);

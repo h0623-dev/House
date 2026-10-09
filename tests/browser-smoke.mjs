@@ -168,6 +168,7 @@ function paintedPlot(id) {
 async function chore(button, assertNotApplied, { workScreenshot, repeatTap = false } = {}) {
  if (typeof button.getAttribute === 'function' && await button.getAttribute('data-quick')) await openFarmTray();
  const box = await button.boundingBox();
+ const pausedClock = await page.locator('.time-button').getAttribute('aria-label') === '시간 계속' ? await page.locator('#clock').textContent() : null;
  await button.click();
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true');
  assert.equal(await page.locator('#modal-root').isVisible(), false, 'chores play in the game without a farm dialog');
@@ -176,15 +177,21 @@ async function chore(button, assertNotApplied, { workScreenshot, repeatTap = fal
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
  }
- await page.clock.runFor(300);
+ await page.clock.runFor(100);
+ const motion = await page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneAction));
+ const baseWork = { plant: 1.9, water: 2.1, harvest: 2.2, chop: 4, gather: 3.8, expand: 2.4 }[motion.kind];
+ assert.ok(baseWork && Math.abs(motion.work - baseWork / 3) < .005, 'the visible work phase uses one third of its original real duration');
+ assert.ok(Math.abs(motion.total - (motion.walk * 2 + motion.work)) < .005, 'shortened outbound, work and return still form one complete chore');
  if (assertNotApplied) await assertNotApplied();
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true');
- await page.clock.runFor(1300);
- assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true', 'the character must visibly work before resources change');
+ await page.clock.runFor(Math.max(0, Math.ceil((motion.walk + motion.work / 2) * 1000) - 100));
+ assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true', 'the resident visibly works before the single resource commit');
+ if (assertNotApplied) await assertNotApplied();
  if (workScreenshot) await screenshot(workScreenshot);
  // Travel now follows physical distance, including the complete ladder trip.
  for (let elapsed = 0; elapsed < 30000 && await page.locator('#app').getAttribute('aria-busy'); elapsed += 500) await page.clock.runFor(500);
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), null, 'the distance-based chore completes within the bounded route time');
+ if (pausedClock !== null) assert.equal(await page.locator('#clock').textContent(), pausedClock, 'a shortened chore never advances the paused village clock on completion');
 }
 
 async function enterBattle(stage = 1) {
@@ -294,7 +301,7 @@ try {
  const food = (await save()).resources.food;
  await enterBattle(1);
  assert.equal((await save()).resources.food, food, 'entry must not grant the eventual battle reward');
- await page.clock.runFor(1800);
+ await page.clock.runFor(600);
  await page.getByRole('button', { name: '전투 일시정지', exact: true }).click();
  const pausedTime = await page.locator('[data-battle-time]').textContent();
  await page.clock.runFor(3000);
@@ -302,6 +309,7 @@ try {
  await page.locator('[data-battle="resume"]').click();
  await page.locator('[data-skill="sweep"]').click();
  assert.equal(await page.locator('[data-skill="sweep"]').isDisabled(), true);
+ assert.equal(await page.locator('[data-skill="sweep"] .battle-skill-cooldown').textContent(), '4초', 'the original 12-second skill displays its actual four-second cooldown');
  await page.locator('[data-battle="auto"]').click();
  await screenshot('mobile-battle');
  await page.setViewportSize({ width: 844, height: 390 });
@@ -317,7 +325,7 @@ try {
  let capturedBoss = false;
  for (let attempt = 0; attempt < 24; attempt++) {
   if (await page.locator('[data-battle="finish"]').count()) break;
-  await page.clock.runFor(5000);
+  await page.clock.runFor(1667);
   assert.equal(await page.locator('.battle-screen').count(), 1, 'battle remains open until the player returns');
   if (!capturedBoss && await page.locator('.battle-boss-label').isVisible()) {
    await screenshot('mobile-boss');

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, getCropProgress, performAction, saveGame, tick, type SaveStorage } from '../src/game.ts';
 import { buildFacility, collectProduction, startProduction } from '../src/settlement.ts';
+import { realDuration } from '../src/game-speed.ts';
 
 function memoryStorage(): SaveStorage {
   const values = new Map<string, string>();
@@ -12,7 +13,7 @@ test('an animated gathering commit awards one result without replaying elapsed t
   let state = createGame();
   state = buildFacility(state, 'waterworks', 0).state;
   state = startProduction(state, 1).state;
-  state = tick(state, 10);
+  state = tick(state, realDuration(10));
   const before = structuredClone(state);
   const completed = performAction(state, 'gather', undefined, 'carrot', { advanceClock: false });
   assert.equal(completed.ok, true);
@@ -29,9 +30,9 @@ test('an animated gathering commit awards one result without replaying elapsed t
   assert.equal(completed.state.stats.gathers, state.stats.gathers + 1);
   assert.equal(completed.state.settlement!.buildings[0].readyAt! - completed.state.totalMinutes, 70);
   assert.equal(collectProduction(completed.state, 1).ok, false);
-  const nearlyReady = tick(completed.state, 34);
+  const nearlyReady = tick(completed.state, realDuration(34));
   assert.equal(collectProduction(nearlyReady, 1).ok, false);
-  const ready = tick(nearlyReady, 1);
+  const ready = tick(nearlyReady, realDuration(1));
   const collected = collectProduction(ready, 1);
   assert.equal(collected.ok, true);
   assert.equal(collected.state.resources.water, completed.state.resources.water + 4);
@@ -43,14 +44,14 @@ test('finishing an animated chore cannot cross midnight before its real countdow
   const state = createGame();
   state.minutes = 1400;
   state.totalMinutes = 1400;
-  const walking = tick(state, 10);
+  const walking = tick(state, realDuration(10));
   assert.equal(walking.totalMinutes, 1420);
   const done = performAction(walking, 'gather', undefined, 'carrot', { advanceClock: false }).state;
   assert.equal(done.day, 1);
   assert.equal(done.resources.food, state.resources.food);
   assert.equal(done.resources.water, state.resources.water + 4);
   assert.equal(done.truckHealth, state.truckHealth);
-  const morning = tick(done, 10);
+  const morning = tick(done, realDuration(10));
   assert.equal(morning.day, 2);
   assert.equal(morning.minutes, 0);
   assert.equal(morning.resources.food, state.resources.food - 2);
@@ -65,7 +66,7 @@ test('finishing an animated chore cannot cross midnight before its real countdow
 
 test('a planted seed records the actual completion clock and starts its own unchanged growth duration', () => {
   const started = createGame();
-  const arrived = tick(started, 6);
+  const arrived = tick(started, realDuration(6));
   const planted = performAction(arrived, 'plant', 3, 'carrot', { advanceClock: false }).state;
   assert.equal(planted.plots[2].plantedAt, arrived.totalMinutes);
   assert.equal(planted.totalMinutes, arrived.totalMinutes);
@@ -74,9 +75,9 @@ test('a planted seed records the actual completion clock and starts its own unch
   assert.equal(watered.totalMinutes, planted.totalMinutes);
   assert.equal(watered.resources.water, planted.resources.water - 1);
   assert.equal(getCropProgress(watered, watered.plots[2]), 0);
-  const almost = tick(watered, 89);
+  const almost = tick(watered, realDuration(89));
   assert.ok(getCropProgress(almost, almost.plots[2]) < 1);
-  const mature = tick(almost, 1);
+  const mature = tick(almost, realDuration(1));
   assert.equal(getCropProgress(mature, mature.plots[2]), 1);
   const harvested = performAction(mature, 'harvest', 3, 'carrot', { advanceClock: false });
   assert.equal(harvested.ok, true);

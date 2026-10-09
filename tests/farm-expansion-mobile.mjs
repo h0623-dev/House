@@ -8,6 +8,8 @@ const version = JSON.parse(await readFile(new URL('../package.json', import.meta
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const legacyBaseUrl = process.env.LEGACY_TEST_BASE_URL || null;
 const startedAt = new Date();
+const expectedGameMinutesPerSecond = 6;
+const expectedSpeedMultiplier = 3;
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
 const assert = new Proxy(strictAssert, { get(target, key) { const value = Reflect.get(target, key); return typeof value === 'function' ? (...args) => { assertionsExecuted++; return value(...args); } : value; } });
@@ -18,13 +20,26 @@ const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-ha
 const geometry = () => page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneGeometry));
 const plots = () => page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.farmPlots || '[]'));
 const nav = section => page.locator(`[data-nav="${section}"]`);
-async function shot(name) { await page.waitForTimeout(250); const path = `artifacts/v${version}-farm-expansion-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
+async function shot(name) { await page.waitForTimeout(80); const path = `artifacts/v${version}-farm-expansion-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
+async function touchPointFor(locator) {
+ // One DOM measurement keeps phone taps responsive at the actual 3x chore
+ // speed. Modal scrolling remains real; no game calls or fake clock are used.
+ const measure = element => {
+  const rect = element.getBoundingClientRect(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+  return { x, y, width: rect.width, height: rect.height, onScreen: rect.x >= 0 && rect.y >= 0 && rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1,
+   farmTray: Boolean(element.closest('#farm-tray')), reached: document.elementFromPoint(x, y)?.closest('button') === element };
+ };
+ let point = await locator.evaluate(measure);
+ if ((!point.width || !point.height) && point.farmTray) { await touch(nav('farm')); point = await locator.evaluate(measure); }
+ if (!point.onScreen && point.width && point.height) { await locator.scrollIntoViewIfNeeded(); point = await locator.evaluate(measure); }
+ assert.ok(point.width > 0 && point.height > 0, 'a touchscreen control is rendered');
+ assert.equal(point.reached, true, 'the actual finger coordinate reaches its intended control');
+ return { x: point.x, y: point.y };
+}
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(nav('farm'));
- await locator.scrollIntoViewIfNeeded(); const box = await locator.boundingBox(); assert.ok(box, 'the control is rendered');
- const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
- assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'the physical finger reaches the intended control');
+ const point = await touchPointFor(locator);
  await page.touchscreen.tap(point.x, point.y);
+ return point;
 }
 async function pauseWorld() {
  if (!await page.locator('[data-open="menu"]').count()) { const pause = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await pause.count()) await touch(pause); return; }
@@ -40,7 +55,7 @@ async function pauseWorld() {
 }
 async function closeModal() { if (await page.locator('#modal-root').isVisible()) await touch(page.locator('#modal-root [data-close]').first()); }
 async function waitBusy() { await page.waitForFunction(() => document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 1500 }); }
-async function waitIdle(label, start = Date.now(), timeout = 40000) {
+async function waitIdle(label, start = Date.now(), timeout = 25000) {
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout });
  timings.push({ label, elapsedMs: Date.now() - start });
 }
@@ -103,7 +118,7 @@ async function buyPlot(label, wood, scrap) {
  for (const resource of ['food', 'water', 'seeds']) assert.equal(after.resources[resource], before.resources[resource]);
  assert.deepEqual(after.plots.at(-1), { id: before.plots.length + 1, plantedAt: null, watered: false });
  await assertContinuity(before, after, label); await page.waitForTimeout(500); assert.deepEqual((await saved()).resources, after.resources, 'construction never charges a second time');
- assert.ok(Date.now() - start > 1000, 'farm construction has a visible real-time work animation');
+ assert.ok(Date.now() - start > 1000 / expectedSpeedMultiplier, 'farm construction keeps a visible work animation at the actual 3x speed');
  return after;
 }
 async function worldAt(point, label) { assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, `${label}: a finger touches visible painted map`); }
@@ -222,17 +237,17 @@ try {
  const late = growthFixture(fresh, 6, 17); await loadFixture(late, 'Declared Lv6 seventeen-plot fixture'); await openExpansion(); const full = await buyPlot('Build eighteenth and final plot', 66, 33);
  await farmView(); await assertFarmDrawn(18); await assertControlsFit('390px farm'); await shot('eighteen-plots-portrait'); await cameraCheck();
  await openExpansion(); assert.equal(await page.locator('[data-action="expandFarm"]').isDisabled(), true); assert.equal(await page.locator('#modal-root [data-open="expand"]').count(), 0, 'maximum farm has no impossible deck upgrade offer'); await closeModal();
- await farmView(); await chooseCarrot(); const beforePlant = await saved(), plantingStart = Date.now(); await touchPlot(9); await waitBusy(); await touchPlot(18); await waitIdle('Continuous planting on plots9/18', plantingStart, 50000);
+ await farmView(); await chooseCarrot(); const beforePlant = await saved(), plantingStart = Date.now(); await touchPlot(9); await waitBusy(); await touchPlot(18); await waitIdle('Continuous planting on plots9/18', plantingStart, 30000);
  let state = await saved(); assert.equal(state.stats.plantings, beforePlant.stats.plantings + 2); assert.equal(state.seedInventory.carrot, beforePlant.seedInventory.carrot - 2); assert.equal(state.energy, beforePlant.energy - 8); assert.equal(state.plots[8].cropId, 'carrot'); assert.equal(state.plots[17].cropId, 'carrot'); assert.equal(await page.locator('#planting-toolbar').getAttribute('data-farm-mode'), 'plant'); await stopTool();
- const beforeWater = await saved(), wateringStart = Date.now(); await selectSpecific('water', 9); await waitBusy(); await touchPlot(18); await waitIdle('Continuous watering on plots9/18', wateringStart, 50000);
+ const beforeWater = await saved(), wateringStart = Date.now(); await selectSpecific('water', 9); await waitBusy(); await touchPlot(18); await waitIdle('Continuous watering on plots9/18', wateringStart, 30000);
  state = await saved(); assert.equal(state.stats.waterings, beforeWater.stats.waterings + 2); assert.equal(state.resources.water, beforeWater.resources.water - 2); assert.equal(state.energy, beforeWater.energy - 6); assert.equal(state.plots[8].watered, true); assert.equal(state.plots[17].watered, true); await stopTool();
  const mature = await saved(); for (const id of [9, 18]) mature.plots[id - 1].plantedAt = mature.totalMinutes - 180;
  await loadFixture(mature, 'Only plots9/18 planting timestamps advanced for mature-crop fixture'); await farmView();
- const beforeHarvest = await saved(), harvestStart = Date.now(); await selectSpecific('harvest', 9); await waitBusy(); await touchPlot(18); await waitIdle('Continuous harvest on plots9/18', harvestStart, 50000);
+ const beforeHarvest = await saved(), harvestStart = Date.now(); await selectSpecific('harvest', 9); await waitBusy(); await touchPlot(18); await waitIdle('Continuous harvest on plots9/18', harvestStart, 30000);
  state = await saved(); assert.equal(state.stats.harvests, beforeHarvest.stats.harvests + 2); assert.equal(state.plots[8].plantedAt, null); assert.equal(state.plots[17].plantedAt, null);
  // The third lifetime harvest also earns the existing first-harvest reward.
  assert.equal(state.resources.food, beforeHarvest.resources.food + 8 + 4); assert.equal(state.seedInventory.carrot, beforeHarvest.seedInventory.carrot + 4 + 5); assert.equal(state.energy, beforeHarvest.energy - 8); await stopTool();
- await chooseCarrot(); const beforeStroke = await saved(), strokeStart = Date.now(); await panToPlot(18); await drag([await plotPoint(17), await plotPoint(18)]); await waitBusy(); await waitIdle('One real drag plants adjacent extended plots17/18', strokeStart, 50000);
+ await chooseCarrot(); const beforeStroke = await saved(), strokeStart = Date.now(); await panToPlot(18); await drag([await plotPoint(17), await plotPoint(18)]); await waitBusy(); await waitIdle('One real drag plants adjacent extended plots17/18', strokeStart, 30000);
  state = await saved(); assert.equal(state.stats.plantings, beforeStroke.stats.plantings + 2); assert.equal(state.seedInventory.carrot, beforeStroke.seedInventory.carrot - 2); assert.equal(state.energy, beforeStroke.energy - 8); assert.equal(state.plots[16].cropId, 'carrot'); assert.equal(state.plots[17].cropId, 'carrot'); await stopTool();
  for (const key of ['settlement', 'facilityHistory', 'growthQuests']) assert.deepEqual(state[key], full[key], `${key} survives farming on the new plots`);
  await page.reload(); await page.locator('#resident-name').getByText(late.name, { exact: true }).waitFor(); await pauseWorld(); assert.deepEqual((await saved()).plots, state.plots, 'the eighteenth plot and its planted crop survive reload');
@@ -241,9 +256,9 @@ try {
  await page.setViewportSize({ width: 844, height: 390 }); await page.waitForTimeout(1000); await touch(page.locator('[data-camera-toggle]')); await touch(page.locator('[data-map-reset]')); await touch(page.locator('[data-camera-toggle]')); await page.waitForTimeout(700); await assertFarmDrawn(18); await assertControlsFit('844px landscape farm'); await shot('eighteen-plots-landscape');
  cases.push('Lv6: genuine paid plot18 at66/33, all18 distinct rendered targets; real continuous planting/watering/harvest of plots9/18, one-finger drag plants17/18; growth/facilities/reload/pan/zoom and 390/360/landscape checks.');
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
- await writeFile(`artifacts/farm-expansion-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', baseUrl, legacyBaseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Real mobile touchscreen taps and CDP touch streams; no direct game calls', clock: 'Real animation time; declared later-deck/resources/mature-crop saved fixtures', deviceLimit: 'Chromium mobile emulation only; no physical Android claim', fixtures, cases, timings, screenshots, errors, failedAssets }, null, 2) + '\n');
+ await writeFile(`artifacts/farm-expansion-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, legacyBaseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Real mobile touchscreen taps and CDP touch streams; no direct game calls', clock: 'Real animation time; declared later-deck/resources/mature-crop saved fixtures', deviceLimit: 'Chromium mobile emulation only; no physical Android claim', fixtures, cases, timings, screenshots, errors, failedAssets }, null, 2) + '\n');
  console.log(`PASS: ${assertionsExecuted} farm expansion assertions; paid expansion, old save continuity and real extended-plot farming.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/farm-expansion-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', baseUrl, legacyBaseUrl, assertionsExecuted, fixtures, cases, timings, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n'); throw error;
+ await writeFile(`artifacts/farm-expansion-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, legacyBaseUrl, assertionsExecuted, fixtures, cases, timings, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n'); throw error;
 } finally { await browser.close(); }

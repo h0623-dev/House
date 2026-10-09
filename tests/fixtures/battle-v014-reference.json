@@ -1,0 +1,324 @@
+{
+  "sourceVersion": "0.14.0",
+  "description": "Unmodified v0.14 deterministic combat at 60 real frames per second; automatic skills enabled.",
+  "options": {
+    "level": 1,
+    "health": 91,
+    "stage": 2
+  },
+  "auto": true,
+  "checkpoints": [
+    {
+      "simulationSeconds": 12,
+      "state": {
+        "stage": 2,
+        "wave": 2,
+        "time": 12.000000000000176,
+        "health": 87.895,
+        "maxHealth": 100,
+        "level": 1,
+        "enemies": [
+          {
+            "id": 2,
+            "kind": "runner",
+            "maxHealth": 103,
+            "health": 103,
+            "x": 75,
+            "attackIn": 1.8,
+            "hurtUntil": 0,
+            "attackUntil": 0,
+            "defeatedAt": null
+          },
+          {
+            "id": 3,
+            "kind": "moss",
+            "maxHealth": 103,
+            "health": 103,
+            "x": 84,
+            "attackIn": 2.4,
+            "hurtUntil": 0,
+            "attackUntil": 0,
+            "defeatedAt": null
+          },
+          {
+            "id": 4,
+            "kind": "runner",
+            "maxHealth": 103,
+            "health": 103,
+            "x": 93,
+            "attackIn": 3,
+            "hurtUntil": 0,
+            "attackUntil": 0,
+            "defeatedAt": null
+          }
+        ],
+        "enemiesDefeated": 2,
+        "cooldowns": {
+          "sweep": 1.416666666666492,
+          "dash": 9.416666666666638,
+          "heal": 0
+        },
+        "transition": 2.016666666666669,
+        "paused": false,
+        "auto": true,
+        "heroAttackUntil": 11.436666666666788,
+        "heroSkillUntil": 2.216666666666667,
+        "heroHurtUntil": 10.300000000000074,
+        "dogAttackUntil": 12.316666666666814,
+        "events": [
+          {
+            "id": 28,
+            "at": 10.916666666666789,
+            "kind": "attack",
+            "target": 1,
+            "amount": 0,
+            "x": 65
+          },
+          {
+            "id": 29,
+            "at": 10.916666666666789,
+            "kind": "damage",
+            "target": 1,
+            "amount": 10,
+            "x": 65
+          },
+          {
+            "id": 30,
+            "at": 11.416666666666814,
+            "kind": "dash",
+            "target": 1,
+            "amount": 0,
+            "x": 65
+          },
+          {
+            "id": 31,
+            "at": 11.416666666666814,
+            "kind": "damage",
+            "target": 1,
+            "amount": 26,
+            "x": 65
+          },
+          {
+            "id": 32,
+            "at": 11.416666666666814,
+            "kind": "defeat",
+            "target": 1,
+            "amount": 0,
+            "x": 65
+          },
+          {
+            "id": 33,
+            "at": 11.416666666666814,
+            "kind": "wave",
+            "target": "hero",
+            "amount": 2,
+            "x": 50
+          }
+        ],
+        "result": null
+      }
+    },
+    {
+      "simulationSeconds": 24,
+      "state": {
+        "stage": 2,
+        "wave": 2,
+        "time": 23.99999999999992,
+        "health": 81.68499999999999,
+        "maxHealth": 100,
+        "level": 1,
+        "enemies": [
+          {
+            "id": 2,
+            "kind": "runner",
+            "maxHealth": 103,
+            "health": 0,
+            "x": 49,
+            "attackIn": 2.2,
+            "hurtUntil": 21.646666666666732,
+            "attackUntil": 0,
+            "defeatedAt": 21.416666666666732
+          },
+          {
+            "id": 3,
+            "kind": "moss",
+            "maxHealth": 103,
+            "health": 52,
+            "x": 65,
+            "attackIn": 4.400000000000004,
+            "hurtUntil": 23.779999999999944,
+            "attackUntil": 24.266666666666605,
+            "defeatedAt": null
+          },
+          {
+            "id": 4,
+            "kind": "runner",
+            "maxHealth": 103,
+            "health": 78,
+            "x": 81,
+            "attackIn": 0.7666666666666855,
+            "hurtUntil": 14.280000000000278,
+            "attackUntil": 20.43333333333349,
+            "defeatedAt": null
+          }
+        ],
+        "enemiesDefeated": 3,
+        "cooldowns": {
+          "sweep": 2.049999999999823,
+          "dash": 7.41666666666657,
+          "heal": 0
+        },
+        "transition": 0,
+        "paused": false,
+        "auto": true,
+        "heroAttackUntil": 24.069999999999943,
+        "heroSkillUntil": 14.850000000000279,
+        "heroHurtUntil": 23.966666666666608,
+        "dogAttackUntil": 22.700000000000024,
+        "events": [
+          {
+            "id": 62,
+            "at": 23.549999999999944,
+            "kind": "attack",
+            "target": 3,
+            "amount": 0,
+            "x": 65
+          },
+          {
+            "id": 63,
+            "at": 23.549999999999944,
+            "kind": "damage",
+            "target": 3,
+            "amount": 10,
+            "x": 65
+          },
+          {
+            "id": 64,
+            "at": 23.616666666666607,
+            "kind": "damage",
+            "target": "hero",
+            "amount": 3.105,
+            "x": 25
+          }
+        ],
+        "result": null
+      }
+    },
+    {
+      "simulationSeconds": 60.549999999997844,
+      "state": {
+        "stage": 2,
+        "wave": 3,
+        "time": 60.549999999997844,
+        "health": 62.06499999999996,
+        "maxHealth": 100,
+        "level": 1,
+        "enemies": [
+          {
+            "id": 5,
+            "kind": "boss",
+            "maxHealth": 286,
+            "health": 0,
+            "x": 49,
+            "attackIn": 2.2,
+            "hurtUntil": 51.64666666666503,
+            "attackUntil": 48.79999999999855,
+            "defeatedAt": 51.41666666666503
+          },
+          {
+            "id": 6,
+            "kind": "moss",
+            "maxHealth": 88,
+            "health": 0,
+            "x": 65,
+            "attackIn": 2.4666666666666774,
+            "hurtUntil": 56.1799999999981,
+            "attackUntil": 54.266666666664904,
+            "defeatedAt": 55.949999999998106
+          },
+          {
+            "id": 7,
+            "kind": "runner",
+            "maxHealth": 88,
+            "health": 0,
+            "x": 81,
+            "attackIn": 4.233333333333391,
+            "hurtUntil": 60.77999999999784,
+            "attackUntil": 60.43333333333122,
+            "defeatedAt": 60.549999999997844
+          }
+        ],
+        "enemiesDefeated": 8,
+        "cooldowns": {
+          "sweep": 1.499999999999825,
+          "dash": 0.8666666666665924,
+          "heal": 2.2500000000000204
+        },
+        "transition": 0,
+        "paused": false,
+        "auto": true,
+        "heroAttackUntil": 60.01999999999791,
+        "heroSkillUntil": 50.84999999999844,
+        "heroHurtUntil": 60.13333333333122,
+        "dogAttackUntil": 61.09999999999784,
+        "events": [
+          {
+            "id": 173,
+            "at": 59.499999999997904,
+            "kind": "attack",
+            "target": 7,
+            "amount": 0,
+            "x": 81
+          },
+          {
+            "id": 174,
+            "at": 59.499999999997904,
+            "kind": "damage",
+            "target": 7,
+            "amount": 10,
+            "x": 81
+          },
+          {
+            "id": 175,
+            "at": 59.78333333333122,
+            "kind": "damage",
+            "target": "hero",
+            "amount": 3.105,
+            "x": 25
+          },
+          {
+            "id": 176,
+            "at": 60.549999999997844,
+            "kind": "dog",
+            "target": 7,
+            "amount": 0,
+            "x": 81
+          },
+          {
+            "id": 177,
+            "at": 60.549999999997844,
+            "kind": "damage",
+            "target": 7,
+            "amount": 2,
+            "x": 81
+          },
+          {
+            "id": 178,
+            "at": 60.549999999997844,
+            "kind": "defeat",
+            "target": 7,
+            "amount": 0,
+            "x": 81
+          }
+        ],
+        "result": {
+          "outcome": "victory",
+          "stage": 2,
+          "remainingHealth": 62,
+          "enemiesDefeated": 8,
+          "duration": 61
+        }
+      }
+    }
+  ]
+}

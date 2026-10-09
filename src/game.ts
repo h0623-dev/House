@@ -1,5 +1,6 @@
 import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
+import { realDuration } from './game-speed';
 import { getSettlement, validateSettlement, validateFacilityHistory, type Settlement, type FacilityHistory } from './settlement';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
@@ -203,14 +204,14 @@ function grantQuests(state: GameState) {
   state.level = Math.floor(state.xp / 120) + 1;
 }
 
-/** One real second is two in-game minutes. Loading alone never advances time. */
+/** Active real seconds follow the shared village pace. Loading alone never advances time. */
 export function tick(state: GameState, seconds = 1): GameState {
   if (state.expedition || !Number.isFinite(seconds) || seconds <= 0) return state;
   return advanceTime(state, seconds * GAME_MINUTES_PER_SECOND);
 }
 
 /** A short absence can finish the slowest watered crop, without simulating unbounded days. */
-export const MAX_OFFLINE_SECONDS = 210;
+export const MAX_OFFLINE_SECONDS = realDuration(210);
 export interface OfflineProgressResult { state: GameState; secondsApplied: number }
 
 /**

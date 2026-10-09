@@ -7,6 +7,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173';
 const startedAt = new Date();
+const expectedGameMinutesPerSecond = 6;
+const expectedSpeedMultiplier = 3;
 await mkdir('artifacts', { recursive: true });
 let assertionsExecuted = 0;
 const assert = new Proxy(strictAssert, { get(target, key) { const value = Reflect.get(target, key); return typeof value === 'function' ? (...args) => { assertionsExecuted++; return value(...args); } : value; } });
@@ -15,12 +17,22 @@ const errors = [], failedAssets = [], screenshots = [], cases = [], fixtures = [
 let context, page;
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-haven-save-v1')));
 const geometry = () => page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneGeometry));
-async function touch(control) {
- await control.scrollIntoViewIfNeeded();
- const box = await control.boundingBox(); assert.ok(box, 'a touchscreen control is rendered');
- const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
- const hit = await control.evaluate((button, point) => { const physical = document.elementFromPoint(point.x, point.y)?.closest('button'); return { reached: physical === button, intended: button.outerHTML.slice(0, 180), actual: physical?.outerHTML.slice(0, 180) ?? null }; }, point);
- assert.equal(hit.reached, true, `the physical finger reaches its intended button: ${JSON.stringify(hit)}`);
+async function touchPointFor(locator) {
+ // One DOM measurement keeps phone taps responsive at the actual 3x chore
+ // speed. Modal scrolling remains real; no game calls or fake clock are used.
+ const measure = element => {
+  const rect = element.getBoundingClientRect(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+  return { x, y, width: rect.width, height: rect.height, onScreen: rect.x >= 0 && rect.y >= 0 && rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1,
+   farmTray: Boolean(element.closest('#farm-tray')), reached: document.elementFromPoint(x, y)?.closest('button') === element };
+ };
+ let point = await locator.evaluate(measure);
+ if (!point.onScreen && point.width && point.height) { await locator.scrollIntoViewIfNeeded(); point = await locator.evaluate(measure); }
+ assert.ok(point.width > 0 && point.height > 0, 'a touchscreen control is rendered');
+ assert.equal(point.reached, true, 'the actual finger coordinate reaches its intended control');
+ return { x: point.x, y: point.y };
+}
+async function touch(locator) {
+ const point = await touchPointFor(locator);
  await page.touchscreen.tap(point.x, point.y);
  return point;
 }
@@ -59,11 +71,11 @@ async function loadFixture(state, label, { offline = false } = {}) {
  for (const key of ['resources', 'plots', 'seedInventory', 'settlement', 'growthQuests', 'facilityHistory', 'stats', 'energy', 'xp']) {
   assert.deepEqual(loaded[key], state[key], `${label}: ${key} persists without gifts or automatic collection`);
  }
- if (!offline) assert.ok(loaded.totalMinutes >= state.totalMinutes && (loaded.totalMinutes - state.totalMinutes) / 2 <= Math.ceil((Date.now() - loadingAt) / 1000) + 1, `${label}: a zero baseline creates no offline jump beyond actual loading and user navigation time`);
+ if (!offline) assert.ok(loaded.totalMinutes >= state.totalMinutes && (loaded.totalMinutes - state.totalMinutes) / expectedGameMinutesPerSecond <= Math.ceil((Date.now() - loadingAt) / 1000) + 1, `${label}: a zero baseline creates no offline jump beyond actual loading and user navigation time`);
  await page.waitForTimeout(650);
  return loaded;
 }
-function productionFixture(fresh, remaining = 6) {
+function productionFixture(fresh, remaining = 18) {
  const state = structuredClone(fresh);
  state.name = '움직이는 트럭 마을'; state.lastSaved = 0;
  state.resources = { ...state.resources, wood: 120, scrap: 80, food: 50, water: 0 };
@@ -153,7 +165,7 @@ try {
  assert.deepEqual((await saved()).resources, beforeOpen.resources, 'reading a request awards nothing');
  await shot('first-request'); await closeModal();
 
- const running = productionFixture(fresh, 6); await loadFixture(running, 'Declared older save: no delivery counter, paid rainwater batch with3 real seconds left');
+ const running = productionFixture(fresh, 18); await loadFixture(running, 'Declared older save: no delivery counter, paid rainwater batch declared with3 real seconds left at6 game minutes/second');
  await touch(page.locator('[data-open="orders"]'));
  assert.equal(await page.locator('[data-order-deliver="village-order-1"]').isDisabled(), true, 'a water request cannot send missing water');
  await touch(page.locator('[data-order-source]'));
@@ -166,7 +178,7 @@ try {
  await touch(page.locator('#resources')); await page.locator('[data-inventory-count="water"]').waitFor();
  assert.equal(await page.locator('#resources').isDisabled(), false, 'the inventory remains interactive during a walking chore');
  await closeModal(); await touch(page.locator('[data-open="orders"]'));
- await page.waitForTimeout(3800);
+ await page.waitForFunction(() => JSON.parse(document.querySelector('#world').dataset.settlementSlots).find(slot => slot.buildingId === 1)?.action === 'facility-collect', null, { timeout: 12000 });
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true', 'real gathering continues behind request browsing');
  assert.equal(await page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.settlementSlots).find(slot => slot.buildingId === 1)?.action), 'facility-collect', 'the paid production countdown reaches ready while the character is still gathering');
  assert.equal(await page.locator('[data-order-deliver="village-order-1"]').isDisabled(), true, 'production completing does not hand out uncollected water');
@@ -174,8 +186,8 @@ try {
  await waitIdle('Current goal gathering with live production and browseable menus', gatheringAt); await pauseWorld();
  const gathered = await saved();
  assert.equal(gathered.stats.gathers, running.stats.gathers + 1, 'the objective launches and commits exactly one actual gathering trip');
- const elapsedSeconds = (Date.now() - gatheringAt) / 1000, clockSeconds = (gathered.totalMinutes - gatheringBefore.totalMinutes) / 2;
- assert.ok(clockSeconds >= 3 && Math.abs(clockSeconds - elapsedSeconds) < 4, 'the facility clock tracks real time through a chore without an extra completion jump');
+ const elapsedSeconds = (Date.now() - gatheringAt) / 1000, clockSeconds = (gathered.totalMinutes - gatheringBefore.totalMinutes) / expectedGameMinutesPerSecond;
+ assert.ok(clockSeconds >= 1 && Math.abs(clockSeconds - elapsedSeconds) < 2.5, 'the facility clock tracks real time through a chore without an extra completion jump');
  timings.push({ label: 'Natural gathering clock versus real elapsed time', elapsedSeconds, clockSeconds });
  assert.equal(gathered.settlement.stats.collections, 0, 'a mature production batch still waits for a map collection');
  assert.equal(gathered.settlement.buildings[0].readyAt, running.settlement.buildings[0].readyAt);
@@ -222,7 +234,7 @@ try {
 
  const away = productionFixture(fresh, 6); away.name = '복귀 생산 검사'; away.lastSaved = Date.now() - 6000;
  const resumed = await loadFixture(away, 'Declared6-second absence for an existing paid production batch', { offline: true });
- assert.ok(resumed.totalMinutes >= away.totalMinutes + 12 && (resumed.totalMinutes - away.totalMinutes) / 2 <= (resumed.lastSaved - away.lastSaved) / 1000 + 1, 'the explicit saved absence advances real seconds at the established2-minute rate');
+ assert.ok(resumed.totalMinutes >= away.totalMinutes + 6 * expectedGameMinutesPerSecond && (resumed.totalMinutes - away.totalMinutes) / expectedGameMinutesPerSecond <= (resumed.lastSaved - away.lastSaved) / 1000 + 1, 'the explicit saved absence advances real seconds at the expected6-minute rate');
  assert.deepEqual(resumed.resources, away.resources, 'a completed batch after absence is not automatically collected');
  assert.equal(resumed.settlement.stats.collections, 0);
  assert.equal(resumed.villageOrders, undefined);
@@ -230,10 +242,18 @@ try {
  assert.equal((await saved()).totalMinutes, held.totalMinutes, 'user pause freezes time after the resume step');
  await page.reload(); await page.locator('#resident-name').getByText(away.name, { exact: true }).waitFor(); await pauseWorld();
  const resumedAgain = await saved();
- assert.ok((resumedAgain.totalMinutes - resumed.totalMinutes) / 2 <= (resumedAgain.lastSaved - resumed.lastSaved) / 1000 + 1, 'a second reload cannot replay the original6-second absence');
+ assert.ok((resumedAgain.totalMinutes - resumed.totalMinutes) / expectedGameMinutesPerSecond <= (resumedAgain.lastSaved - resumed.lastSaved) / 1000 + 1, 'a second reload cannot replay the original6-second absence');
  assert.deepEqual(resumedAgain.resources, resumed.resources, 'repeat resume does not collect or deliver anything');
  await shot('offline-ready-without-free-resources');
- cases.push('Explicit saved absence progresses paid production only; no automatic resources, repeated baseline does not replay elapsed time, and pause holds the resumed village.');
+ const cappedAway = productionFixture(fresh, 18); cappedAway.name = '빠른 마을 복귀 한도'; cappedAway.lastSaved = Date.now() - 90000;
+ const capStartedAt = Date.now();
+ const cappedResume = await loadFixture(cappedAway, 'Declared90-second absence; only70 real seconds /420 game minutes of catch-up are allowed', { offline: true });
+ const cappedProgress = cappedResume.totalMinutes - cappedAway.totalMinutes;
+ assert.ok(cappedProgress >= 70 * expectedGameMinutesPerSecond, 'the offline cap preserves420 game minutes of mature-crop/production progress');
+ assert.ok(cappedProgress <= 70 * expectedGameMinutesPerSecond + (Math.ceil((Date.now() - capStartedAt) / 1000) + 1) * expectedGameMinutesPerSecond, 'a90-second saved absence is capped at70 real seconds plus actual loading time');
+ assert.equal(cappedResume.settlement.stats.collections, 0, 'capped offline production still waits for an explicit collection');
+ assert.deepEqual(cappedResume.resources, cappedAway.resources, 'the faster capped absence invents no resources or delivery rewards');
+ cases.push('Explicit saved absence progresses at6 game minutes/second with70-second /420-minute cap; no automatic resources, repeated baseline does not replay elapsed time, and pause holds the resumed village.');
  await context.close();
 
  for (const [width, height, label] of [[360, 800, '360px'], [844, 390, 'landscape']]) {
@@ -260,10 +280,10 @@ try {
  }
  cases.push('360px and landscape layouts retain44px unobstructed controls, one resource button and camera flyout;18-plot farms still pan/reset without resource use.');
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
- await writeFile(`artifacts/village-loop-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual mobile touchscreen taps and CDP finger drags', clock: 'Real browser time and declared saved baseline; no fake clock or direct game calls', deviceLimit: 'Chromium mobile emulation only; not a physical Android test', fixtures, cases, timings, screenshots, errors, failedAssets }, null, 2) + '\n');
+ await writeFile(`artifacts/village-loop-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Actual mobile touchscreen taps and CDP finger drags', clock: 'Real browser time and declared saved baseline; no fake clock or direct game calls', deviceLimit: 'Chromium mobile emulation only; not a physical Android test', fixtures, cases, timings, screenshots, errors, failedAssets }, null, 2) + '\n');
  console.log(`PASS: ${assertionsExecuted} village loop assertions; direct goals, production during chores, map collection, paid requests, resume and mobile layout.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/village-loop-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), fixtures, cases, timings, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n');
+ await writeFile(`artifacts/village-loop-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', speedMultiplier: expectedSpeedMultiplier, gameMinutesPerSecond: expectedGameMinutesPerSecond, baseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), fixtures, cases, timings, screenshots, errors, failedAssets, failure: String(error), stack: error.stack }, null, 2) + '\n');
  throw error;
 } finally { await browser.close(); }
