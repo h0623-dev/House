@@ -31,3 +31,13 @@ v0.12·v0.13 콘텐츠 ZIP과 체크섬은 아래 기존 공개 커밋의 고정
 | --- | ---: | --- |
 | [v0.12 ZIP](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.12.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.12.0-content.zip.sha256) | 46,339,317 | `3884fa48e6c66fc8b8f58f0f3d8d19da54be900955e456dcef2a383d517935b3` |
 | [v0.13 ZIP](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.13.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.13.0-content.zip.sha256) | 46,341,444 | `c37a9e283c4148a3f4fbc069ab9e8489f3a7b4a6bc955ee5c02752df472aa25e` |
+
+## v0.18 보관
+
+v0.14·v0.15·v0.16 콘텐츠 ZIP·체크섬은 아래 기존 공개 커밋의 고정 주소에 그대로 보관합니다. 전체 파일을 정상 HTTPS로 받아 이전 게시 파일의 바이트 수·SHA-256과 일치하는지 확인했습니다. 기존 APK 전체와 v0.17 콘텐츠를 현재 트리에 유지하고 Git 이력은 삭제하거나 다시 쓰지 않습니다. 최신 앱 업데이트는 서명된 현재 game-update.json을 사용하며 이 보관 URL을 자동 롤백 대상으로 설정하지 않습니다.
+
+| 콘텐츠 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| [v0.14 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.14.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.14.0-content.zip.sha256) | 46,346,954 | `c0dcf880ca84c165507e51b0ea76fbeb0f4c987b9f6e7c5abc9b57d4afbd4e45` |
+| [v0.15 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.15.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.15.0-content.zip.sha256) | 46,347,011 | `0eef40b76c7632d5ac8f86f6c8176778534554d26b930575a916eb164e513e02` |
+| [v0.16 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.16.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.16.0-content.zip.sha256) | 48,007,391 | `b66212829ebb500618296053bb98933a6535b59e4d5a3193ea124c42766ca336` |

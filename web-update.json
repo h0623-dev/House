@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "buildId": "17c2afbc7d765c464f6e57417b045f0042d826638244f0d9ae164b42241e0768",
+  "version": "0.18.0",
+  "contentVersion": 18,
+  "base": "/House/",
+  "files": [
+    {
+      "path": ".nojekyll",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "assets/battle-bridge-CshNqkaE.png",
+      "bytes": 3680793,
+      "sha256": "371c397ced7ca06ce87cc4638d7140988573c78f29ff70c713c0a8a9b9c499a0"
+    },
+    {
+      "path": "assets/battle-checkpoint-DRTJ197s.png",
+      "bytes": 3604385,
+      "sha256": "fad9daef2c707dddf4f37fbc81ba20106b3fb16132dc612d8bceda53b87b59b0"
+    },
+    {
+      "path": "assets/battle-forest-C51K6LMV.png",
+      "bytes": 3873328,
+      "sha256": "acce40107ff1dd6f4f7d5567c6e2a934c500aaf9890a55616b817761f5b5d391"
+    },
+    {
+      "path": "assets/companions-cat-anime-DLqNb3YX.png",
+      "bytes": 1697241,
+      "sha256": "cd7531285cb2d7ac072fd84df4a76626ecdf54befd27706955fda2d091419a5e"
+    },
+    {
+      "path": "assets/companions-reserve-anime-D_ilhqwL.png",
+      "bytes": 1466917,
+      "sha256": "c0268d933f6e1f29c76fb20cbc8f32f9f0b29bda2b17f6f7b918b46a27e61e6a"
+    },
+    {
+      "path": "assets/creatures-anime-DdNIkJKd.png",
+      "bytes": 2493525,
+      "sha256": "5d1cf1176a79a677bdd135316f2f24d5abda68748747d78e28e9b16c8e03b060"
+    },
+    {
+      "path": "assets/crops-anime-D9C4XKsQ.png",
+      "bytes": 1735166,
+      "sha256": "57ac079b21e0e7b97d66562fbf1dff65faba73d2b43bd9e6c06aa39f6c204d29"
+    },
+    {
+      "path": "assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2",
+      "bytes": 18228,
+      "sha256": "a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49"
+    },
+    {
+      "path": "assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2",
+      "bytes": 36932,
+      "sha256": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"
+    },
+    {
+      "path": "assets/index-CfkaeVvu.css",
+      "bytes": 154678,
+      "sha256": "cd6ebc9a5c9283dc4b7764dbbe427527a2ec39f060cfcbbaa9b722138f91042a"
+    },
+    {
+      "path": "assets/index-D1UXToAk.js",
+      "bytes": 306479,
+      "sha256": "f2360090688e20d77d84b2a5d9129a5d1ae02ed85e308462fa7f4b91fbdbc9c2"
+    },
+    {
+      "path": "assets/items-anime-BFjuG2x0.png",
+      "bytes": 2446531,
+      "sha256": "d7d62a625c2f1929a8479e780059e433347eb032ece4fee12be2e4d64783a842"
+    },
+    {
+      "path": "assets/pwa/road-haven-icon.png",
+      "bytes": 3288409,
+      "sha256": "8727a08b900599142a9882fa61e8f4c617ba8b8fc7df6292e182432be871991d"
+    },
+    {
+      "path": "assets/settlement-buildings-BujeG0ZI.png",
+      "bytes": 2573254,
+      "sha256": "ebc9837dc05533cf466108aa95939474b65ea68f5edd93cffa607efd29d0e587"
+    },
+    {
+      "path": "assets/skills-farm-anime-yMjBbn83.png",
+      "bytes": 2786844,
+      "sha256": "8c1c807a3c14355038ec31b552e14368818b18e8993f98424bb4670c4a02c933"
+    },
+    {
+      "path": "assets/survivors-actions-DljXGqPS.png",
+      "bytes": 2386618,
+      "sha256": "16100023bd05e12aece0cb46910d6b4b5356b6e257e4cdf758a9f78b9794b06d"
+    },
+    {
+      "path": "assets/survivors-anime-B10LrHeL.png",
+      "bytes": 2302538,
+      "sha256": "739489bddecb6f08bcd7383783a85bc8f3a059cb973961bc7b3362afe5dc4915"
+    },
+    {
+      "path": "assets/survivors-gathering-CwcR0tbO.png",
+      "bytes": 1706850,
+      "sha256": "9909fc86921be824e365c1ed533fecc4bdbc026b8779c91f114ebfaa8b531769"
+    },
+    {
+      "path": "assets/survivors-locomotion-DGF7tlBo.png",
+      "bytes": 2307891,
+      "sha256": "242526090add97d0644cc04e085747102d16a9821acbc1040de009314582c4d0"
+    },
+    {
+      "path": "assets/world-atlas-anime-j_pxBRxb.png",
+      "bytes": 2951449,
+      "sha256": "67f9c68491f282743b8245898b7e6c04e7f4072829cdf66639bec59ae7d2a57f"
+    },
+    {
+      "path": "assets/world-parts-anime-CnA5nLkl.png",
+      "bytes": 2821651,
+      "sha256": "304e0e30cb1525a5a899057f7e00427061de2e5317012bbdbc457e7f840fb32c"
+    },
+    {
+      "path": "assets/world-road-anime-CqYNuSrz.png",
+      "bytes": 3665828,
+      "sha256": "57384e426b7df1967ea42dd0e05b098315618ed35cd219dbd9ca04679877c78a"
+    },
+    {
+      "path": "fonts/NotoSansKR-Variable.ttf",
+      "bytes": 10414588,
+      "sha256": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252"
+    },
+    {
+      "path": "fonts/OFL-DMSans.txt",
+      "bytes": 4502,
+      "sha256": "6fbd040a29c2037a765dfb9f2561e9965b5c95c6dcb5dce516089d63d5f17af7"
+    },
+    {
+      "path": "fonts/OFL-NotoSansKR.txt",
+      "bytes": 4388,
+      "sha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9"
+    },
+    {
+      "path": "index.html",
+      "bytes": 1280,
+      "sha256": "4cac939c3e1a1923cb31e8ac25077137ffb50afc26a06a42f636258de113d5d5"
+    },
+    {
+      "path": "manifest.webmanifest",
+      "bytes": 510,
+      "sha256": "58e1774f8de2bc0dbbcfc16bd08bcf18fc528afa00cbd27d922e563e35768f7e"
+    }
+  ]
+}
