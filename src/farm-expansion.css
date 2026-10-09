@@ -1,0 +1,22 @@
+.farm-expand-tool{position:absolute;left:11px;top:147px;z-index:3;width:48px;min-height:54px}
+.farm-expand-tool>span{position:relative;width:44px;height:38px}
+.farm-expand-tool .icon{width:26px;height:26px}
+.farm-expand-tool>small{font-size:8px}
+.farm-expand-tool [data-farm-capacity]{position:absolute;right:-5px;bottom:-4px;min-width:27px;padding:2px 4px;border:1px solid #b89b66;border-radius:6px;background:#fff5d6;color:#4e613b;font-size:8px;font-variant-numeric:tabular-nums}
+.farm-expand-tool:focus-visible{outline:3px solid #456b3f;outline-offset:2px;border-radius:10px}
+.farm-expand-tool:disabled{opacity:.5}
+.farm-expand-tool[hidden]{display:none}
+.farm-expansion-summary{display:flex;align-items:center;gap:9px;padding:12px 10px;margin-bottom:16px;border:1px solid #cbbb8c;border-radius:12px;background:#eef0db;color:#4f653e}
+.farm-expansion-summary>span .icon{width:27px;height:27px}
+.farm-expansion-summary>div{flex:1;min-width:0}
+.farm-expansion-summary strong{display:block;font-size:12px;line-height:1.6}
+.farm-expansion-summary strong b{white-space:nowrap}
+.farm-expansion-summary small{display:block;font-size:10px;line-height:1.6;margin-top:3px;word-break:keep-all}
+.farm-expansion-summary .button{min-width:64px;min-height:44px;padding:10px 8px;font-size:11px;flex-shrink:0}
+.farm-expansion-preview{display:flex;align-items:center;justify-content:center;gap:18px;margin:22px 0;padding:24px 12px;background:#e7edda;border-radius:16px;color:#587647}
+.farm-expansion-preview>.icon{width:65px;height:65px}
+.farm-expansion-preview strong{display:block;font-size:24px}
+.farm-expansion-preview span{display:block;font-size:11px;margin-top:7px}
+.farm-expansion-energy{display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;color:#73835a;margin:-8px 0 15px}
+.farm-expansion-energy .icon{width:15px;height:15px}
+@media(orientation:landscape) and (max-height:600px){.farm-expand-tool{top:97px;min-height:47px}.farm-expand-tool>span{height:33px}.farm-expansion-preview{margin:14px 0;padding:15px}}

@@ -1,11 +1,12 @@
 import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
+import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { getSettlement, validateSettlement, validateFacilityHistory, type Settlement, type FacilityHistory } from './settlement';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 export { CROPS, CROP_IDS, type CropId } from './crops';
 
 export type Resource = 'wood' | 'scrap' | 'food' | 'water' | 'seeds';
 export type Gender = 'female' | 'male';
-export type Action = 'gather' | 'chop' | 'hunt' | 'water' | 'plant' | 'harvest' | 'expand' | 'rest' | 'pet' | 'repair';
+export type Action = 'gather' | 'chop' | 'hunt' | 'water' | 'plant' | 'harvest' | 'expand' | 'expandFarm' | 'rest' | 'pet' | 'repair';
 export interface Plot { id: number; plantedAt: number | null; watered: boolean; cropId?: CropId }
 export interface Expedition { id: number; stage: number }
 export interface HuntResult {
@@ -157,6 +158,25 @@ export function expansionCost(state: GameState): { wood: number; scrap: number }
   return { wood: 24 + (state.deckLevel - 1) * 16, scrap: 12 + (state.deckLevel - 1) * 8 };
 }
 
+/** Each deck level supports three plots; the original deck expansion still grants one. */
+export function getFarmCapacity(state: Pick<GameState, 'deckLevel'>): number {
+  return state.deckLevel * 3;
+}
+
+/** Only purchased plots increase this price, so expanding the deck never reprices them. */
+export function farmExpansionCost(state: Pick<GameState, 'deckLevel' | 'plots'>): { wood: number; scrap: number } {
+  const purchasedPlots = Math.max(0, state.plots.length - (state.deckLevel + 2));
+  return { wood: 12 + purchasedPlots * 6, scrap: 6 + purchasedPlots * 3 };
+}
+
+function addEmptyPlot(state: GameState) {
+  // Imported saves may use sparse IDs up to 100. Keep them stable and use a vacant ID.
+  const ids = new Set(state.plots.map(plot => plot.id));
+  let id = 1;
+  while (ids.has(id)) id += 1;
+  state.plots.push({ id, plantedAt: null, watered: false });
+}
+
 export function questList(state: GameState): Quest[] {
   const definitions = [
     { id: 'first-harvest', title: '작은 농부의 첫걸음', description: '트럭 텃밭에서 작물 3개 수확하기', current: state.stats.harvests, target: 3, reward: '당근 씨앗 5 · 식량 4' },
@@ -181,7 +201,7 @@ function grantQuests(state: GameState) {
 /** One real second is two in-game minutes. No offline time is applied on load. */
 export function tick(state: GameState, seconds = 1): GameState {
   if (state.expedition || !Number.isFinite(seconds) || seconds <= 0) return state;
-  return advanceTime(state, seconds * 2);
+  return advanceTime(state, seconds * GAME_MINUTES_PER_SECOND);
 }
 
 /** Daily provisions and zombie damage are applied once for every midnight crossed. */
@@ -256,7 +276,7 @@ export function finishHunt(state: GameState, result: HuntResult, expeditionId: n
   } else {
     message = `${result.stage}구역에서 안전을 위해 철수했어요. 보급품 없이 트럭으로 돌아왔어요.`;
   }
-  next = advanceTime(next, result.duration * 2);
+  next = advanceTime(next, result.duration * GAME_MINUTES_PER_SECOND);
   addLog(next, message);
   grantQuests(next);
   return { state: next, ok: true, message };
@@ -277,7 +297,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
   if (state.expedition) return fail('사냥을 마친 뒤 트럭에서 다시 활동할 수 있어요.');
   if (action === 'hunt') return fail('사냥터를 선택하고 직접 좀비를 물리쳐 보급품을 얻어 주세요.');
   const energyCosts: Record<Action, number> = {
-    gather: 10, chop: 10, hunt: 16, water: 3, plant: 4, harvest: 4, expand: 15, rest: 0, pet: 0, repair: 6,
+    gather: 10, chop: 10, hunt: 16, water: 3, plant: 4, harvest: 4, expand: 15, expandFarm: 8, rest: 0, pet: 0, repair: 6,
   };
   if (!Object.hasOwn(energyCosts, action)) return fail('아직 할 수 없는 행동이에요.');
   if (state.energy < energyCosts[action]) return fail('기운이 부족해요. 먼저 침대에서 쉬어 주세요.');
@@ -311,7 +331,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
     case 'plant': {
       if (!isCropId(cropId)) return fail('씨앗 인벤토리에서 심을 씨앗을 선택해 주세요.');
       const plot = next.plots.find(item => plotId === undefined ? item.plantedAt === null : item.id === plotId);
-      if (!plot) return fail('빈 텃밭이 없어요. 작물을 수확하거나 트럭을 확장해 주세요.');
+      if (!plot) return fail('빈 텃밭이 없어요. 작물을 수확하거나 밭을 늘려 주세요.');
       if (plot.plantedAt !== null) return fail('이미 작물이 자라는 텃밭이에요.');
       if (getSeedCount(next, cropId) < 1) return fail(`${CROPS[cropId].seedName}이 부족해요. 다른 씨앗을 고르거나 도로를 탐색해 주세요.`);
       if ((next.stats.plantings ?? 0) >= 100_000_000) return fail('농사 기록이 가득해요. 저장 상태를 확인해 주세요.');
@@ -370,11 +390,26 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       next.resources.scrap -= cost.scrap;
       next.deckLevel += 1;
       next.stats.expansions += 1;
-      next.plots.push({ id: Math.max(...next.plots.map(plot => plot.id)) + 1, plantedAt: null, watered: false });
+      addEmptyPlot(next);
       next.morale = clamp(next.morale + 10);
       message = '우리 집이 더 넓어졌어요! 생활 공간과 새 텃밭 +1';
       duration = 60;
       xp = 35;
+      break;
+    }
+    case 'expandFarm': {
+      const capacity = getFarmCapacity(next);
+      if (next.plots.length >= capacity) return fail(next.deckLevel < MAX_DECK_LEVEL
+        ? '지금 데크의 밭을 모두 만들었어요. 트럭을 확장하면 밭을 더 늘릴 수 있어요.'
+        : `밭 ${capacity}칸을 모두 만들었어요!`);
+      const cost = farmExpansionCost(next);
+      if (next.resources.wood < cost.wood || next.resources.scrap < cost.scrap) return fail(`밭을 늘리려면 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
+      next.resources.wood -= cost.wood;
+      next.resources.scrap -= cost.scrap;
+      addEmptyPlot(next);
+      message = `새 텃밭 +1! 이제 ${next.plots.length}칸에서 농사를 지을 수 있어요. (${next.plots.length}/${capacity})`;
+      duration = 25;
+      xp = 10;
       break;
     }
     case 'rest': {
@@ -432,7 +467,7 @@ function validateSave(value: unknown): value is GameState {
   const seedTotal = CROP_IDS.reduce((total, id) => total + Number((value.seedInventory as Record<string, unknown>)[id]), 0);
   if (seedTotal !== value.resources.seeds) return false;
   if (Object.hasOwn(value, 'settlement') && !validateSettlement(value.settlement, { deckLevel: value.deckLevel, totalMinutes: value.totalMinutes })) return false;
-  if (!Array.isArray(value.plots) || value.plots.length !== value.deckLevel + 2) return false;
+  if (!Array.isArray(value.plots) || value.plots.length < value.deckLevel + 2 || value.plots.length > getFarmCapacity({ deckLevel: value.deckLevel })) return false;
   const ids = new Set<number>();
   for (const plot of value.plots) {
     if (!isRecord(plot) || !isInteger(plot.id, 1, 100) || ids.has(plot.id) || typeof plot.watered !== 'boolean') return false;

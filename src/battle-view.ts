@@ -67,7 +67,7 @@ export class BattleView {
           <div class="battle-heading"><span>EXPEDITION ${String(s.stage).padStart(2, '0')}</span><h2>${STAGE_NAMES[s.stage - 1]}</h2></div>
           <button class="battle-circle" data-battle="pause" aria-label="전투 일시정지">Ⅱ</button>
         </header>
-        <div class="battle-progress"><span data-battle-wave>WAVE 1 / 3</span><div class="battle-wave-dots"><i></i><i></i><i></i></div><strong data-battle-time>00:00</strong></div>
+        <div class="battle-progress"><span data-battle-wave>WAVE 1 / 3</span><div class="battle-wave-dots"><i></i><i></i><i></i></div><strong data-battle-time>0초</strong></div>
         <section class="battle-arena" aria-label="생존자와 보리가 좀비를 상대하는 전투 화면">
           <canvas aria-label="캐릭터가 자동 공격합니다. 아래 세 가지 기술을 눌러 전투를 도와주세요."></canvas>
           <div class="battle-location"><span>SEOUL OUTSKIRTS · 2187</span><b>도로에 다시, 작은 평화를.</b></div>
@@ -201,7 +201,7 @@ export class BattleView {
   private renderHUD(): void {
     const s = this.simulation.state;
     this.root.querySelector('[data-battle-wave]')!.textContent = `WAVE ${s.wave} / 3`;
-    this.root.querySelector('[data-battle-time]')!.textContent = `${String(Math.floor(s.time / 60)).padStart(2, '0')}:${String(Math.floor(s.time % 60)).padStart(2, '0')}`;
+    this.root.querySelector('[data-battle-time]')!.textContent = `${Math.floor(s.time)}초`;
     this.root.querySelectorAll('.battle-wave-dots i').forEach((dot, i) => { dot.className = i < s.wave - 1 ? 'done' : i === s.wave - 1 ? 'current' : ''; });
     this.root.querySelector('[data-battle-health-label]')!.textContent = `${Math.ceil(s.health)} / 100`;
     const health = this.root.querySelector<HTMLElement>('.battle-health-track')!;
@@ -216,7 +216,7 @@ export class BattleView {
       const remaining = s.cooldowns[skill.id];
       button.disabled = remaining > 0 || s.paused || s.transition > 0 || !!s.result || (skill.id === 'heal' && s.health >= 100);
       button.style.setProperty('--cooldown', `${remaining / SKILL_COOLDOWNS[skill.id] * 100}%`);
-      button.querySelector('.battle-skill-cooldown')!.textContent = remaining > 0 ? `${Math.ceil(remaining)}s` : skill.id === 'heal' && s.health >= 100 ? '체력 가득' : 'READY';
+      button.querySelector('.battle-skill-cooldown')!.textContent = remaining > 0 ? `${Math.ceil(remaining)}초` : skill.id === 'heal' && s.health >= 100 ? '체력 가득' : 'READY';
     }
     const banner = this.root.querySelector<HTMLElement>('.battle-wave-banner')!;
     banner.classList.toggle('visible', s.transition > 0 && !s.result);

@@ -1,4 +1,5 @@
 import type { ActionResult, GameState, Resource } from './game';
+import { formatGameDuration } from './game-time';
 
 export const BUILDING_TYPES = ['waterworks', 'kitchen', 'workshop', 'petHouse', 'greenhouse', 'watchtower'] as const;
 export type BuildingType = typeof BUILDING_TYPES[number];
@@ -219,7 +220,7 @@ export function startProduction(state: GameState, id: number): SettlementResult 
   const target = next.settlement!.buildings.find(item => item.id === id)!;
   target.startedAt = next.totalMinutes; target.readyAt = next.totalMinutes + definition.minutes;
   next.settlement!.stats!.productions += 1;
-  return success(next, `${definition.name} 생산을 시작했어요. 게임 시간 ${definition.minutes}분 뒤 ${labels[definition.yieldResource]} ${definition.yieldAmount * building.level}개를 받을 수 있어요.`);
+  return success(next, `${definition.name} 생산을 시작했어요. ${formatGameDuration(definition.minutes)} 뒤 ${labels[definition.yieldResource]} ${definition.yieldAmount * building.level}개를 받을 수 있어요.`);
 }
 export function collectProduction(state: GameState, id: number): SettlementResult {
   const unavailable = blocked(state); if (unavailable) return unavailable;

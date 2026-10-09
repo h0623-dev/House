@@ -1,4 +1,5 @@
-import { CROPS, getCropProgress, getPlotCropId, type CropId, type GameState, type Plot } from './game';
+import { formatGameDuration } from './game-time';
+import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, type GameState, type Plot } from './game';
 import { drawHero, type HeroPose } from './actors';
 import { drawPet, drawZombie } from './creatures';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady, worldImages } from './world-art';
@@ -9,9 +10,9 @@ import { createMotionRoute, sampleMotionRoute, type MotionRoute } from './scene-
 import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'build-slot';
+type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'build-slot';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number };
-type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'gather';
+type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather';
 type FarmAction = 'plant' | 'water' | 'harvest';
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
@@ -22,6 +23,11 @@ type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: numbe
 const WORLD_HERO_SCALE = .64;
 const CROP_PLANT_SIZE: Record<CropId, Point> = { carrot: [21, 34], potato: [26, 27], tomato: [24, 35], corn: [19, 40], strawberry: [22, 25], pumpkin: [29, 27] };
 const CROP_SEED_COLOR: Record<CropId, string> = { carrot: '#d29b57', potato: '#bfab72', tomato: '#cfad6c', corn: '#efc955', strawberry: '#9d7150', pumpkin: '#ead5a1' };
+// The original eight beds keep their identity and position as the garden grows.
+// New beds occupy the deck's front garden; facilities stay behind the central path.
+const FARM_POSITIONS: Point[] = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122],
+  [216, 42], [216, 122], [299, 42], [299, 122], [-116, 202], [-33, 202], [50, 202], [133, 202], [216, 202], [299, 202]];
+const DECK_FRONTS = [141, 216, 216, 249, 296, 321];
 const SETTLEMENT_SLOTS: Point[] = [[-42, -106], [124, -106], [-42, -278], [124, -278], [-42, -450], [124, -450], [290, -106], [456, -106], [290, -278], [456, -278], [290, -450], [456, -450]];
 const FACILITY_SIZE: Record<BuildingType, Point> = { workshop: [126, 119], kitchen: [120, 112], waterworks: [116, 118], greenhouse: [126, 105], watchtower: [111, 146], petHouse: [106, 90] };
 
@@ -288,11 +294,11 @@ export class Scene {
     const state = this.state;
     let plotIndex = state?.plots.findIndex(plot => plot.id === plotId) ?? -1;
     if (plotIndex < 0 && state) plotIndex = state.plots.findIndex(plot => kind === 'plant' ? plot.plantedAt === null : kind === 'water' ? plot.plantedAt !== null && !plot.watered : getCropProgress(state, plot) >= 1);
-    plotIndex = Math.max(0, plotIndex);
+    plotIndex = kind === 'expandFarm' ? state?.plots.length ?? 3 : Math.max(0, plotIndex);
     const cropId = kind === 'plant' ? selectedCropId ?? this.plantingCropId : getPlotCropId(state?.plots[plotIndex] ?? { id: 0, plantedAt: null, watered: false });
     const home = this.p(-74, 14, 95), [u, v] = this.plotPosition(plotIndex);
     let path: Point[] = [home, this.p(u - 9, 12, 95), this.p(u - 9, v + 39, 95)];
-    let work = kind === 'water' ? 2.1 : kind === 'harvest' ? 2.2 : 1.9;
+    let work = kind === 'expandFarm' ? 2.4 : kind === 'water' ? 2.1 : kind === 'harvest' ? 2.2 : 1.9;
     let climbSegments: number[] = [];
     if (kind === 'chop' || kind === 'gather') {
       const front = this.deckBounds().front;
@@ -414,6 +420,16 @@ export class Scene {
     });
     const encoded = JSON.stringify(slots);
     if (this.canvas.dataset.settlementSlots !== encoded) this.canvas.dataset.settlementSlots = encoded;
+    const plots = (this.state?.plots ?? []).slice(0, FARM_POSITIONS.length).map((plot, index) => {
+      const [u, v] = this.plotPosition(index), point = this.p(u + 35, v + 36, 112);
+      return { id: plot.id, x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale) };
+    });
+    const farmGeometry = JSON.stringify(plots);
+    if (this.canvas.dataset.farmPlots !== farmGeometry) this.canvas.dataset.farmPlots = farmGeometry;
+    const count = this.state?.plots.length ?? 3, available = count < (this.state ? getFarmCapacity(this.state) : 3);
+    const [u, v] = this.plotPosition(count), next = this.p(u + 35, v + 36, 112);
+    const expansion = JSON.stringify({ available, index: count, x: round(this.dx + next[0] * this.scale), y: round(this.dy + next[1] * this.scale) });
+    if (this.canvas.dataset.farmExpansion !== expansion) this.canvas.dataset.farmExpansion = expansion;
   }
   private eligibleFarmPlot(plot: Plot) {
     if (this.farmMode === 'plant') return plot.plantedAt === null;
@@ -504,10 +520,10 @@ export class Scene {
     const lower = Math.floor(step), upper = Math.ceil(step), amount = step - lower;
     const ends = [234, 282, 330, 558, 582, 606], backs = [-184, -356, -528, -544, -560, -576];
     return { level, left: -278 - step * 14, end: ends[lower] + (ends[upper] - ends[lower]) * amount,
-      back: backs[lower] + (backs[upper] - backs[lower]) * amount, front: 141 + step * 36 };
+      back: backs[lower] + (backs[upper] - backs[lower]) * amount, front: DECK_FRONTS[lower] + (DECK_FRONTS[upper] - DECK_FRONTS[lower]) * amount };
   }
   private plotPosition(index: number): Point {
-    return [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]][index] as Point ?? [-116, 42];
+    return FARM_POSITIONS[index] ?? FARM_POSITIONS[0];
   }
   private rampTop(): Point { return this.p(-225, this.deckBounds().front - 3, 95); }
   private rampBottom(): Point { return [140, 527]; }
@@ -522,7 +538,7 @@ export class Scene {
       const motion = sampleMotionRoute(action.route, action.elapsed - action.walk - action.work, true);
       return { ...motion, time: motion.distance / 86 };
     }
-    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', gather: 'gather' };
+    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather' };
     return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
       progress: this.actionProgress(), time: action.elapsed - action.walk };
   }
@@ -536,7 +552,15 @@ export class Scene {
     const { level, left, end, back, front } = this.deckBounds();
     const homeX = 480 - (level - 1) * 12, homeY = 350 + (level - 1) * 6;
     const showFarm = this.farmFocus || this.farmMode !== null;
-    let target = showFarm && this.zone === 'home' ? { x: 468, y: 350, zoom: 1.48 } : { x: homeX, y: homeY, zoom: 1 };
+    const farmCount = this.state?.plots.length ?? 3;
+    const visibleFarmCount = Math.min(farmCount + 1, this.state ? getFarmCapacity(this.state) : 3, FARM_POSITIONS.length);
+    const farmPoints = FARM_POSITIONS.slice(0, visibleFarmCount).map(([u, v]) => this.p(u + 35, v + 36, 112));
+    const farmXs = farmPoints.map(point => point[0]), farmYs = farmPoints.map(point => point[1]);
+    const farmWidth = Math.max(...farmXs) - Math.min(...farmXs) + 126;
+    const farmHeight = Math.max(...farmYs) - Math.min(...farmYs) + 118;
+    const farmCenter: Point = farmCount <= 3 ? [468, 350]
+      : [(Math.min(...farmXs) + Math.max(...farmXs)) / 2, (Math.min(...farmYs) + Math.max(...farmYs)) / 2 - 5];
+    let target = showFarm && this.zone === 'home' ? { x: farmCenter[0], y: farmCenter[1], zoom: 1.48 } : { x: homeX, y: homeY, zoom: 1 };
     if (this.zone === 'grove') target = { x: 180, y: 515, zoom: 2.15 };
     const action = this.action;
     // A stable whole-farm view lets additional taps queue while the hero works.
@@ -558,7 +582,8 @@ export class Scene {
     const safeTop = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-top')) || 0);
     const safeBottom = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-bottom')) || 0);
     const availableHeight = Math.max(100, this.height - safeTop - safeBottom);
-    let viewWidth = logicalWidth, viewHeight = logicalHeight;
+    let viewWidth = showFarm ? Math.max(logicalWidth, farmWidth * 1.48) : logicalWidth;
+    let viewHeight = showFarm ? Math.max(logicalHeight, farmHeight * 1.48) : logicalHeight;
     if (!showFarm && this.zone === 'home' && (!this.action || this.action.kind === 'expand')) {
       const corners = [this.p(left, back, 94), this.p(end, back, 94), this.p(end, front, 94), this.p(left, front, 94)];
       const cabin = this.p(end + 95, (back + front) / 2, -12);
@@ -796,15 +821,19 @@ export class Scene {
         const progress = duration > 0 ? Math.max(0, Math.min(1, (state.totalMinutes - (building.startedAt ?? state.totalMinutes)) / duration)) : 0;
         this.round(point[0] - 15 * pixel, point[1] + 20 * pixel, 30 * pixel, 3 * pixel, 1.5 * pixel, '#687c5733');
         if (progress > 0) this.round(point[0] - 15 * pixel, point[1] + 20 * pixel, 30 * progress * pixel, 3 * pixel, 1.5 * pixel, '#88ae7c');
-        if (selectedType || building.id === this.selectedFacilityId) this.label(`${Math.ceil(building.readyAt - state.totalMinutes)}분`, point[0], point[1] + 33 * pixel, 7 * pixel, '#5b7354', 600);
+        if (selectedType || building.id === this.selectedFacilityId) this.label(formatGameDuration(building.readyAt - state.totalMinutes), point[0], point[1] + 33 * pixel, 7 * pixel, '#5b7354', 600);
       }
     }
   }
 
   private farm() {
     const plots = this.state?.plots ?? [{ id: 1, plantedAt: null, watered: false }, { id: 2, plantedAt: null, watered: false }, { id: 3, plantedAt: null, watered: false }];
-    const count = Math.min(plots.length, 8);
-    for (let i = 0; i < count; i++) {
+    const count = Math.min(plots.length, FARM_POSITIONS.length);
+    const order = Array.from({ length: count }, (_, index) => index).sort((a, b) => {
+      const [au, av] = this.plotPosition(a), [bu, bv] = this.plotPosition(b);
+      return this.p(au, av)[1] - this.p(bu, bv)[1];
+    });
+    for (const i of order) {
       const [u, v] = this.plotPosition(i), plot = plots[i];
       const mid = this.p(u + 35, v + 36, 112);
       // A resident behind a planter belongs behind its wood and leaves as well.
@@ -872,11 +901,21 @@ export class Scene {
         this.label(String(i + 1), label[0], label[1] + 3.2, 10, '#4d462c');
       }
     }
-    if (count < 4) {
+    if (count < (this.state ? getFarmCapacity(this.state) : 3)) {
+      const [u, v] = this.plotPosition(count), q = this.p(u + 35, v + 36, 112);
+      const preparing = this.action?.kind === 'expandFarm';
       const c = this.ctx; c.save(); c.setLineDash([4, 5]);
-      this.poly([this.p(133, 42, 95), this.p(202, 42, 95), this.p(202, 110, 95), this.p(133, 110, 95)], '#d1b98840', '#806642', 1.5); c.restore();
-      const q = this.p(167, 76, 98); this.label('+', q[0], q[1] + 6, 25, '#806642', 400);
-      this.hits.push({kind: 'truck', x: q[0], y: q[1], radius: 32});
+      this.poly([this.p(u, v, 96), this.p(u + 69, v, 96), this.p(u + 69, v + 68, 96), this.p(u, v + 68, 96)], '#d4ddb13b', '#718653', 1.8); c.restore();
+      if (preparing && this.action && this.action.elapsed > this.action.walk + this.action.work) {
+        drawWorldSprite(c, 'planter', q[0], q[1] + 31, 109, 71);
+      }
+      if (!preparing) {
+        const pixel = 1 / this.scale;
+        this.ellipse(q[0], q[1], 13 * pixel, 13 * pixel, '#fff7dced', '#7e925e', 1.2 * pixel);
+        this.label('+', q[0], q[1] + 5 * pixel, 22 * pixel, '#627b43', 500);
+        this.label('밭 늘리기', q[0], q[1] + 24 * pixel, 8 * pixel, '#5d683e', 700);
+        this.hits.push({kind: 'farm-expand', x: q[0], y: q[1], radius: 32});
+      }
     }
   }
 
@@ -925,7 +964,7 @@ export class Scene {
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
       const cropName = CROPS[this.action.cropId].name;
-      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡' };
+      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 집을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡' };
       const label = labels[this.action.kind];
       const top = y - 128 * WORLD_HERO_SCALE - 32;
       this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
@@ -979,7 +1018,7 @@ export class Scene {
     const action = this.action;
     if (!action || action.elapsed < action.walk || action.elapsed > action.walk + action.work) return;
     const { left, end, front } = this.deckBounds();
-    const oldFront = 141 + ((this.state?.deckLevel ?? 1) - 1) * 36;
+    const oldFront = DECK_FRONTS[(this.state?.deckLevel ?? 1) - 1];
     this.ctx.save(); this.ctx.globalAlpha = .32 + Math.sin(this.time * 9) * .12;
     this.poly([this.p(left, oldFront, 96), this.p(end, oldFront, 96), this.p(end, front, 96), this.p(left, front, 96)], '#fff1a5', '#fff4bd', 2);
     this.ctx.restore();
@@ -1050,6 +1089,21 @@ export class Scene {
         c.save(); c.globalAlpha = Math.min(1, pickedUp * 4) * (1 - stowed * stowed);
         this.round(x - 4, y - 4, 9, 7, 2, '#ad9b78', '#796c52');
         this.line([[x - 2, y - 3], [x - 2, y + 2]], '#d9c69a', 1); c.restore();
+      }
+    } else if (action.kind === 'expandFarm') {
+      // Soil and timber gradually become the new bed. The state adds the usable
+      // plot only once the character has finished and returned home.
+      c.save(); c.globalAlpha = Math.min(1, progress * 2);
+      drawWorldSprite(c, 'planter', target[0] + 3, target[1] + 33, 109, 71);
+      c.restore();
+      for (let i = 0; i < 8; i++) {
+        const t = (progress * 3 + i * .137) % 1;
+        const x = target[0] + (i % 4 - 1.5) * 12, y = target[1] - Math.sin(t * Math.PI) * 13 + (Math.floor(i / 4) - .5) * 12;
+        this.ellipse(x, y, 2.8, 1.5, i % 2 ? '#977649' : '#b69761');
+      }
+      if (progress > .5 && progress < .83) {
+        c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE); c.rotate(-.8 + Math.sin(progress * Math.PI * 14) * .9);
+        this.line([[0, 0], [0, -25]], '#9e7750', 4); this.round(-10, -30, 21, 9, 3, '#8faaa0', '#617e75'); c.restore();
       }
     } else if (action.kind === 'expand' && progress < .83) {
       c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE); c.rotate(-.8 + Math.sin(progress * Math.PI * 10) * .9);
