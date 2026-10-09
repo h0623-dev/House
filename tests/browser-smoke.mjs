@@ -1,9 +1,11 @@
 import { chromium } from '@playwright/test';
 import strictAssert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { captureExecutionInputs } from './release-execution-inputs.mjs';
 
 const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
 const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
+const executionInputs = await captureExecutionInputs(import.meta.url, { snapshotId, finalSnapshot });
 const startedAt = new Date();
 let assertionsExecuted = 0;
 const assert = new Proxy(strictAssert, {
@@ -88,7 +90,7 @@ const screenshot = name => {
 async function writeReceipt(status, failure) {
  const finishedAt = new Date();
  await writeFile('artifacts/browser-v' + appVersion + '-verification.json', JSON.stringify({
-  version: appVersion, snapshotId, finalSnapshot, status,
+  version: appVersion, snapshotId, finalSnapshot, executionInputs, status,
   baseUrl: process.env.TEST_BASE_URL || 'http://127.0.0.1:5173',
   startedAt: startedAt.toISOString(), finishedAt: finishedAt.toISOString(),
   elapsedMs: finishedAt.getTime() - startedAt.getTime(), assertionsExecuted,
@@ -159,9 +161,9 @@ async function stopPlanting() {
 function paintedPlot(id) {
  const coordinates = async () => {
   return page.locator('#world').evaluate((canvas, id) => {
-   const positions = [[-116, 42], [-33, 42], [50, 42], [133, 42], [-116, 122], [-33, 122], [50, 122], [133, 122]];
-   const [u, v] = positions[id - 1], p = (u, v, z = 0) => [480 + u * .91 - v * .67, 420 + u * .34 + v * .47 - z];
-   const [x, y] = p(u + 35, v + 36, 112), rect = canvas.getBoundingClientRect();
+   const hit = JSON.parse(canvas.dataset.sceneHits).find(hit => hit.kind === 'farm' && hit.plotId === id);
+   if (!hit) throw Error('The intended painted plot is not visible');
+   const x = hit.x, y = hit.y, rect = canvas.getBoundingClientRect();
    const geometry = JSON.parse(canvas.dataset.sceneGeometry);
    return { x: rect.left + geometry.dx + x * geometry.scale, y: rect.top + geometry.dy + y * geometry.scale, width: 1, height: 1 };
   }, id);
@@ -185,7 +187,7 @@ async function chore(button, assertNotApplied, { workScreenshot, repeatTap = fal
  const motion = await page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneAction));
  const expectedWork = { plant: .75, water: .75, harvest: .825, chop: 1.275, gather: 1.2, expand: .9 }[motion.kind];
  assert.ok(expectedWork && Math.abs(motion.work - expectedWork) < .005, 'the faster work phase still retains its readable action duration');
- assert.ok(Math.abs(motion.total - (motion.walk * 2 + motion.work)) < .005, 'shortened outbound, work and return still form one complete chore');
+ assert.ok(Math.abs(motion.total - (motion.walk + motion.returnWalk + motion.work)) < .005, 'outbound, work and the actual physical return form one complete chore');
  if (assertNotApplied) await assertNotApplied();
  assert.equal(await page.locator('#app').getAttribute('aria-busy'), 'true');
  await page.clock.runFor(Math.max(0, Math.ceil((motion.walk + motion.work / 2) * 1000) - 100));

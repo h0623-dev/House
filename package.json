@@ -1,6 +1,6 @@
 {
   "name": "road-haven",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,7 +23,8 @@
     "test:pan": "node tests/map-pan-mobile.mjs",
     "test:farm-expand": "node tests/farm-expansion-mobile.mjs",
     "test:systems": "node tests/systems-v17-mobile.mjs",
-    "test:pwa": "node tests/pwa-mobile.mjs"
+    "test:pwa": "node tests/pwa-mobile.mjs",
+    "test:truck-floors": "node tests/truck-floors-mobile.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.4.3",

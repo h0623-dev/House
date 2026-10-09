@@ -1,6 +1,7 @@
 import type { ActionResult, GameState, Resource } from './game';
 import { CROP_IDS, type CropId } from './crops';
-import { getBuiltTypes, getSettlement, getUpgradedFacilityRecord, getHighestFacilityLevel, getFacilityHistory, type BuildingType } from './settlement';
+import { getBuiltTypes, getSettlement, getLegacySettlement, getUpgradedFacilityRecord, getHighestFacilityLevel, type BuildingType } from './settlement';
+import { cloneTruckLayoutFields } from './truck-layout';
 import { cloneCompanions } from './companions';
 import { cloneUnitProgressFields, getMaxTeamSize, getUnlockedUnitIds } from './units';
 
@@ -141,11 +142,13 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
   const next: GameState = {
     ...state, resources: { ...state.resources, seeds: seedTotal }, seedInventory: seeds,
     plots: state.plots.map(plot => ({ ...plot })), quests: [...state.quests], stats: { ...state.stats },
-    ...(state.settlement ? { settlement: getSettlement(state) } : {}),
+    ...(state.settlement ? { settlement: getLegacySettlement(state) } : {}),
+    ...cloneTruckLayoutFields(state),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
     ...cloneUnitProgressFields(state),
-    ...(state.facilityHistory ? { facilityHistory: getFacilityHistory(state) } : {}),
+    ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory,
+      builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     expedition: null,
     growthQuests: { claimed: [...claimed, definition.id] },
     log: [`${state.day}일차 · 성장 목표 완료! ${definition.title} · 보상을 받았어요.`, ...state.log].slice(0, 30),

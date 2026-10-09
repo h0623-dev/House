@@ -1,5 +1,6 @@
 import type { ActionResult, GameState, Resource } from './game';
-import { getSettlement } from './settlement';
+import { getLegacySettlement } from './settlement';
+import { cloneTruckLayoutFields } from './truck-layout';
 import { cloneUnitProgressFields } from './units';
 
 /** Optional in older saves. A counter stores only deliveries actually paid for. */
@@ -77,7 +78,8 @@ export function fulfillVillageOrder(state: GameState, expectedId: string): Actio
   const next: GameState = {
     ...state, resources: { ...state.resources },
     ...(state.seedInventory ? { seedInventory: { ...state.seedInventory } } : {}),
-    ...(state.settlement ? { settlement: getSettlement(state) } : {}),
+    ...(state.settlement ? { settlement: getLegacySettlement(state) } : {}),
+    ...cloneTruckLayoutFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...cloneUnitProgressFields(state),

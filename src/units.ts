@@ -70,9 +70,10 @@ export function getUnitMaxHealth(id: UnitId, progress: CompanionProgress): numbe
 
 export interface UnitBattleBonuses { attackMultiplier: number; enemyDamageMultiplier: number }
 /** Highest current level wins; placing duplicates does not stack battle buffs. */
-export function getUnitBattleBonuses(state: { settlement?: { buildings: { type: string; level: number }[] } }): UnitBattleBonuses {
-  const level = (type: string): number => Math.max(0, ...(state.settlement?.buildings.filter(building => building.type === type)
-    .map(building => Number.isInteger(building.level) ? Math.min(5, Math.max(0, building.level)) : 0) ?? []));
+export function getUnitBattleBonuses(state: { settlement?: { buildings: { type: string; level: number }[] }; truckLayout?: { upperBuildings: { type: string; level: number }[] } }): UnitBattleBonuses {
+  const buildings = [...state.settlement?.buildings ?? [], ...state.truckLayout?.upperBuildings ?? []];
+  const level = (type: string): number => Math.max(0, ...buildings.filter(building => building.type === type)
+    .map(building => Number.isInteger(building.level) ? Math.min(5, Math.max(0, building.level)) : 0));
   return { attackMultiplier: 1 + level('petHouse') * .04, enemyDamageMultiplier: 1 - level('watchtower') * .03 };
 }
 export function validateUnitBattleBonuses(value: unknown): value is UnitBattleBonuses {

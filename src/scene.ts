@@ -4,19 +4,25 @@ import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, ty
 import { drawHero, type HeroPose } from './actors';
 import { drawZombie } from './creatures';
 import { drawCompanion, companionPawContacts, sampleCompanionGait, type CompanionOptions } from './companion-art';
-import { getSelectedTeam, getUnitRoster } from './units';
+import { drawTruckFloor, drawTruckStairway } from './truck-floor-art';
+import { drawSkyBirds, skyNightAmount } from './sky-birds';
+import { createPetPatrol, stepPetPatrol, getPetGroundRadius, type PetPatrolState } from './scene-patrol';
+import { getFloorBounds, getFloorSlots, getFloorStairs, getHomeLocation, getHomeSlots, getHousePosition, getHouseFootprint,
+  getSlotFloor, getSlotLocalIndex, getTruckFloorCount, type TruckFloor } from './truck-layout';
+import { getSelectedTeam, getUnitRoster, type UnitId } from './units';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady, worldImages } from './world-art';
 import { drawCropSprite } from './crop-art';
-import { BUILDINGS, getSettlement, getUnlockedSlots, type BuildingType } from './settlement';
+import { BUILDINGS, getSettlement, getUnlockedSlots, isFacilitySlotAvailable, isHomeSlotAvailable, type BuildingType } from './settlement';
 import { drawFacility, facilityArtReady } from './settlement-art';
 import { type MotionRoute } from './scene-motion';
 import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
-  sampleNavigation, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS, type NavigationLocation, type NavigationPath, type NavigationWorld } from './scene-navigation';
+  sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, distanceToSegment, getPatrolTargets, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
+  type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld } from './scene-navigation';
 import itemAtlasUrl from './assets/items-anime.png';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
+type Selectable = 'farm' | 'farm-expand' | 'truck' | 'house' | 'house-slot' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number };
 type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade';
 type FarmAction = 'plant' | 'water' | 'harvest';
@@ -25,7 +31,8 @@ type WorldBounds = { left: number; top: number; right: number; bottom: number };
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; resolve: () => void };
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
+const CHORE_STALL_TIMEOUT=16;
 // The hero belongs to the truck's scale: a person fits comfortably beside its house and planters.
 // Compact painted residents sit between the crops and miniature buildings.
 const WORLD_HERO_SCALE = .64;
@@ -35,6 +42,7 @@ const CROP_SEED_COLOR: Record<CropId, string> = { carrot: '#d29b57', potato: '#b
 // New beds occupy the deck's front garden; facilities stay behind the central path.
 const SETTLEMENT_SLOTS = SETTLEMENT_POSITIONS;
 const FACILITY_SIZE: Record<BuildingType, Point> = { workshop: [126, 119], kitchen: [120, 112], waterworks: [116, 118], greenhouse: [126, 105], watchtower: [111, 146], petHouse: [106, 90] };
+const PET_GROUND_SIZE: Record<UnitId,number>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31};
 
 /** A live isometric home built from our original painted anime environment art. */
 export class Scene {
@@ -55,12 +63,18 @@ export class Scene {
   private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private action: Chore | null = null;
   private heroLocation: NavigationLocation = defaultHeroLocation();
-  private freeWalk: { navigation: NavigationPath; elapsed: number; gaitOffset: number } | null = null;
+  private freeWalk: { navigation: NavigationPath; elapsed: number; gaitOffset: number; blockedFor:number; retryFor:number; reroutes:number } | null = null;
   private walkingEnabled = true;
   private gaitDistance = 0;
   private heroFacing: 1 | -1 = 1;
+  private activeFloor: TruckFloor = 1;
+  private renderFloor: TruckFloor = 1;
+  private houseMoveMode = false;
+  private selectedHouseSlot: number | null = null;
+  private blockedReason: string | null = null;
   private walkEventState = '';
-  private petMotion = new Map<string, { point: Point; phase: number; time: number; distance: number; speed: number; heading: number; facing: 1 | -1; blend: number; turnRemaining: number; nextFacing: 1 | -1; turnFrom: 1 | -1; facingBlend: number; anchor: number }>();
+  private petMotion = new Map<UnitId,PetPatrolState>();
+  private petYields = new Map<UnitId,{route:NavigationPath;reserved:NavigationLocation[];reservedRadius:number}>();
   private zone: 'home' | 'grove' = 'home';
   private selectedPlotId: number | null = null;
   private farmFocus = false;
@@ -105,20 +119,41 @@ export class Scene {
     this.lastFrame = timestamp;
     this.time += delta * GAME_SPEED_MULTIPLIER;
     if (this.freeWalk) {
-      const walking = this.freeWalk; walking.elapsed = Math.min(walking.navigation.motion.duration, walking.elapsed + delta);
-      const sample = sampleNavigation(walking.navigation, walking.elapsed);
-      this.heroLocation = sample.location; this.heroFacing = sample.facing;
-      this.gaitDistance = walking.gaitOffset + sample.distance;
+      const walking = this.freeWalk,nextElapsed=Math.min(walking.navigation.motion.duration,walking.elapsed+delta),sample=sampleNavigation(walking.navigation,nextElapsed);
+      const blocker=this.stepBlocker(this.heroLocation,sample.location);
+      this.blockedReason=blocker?`actor:${blocker.id}`:null;
+      if(blocker){
+        walking.blockedFor+=elapsed;walking.retryFor+=elapsed;
+        if(walking.blockedFor>=.3&&walking.retryFor>=.3){
+          walking.retryFor=0;
+          this.tryPetYield(blocker,[sample.location,walking.navigation.target]);
+          const detour=planNavigation(this.navigationWorld(),this.heroLocation,walking.navigation.target);
+          if(detour){walking.navigation=detour;walking.elapsed=0;walking.gaitOffset=this.gaitDistance;walking.reroutes++;}
+        }
+      }else{walking.blockedFor=0;walking.retryFor=0;walking.elapsed=nextElapsed;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);}
       if (walking.elapsed >= walking.navigation.motion.duration) { this.freeWalk = null; this.publishWalking(); }
     }
     if (this.action) {
-      this.action.elapsed += elapsed;
-      if (this.action.kind === 'chop' && this.action.elapsed >= this.action.walk + this.action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
-      if (this.action.elapsed >= this.action.duration) {
-        const finished = this.action; this.heroLocation = { ...finished.navigation.returnLocation, point: [...finished.navigation.returnLocation.point] };
-        this.action = null; this.zone = 'home'; finished.resolve();
+      const action=this.action,nextElapsed=Math.min(action.duration,action.elapsed+elapsed),nextLocation=nextElapsed<action.walk?sampleNavigation(action.navigation,nextElapsed).location:
+        nextElapsed>action.walk+action.work?sampleNavigation(action.navigation,nextElapsed-action.walk-action.work,true).location:action.navigation.target;
+      const blocker=this.stepBlocker(this.currentHeroLocation(),nextLocation);
+      this.blockedReason=blocker?`actor:${blocker.id}`:null;
+      if(blocker){
+        action.stalled+=elapsed;
+        if(action.stalled-action.yieldAt>=.3){action.yieldAt=action.stalled;this.tryPetYield(blocker,[nextLocation,nextElapsed>action.walk+action.work?action.navigation.returnLocation:action.navigation.target]);}
+      }else{action.stalled=0;action.yieldAt=0;action.elapsed=nextElapsed;this.followFloor(nextLocation.floor??1);}
+      if(action.stalled>=CHORE_STALL_TIMEOUT){
+        const retained=this.currentHeroLocation();this.heroLocation={...retained,point:[...retained.point]};this.action=null;this.zone='home';
+        action.reject(new Error('동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
+      }else{
+        if (action.kind === 'chop' && action.elapsed >= action.walk + action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
+        if (action.elapsed >= action.duration) {
+          this.heroLocation = { ...action.navigation.returnLocation, point: [...action.navigation.returnLocation.point] };
+          this.action = null; this.zone = 'home'; action.resolve();
+        }
       }
     }
+    this.advancePets(delta);
     this.render();
   };
   private visibility = () => {
@@ -233,7 +268,7 @@ export class Scene {
     const workTree = candidates.find(item => item.kind === 'grove-work');
     const slots = candidates.filter(item => item.kind === 'build-slot').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
-    const hit = this.constructionMode ? slots[0] : facilityAction ?? foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
+    const hit = this.houseMoveMode ? candidates.find(item=>item.kind==='house-slot') : this.constructionMode ? slots[0] : facilityAction ?? foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
     const target = groundLocation(this.navigationWorld(), [x,y]);
     // The truck cab remains interactive; its broad legacy hit circle must not
     // turn a real empty deck tile into the expansion menu.
@@ -269,6 +304,9 @@ export class Scene {
 
   setState(state: GameState) {
     this.state = state;
+    const team=getSelectedTeam(state);
+    for(const id of this.petMotion.keys())if(!team.includes(id)){this.petMotion.delete(id);this.petYields.delete(id);}
+    if(this.activeFloor>getTruckFloorCount(state))this.activeFloor=1;
     if (this.selectedPlotId !== null && !state.plots.some(plot => plot.id === this.selectedPlotId)) this.selectedPlotId = null;
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
   }
@@ -310,6 +348,7 @@ export class Scene {
   /** Selecting a distant facility explicitly makes both its sprite and upgrade sheet readable. */
   focusFacility(id: number) {
     if (!this.state || !getSettlement(this.state).buildings.some(building => building.id === id)) return;
+    this.setActiveFloor(getSlotFloor(getSettlement(this.state).buildings.find(building=>building.id===id)!.slot));
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
     this.selectedFacilityId = id; this.zone = 'home';
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.cameraFocusRequested = true;
@@ -345,9 +384,69 @@ export class Scene {
     if (enabled === this.walkingEnabled) return;
     this.walkingEnabled = enabled; if (!enabled) this.stopWalking();
   }
+  getActiveFloor() { return this.activeFloor; }
+  /** Floor tabs change only the view; the actor still travels through actual stairs. */
+  setActiveFloor(floor: TruckFloor) {
+    if(!this.state||!getFloorSlots(this.state,floor).length||floor===this.activeFloor)return;
+    this.stopWalking();this.activeFloor=floor;this.resetMapView();this.cameraFocusRequested=true;
+    this.canvas.dispatchEvent(new CustomEvent('scenefloorchange',{detail:{floor}}));this.render();
+  }
+  setHouseMoveMode(enabled:boolean,slot?:number) {
+    if(enabled!==this.houseMoveMode){this.stopWalking();this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();}
+    this.houseMoveMode=enabled;this.selectedHouseSlot=enabled&&slot!==undefined?slot:null;this.render();
+  }
+  canPlaceHome(floor:TruckFloor,slot:number) { return !this.placementOccupied(floor,getHouseFootprint({floor,slot})); }
+  canPlaceFacility(slot:number) {
+    const position=SETTLEMENT_SLOTS[getSlotLocalIndex(slot)];if(!position)return false;
+    const[u,v]=position;return !this.placementOccupied(getSlotFloor(slot),{left:u-65,top:v-65,right:u+65,bottom:v+65});
+  }
+  private placementOccupied(floor:TruckFloor,bounds:{left:number;top:number;right:number;bottom:number}) {
+    const polygon=[[bounds.left,bounds.top],[bounds.right,bounds.top],[bounds.right,bounds.bottom],[bounds.left,bounds.bottom]]
+      .map(p=>projectDeckPoint(p as Point,floor));
+    return this.physicalActors().some(a=>a.location.surface==='deck'&&(a.location.floor??1)===floor&&circleOverlapsPolygon(a.location.point,a.radius,polygon));
+  }
+  private petScale(id:UnitId) { return id==='dog'?.78:id==='boar'?.7:.73; }
+  private physicalActors():NavigationActor[] {
+    const hero:NavigationActor={id:'hero',location:this.currentHeroLocation(),radius:HERO_BODY_RADIUS};
+    const team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
+    return[hero,...team.flatMap(id=>{const motion=this.petMotion.get(id);return motion?[{id,location:{...motion.location,point:[...motion.location.point]as Point},radius:motion.radius}]:[];})];
+  }
+  private stepBlocker(from:NavigationLocation,to:NavigationLocation) {
+    const actors=this.physicalActors().filter(actor=>actor.id!=='hero');
+    return (to.surface==='ladder'?actors.find(a=>a.location.surface==='ladder'&&a.location.link===to.link):undefined)
+      ??blocksActorStep(from,to,HERO_BODY_RADIUS,actors);
+  }
+  private tryPetYield(blocker:NavigationActor,reserved:NavigationLocation[],reservedRadius=HERO_BODY_RADIUS,requested=new Set<UnitId>()) {
+    const id=blocker.id as UnitId,motion=this.petMotion.get(id),roster=getUnitRoster(this.state??{});
+    if(!motion||requested.has(id)||this.petYields.has(id)||this.reducedMotion||roster[id].health<=0)return;
+    requested.add(id);
+    const ownsLink=motion.location.surface==='ladder'&&reserved.some(location=>location.surface==='ladder'&&location.link===motion.location.link);
+    if(!ownsLink&&motion.blockedReason!=='no-clear-patrol-route'&&!motion.blockedReason?.startsWith('actor:'))return;
+    const actors=this.physicalActors().filter(actor=>actor.id!==id),world=this.navigationWorld(motion.radius,actors),
+      route=planYieldNavigation(world,motion.location,reserved,reservedRadius);
+    if(!route){
+      // An occupied landing can prevent the first exit route from existing.
+      // Clear its actual companion body before accepting any movement through it.
+      const links=world.links.filter(link=>motion.location.surface==='ladder'&&motion.location.link===link.id
+        ||reserved.some(location=>location.surface==='ladder'&&location.link===link.id));
+      for(const actor of actors){
+        if(actor.id==='hero'||requested.has(actor.id as UnitId)||roster[actor.id as UnitId].health<=0)continue;
+        if(links.some(link=>((actor.location.floor??1)===link.lower||(actor.location.floor??1)===link.upper)
+          &&link.points.slice(1).some((to,index)=>distanceToSegment(actor.location.point,link.points[index],to)<motion.radius+actor.radius+2)))
+          this.tryPetYield(actor,[...reserved,motion.location],Math.max(motion.radius,reservedRadius),requested);
+      }
+      return;
+    }
+    motion.route=route;motion.elapsed=0;motion.retryRemaining=0;motion.pauseRemaining=0;motion.blockedReason=null;
+    this.petYields.set(id,{route,reserved:reserved.map(location=>({...location,point:[...location.point]})),reservedRadius});
+  }
+  private followFloor(floor:TruckFloor) {
+    if(floor===this.activeFloor)return;this.activeFloor=floor;this.renderFloor=floor;this.manualViewport=null;this.mapPan=[0,0];this.mapZoom=1;
+    this.canvas.dispatchEvent(new CustomEvent('scenefloorchange',{detail:{floor,following:true}}));
+  }
   /** Only an explicit new-game reset discards the session's retained position. */
   resetPosition() {
-    this.stopWalking(); this.heroLocation=defaultHeroLocation();this.gaitDistance=0;this.heroFacing=1;this.petMotion.clear();
+    this.stopWalking(); this.heroLocation=defaultHeroLocation();this.gaitDistance=0;this.heroFacing=1;this.petMotion.clear();this.petYields.clear();this.activeFloor=1;
     this.publishWalking();
   }
   resetMapView() {
@@ -375,38 +474,46 @@ export class Scene {
     plotIndex = kind === 'expandFarm' ? state?.plots.length ?? 3 : Math.max(0, plotIndex);
     const cropId = kind === 'plant' ? selectedCropId ?? this.plantingCropId : getPlotCropId(state?.plots[plotIndex] ?? { id: 0, plantedAt: null, watered: false });
     const [u, v] = this.plotPosition(plotIndex);
-    let target: NavigationLocation = { surface: 'deck', point: this.p(u - 9, v + 39, 95) };
+    let target: NavigationLocation = { surface: 'deck', floor:1, point: projectDeckPoint([u - 13,v + 39],1) };
     let work = kind === 'expandFarm' ? 1.8 : kind === 'water' ? 1.5 : kind === 'harvest' ? 1.65 : 1.5;
     if (kind === 'chop' || kind === 'gather') {
       target = { surface: 'road', point: kind === 'chop' ? [142,590] : [211,578] };
       work = kind === 'chop' ? 2.55 : 2.4;
       if (kind === 'chop') this.treeCutAt = -100;
     } else if (kind === 'expand') {
-      target = { surface: 'deck', point: this.p(-157, this.deckBounds().front - 19, 95) };
+      target = { surface: 'deck', floor:1, point: projectDeckPoint([-157, this.deckBounds().front - 23],1) };
       work = 1.8;
     }
     work = realDuration(work);
-    const navigation = planNavigation(this.navigationWorld(),this.heroLocation,target);
-    if (!navigation) return Promise.reject(new Error('지금 자리에서는 작업 장소로 갈 수 없어요. 빈 길로 이동해 주세요.'));
+    // A passing pet may temporarily occupy the work approach. The fixed route
+    // avoids structures; each accepted frame still waits for full actor clearance.
+    let approaches:NavigationLocation[];
+    if(target.surface==='road')approaches=[target,...[[-28,0],[28,0],[0,28],[0,-28]].map(([x,y])=>({surface:'road' as const,point:[target.point[0]+x,target.point[1]+y]as Point}))];
+    else if(kind==='expand')approaches=[target,...[-48,48,-96,96].map(shift=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint([-157+shift,this.deckBounds().front-23],1)}))];
+    else approaches=[target,...[[u+83,v+39],[u+34,v-13],[u+34,v+81]].map(point=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint(point as Point,1)}))];
+    const navigation = planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
+    if (!navigation) return Promise.reject(new Error('작업 장소로 가는 길이 막혔어요. 트럭 휴식으로 동료를 회복시키거나 빈 길로 이동해 주세요.'));
     const route = navigation.motion, path = navigation.points, walk = route.duration;
     this.zone = 'home';
     this.lastFrame = performance.now();
-    return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk + navigation.returnMotion.duration + work, walk, work, path, route, navigation, plotIndex, cropId, resolve }; });
+    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + navigation.returnMotion.duration + work, walk, work, path, route, navigation, plotIndex, cropId, stalled:0, yieldAt:0, resolve,reject }; });
   }
   /** A short, visible visit to the facility; the controller commits its state exactly once. */
   playFacilityAction(slot: number, kind: 'build' | 'upgrade'): Promise<void> {
     if (this.disposed) return Promise.resolve();
     if (this.action) return Promise.reject(new Error('이미 행동 중이에요.'));
     this.stopWalking();
-    if (!Number.isInteger(slot) || !SETTLEMENT_SLOTS[slot]) return Promise.reject(new Error('시설 자리를 확인해 주세요.'));
-    const [u, v] = SETTLEMENT_SLOTS[slot];
+    if (!Number.isInteger(slot) || !SETTLEMENT_SLOTS[getSlotLocalIndex(slot)]) return Promise.reject(new Error('시설 자리를 확인해 주세요.'));
+    const [u, v] = SETTLEMENT_SLOTS[getSlotLocalIndex(slot)],floor=getSlotFloor(slot);
     // These narrow aisles run along the edges of every existing footprint.
-    const navigation = planNavigation(this.navigationWorld(),this.heroLocation,{ surface: 'deck', point: this.p(u + 67,v + 67,95) });
-    if (!navigation) return Promise.reject(new Error('시설로 이어지는 빈 길을 확인해 주세요.'));
+    const approaches=[[83,83],[-83,83],[83,-83],[-83,-83],[83,0],[-83,0],[0,83],[0,-83]]
+      .map(([x,y])=>({surface:'deck' as const,floor,point:projectDeckPoint([u+x,v+y],floor)}));
+    const navigation = planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
+    if (!navigation) return Promise.reject(new Error('시설로 가는 길이 막혔어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
     const route = navigation.motion, path = navigation.points, walk = route.duration, work = realDuration(1.65);
     this.zone = 'home'; this.lastFrame = performance.now();
-    return new Promise(resolve => { this.action = { kind, elapsed: 0, duration: walk + navigation.returnMotion.duration + work, walk, work, path,
-      route, navigation, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, resolve }; });
+    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + navigation.returnMotion.duration + work, walk, work, path,
+      route, navigation, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, stalled:0, yieldAt:0, resolve,reject }; });
   }
   focus(kind: string) { this.focused = kind; this.focusedUntil = performance.now() + 2400; }
   resize() {
@@ -500,20 +607,25 @@ export class Scene {
       farmMode: this.farmMode, constructionMode: this.constructionMode, mapZoom: this.mapZoom,
       mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null,
       planningMode: this.planningMode, planningLevel: this.planningLevel, expansionPreview: this.expansionPreview,
-      deckLevel: this.state?.deckLevel ?? 1, farmCapacity: this.state ? getFarmCapacity(this.state) : 3, facilityCapacity: this.state ? getUnlockedSlots(this.state) : 2,
+      activeFloor:this.activeFloor,floorCount:this.state?getTruckFloorCount(this.state):1,houseMoveMode:this.houseMoveMode,
+      deckLevel: this.state?.deckLevel ?? 1, farmCapacity: this.state ? getFarmCapacity(this.state) : 3, facilityCapacity: this.state ? getFloorSlots(this.state,this.activeFloor).length : 2,
       viewport: { width: round(this.width), height: round(this.height), safeTop: round(this.safeViewport.top), safeBottom: round(this.safeViewport.bottom), safeLeft: round(this.safeViewport.left), safeRight: round(this.safeViewport.right), usableWidth: round(this.safeViewport.width), usableHeight: round(this.safeViewport.height) } });
     if (this.canvas.dataset.sceneGeometry !== geometry) this.canvas.dataset.sceneGeometry = geometry;
     const buildings = this.state ? getSettlement(this.state).buildings : [];
-    const unlocked = this.state ? getUnlockedSlots(this.state) : 2;
-    const slots = SETTLEMENT_SLOTS.map(([u, v], slot) => {
+    const unlocked = this.state ? getFloorSlots(this.state,this.activeFloor) : [0,1];
+    const slots = SETTLEMENT_SLOTS.map(([u, v], local) => {
+      const slot=(this.activeFloor-1)*16+local;
       const point = this.p(u, v, 95), building = buildings.find(item => item.slot === slot);
       const size = building ? FACILITY_SIZE[building.type] : [126, 119];
       const logicalBounds = this.slotBounds(slot);
       const footprint = { left: round(this.dx + logicalBounds.left * this.scale), top: round(this.dy + logicalBounds.top * this.scale),
         right: round(this.dx + logicalBounds.right * this.scale), bottom: round(this.dy + logicalBounds.bottom * this.scale) };
-      return { slot, footprint, visible: footprint.left >= this.safeViewport.left && footprint.right <= this.width - this.safeViewport.right
+      const staticAvailable=this.state?isFacilitySlotAvailable(this.state,slot,this.movingBuildingId??undefined):!building,
+        actorAvailable=this.canPlaceFacility(slot);
+      return { slot,floor:this.activeFloor,footprint,polygon:[[u-65,v-65],[u+65,v-65],[u+65,v+65],[u-65,v+65]].map(p=>{const[x,y]=projectDeckPoint(p as Point,this.activeFloor);return{x,y};}),
+        available:staticAvailable&&actorAvailable,blockedReason:!staticAvailable?'static':!actorAvailable?'actor':null, visible: footprint.left >= this.safeViewport.left && footprint.right <= this.width - this.safeViewport.right
         && footprint.top >= this.safeViewport.top && footprint.bottom <= this.height - this.safeViewport.bottom, x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale),
-        unlocked: slot < unlocked, buildingId: building?.id ?? null,
+        unlocked: unlocked.includes(slot), buildingId: building?.id ?? null,
         facilityX: round(this.dx + point[0] * this.scale), facilityY: round(this.dy + (point[1] - 44) * this.scale),
         readyX: round(this.dx + point[0] * this.scale), readyY: round(this.dy + (point[1] - size[1] - 18) * this.scale),
         action: !building ? null : building.readyAt === null ? 'facility-start'
@@ -524,7 +636,11 @@ export class Scene {
     const deck = this.deckBounds(), preview = this.expansionPreview === null ? null : this.deckBounds(this.expansionPreview);
     const corners = (bounds: ReturnType<Scene['deckBounds']>) => [[bounds.left, bounds.back], [bounds.end, bounds.back], [bounds.end, bounds.front], [bounds.left, bounds.front]].map(([u, v]) => { const point = this.p(u, v, 95); return { x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale) }; });
     this.canvas.dataset.deckExpansion = JSON.stringify({ level: this.state?.deckLevel ?? 1, nextLevel: this.expansionPreview, current: corners(deck), preview: preview ? corners(preview) : null,
-      addedSlots: this.expansionPreview === null ? [] : slots.filter(slot => !slot.unlocked && slot.slot < this.expansionPreview! * 2).map(slot => slot.slot) });
+      addedSlots: this.expansionPreview === null ? [] : slots.filter(slot => !slot.unlocked && getSlotLocalIndex(slot.slot) < this.expansionPreview! * 2).map(slot => slot.slot) });
+    this.canvas.dataset.houseSlots=JSON.stringify(this.state?Array.from({length:getTruckFloorCount(this.state)},(_,i)=>(i+1)as TruckFloor).flatMap(floor=>getHomeSlots(this.state!,floor).map(slot=>{
+      const rect=getHouseFootprint({floor,slot}),[u,v]=getHousePosition({floor,slot}),[x,y]=projectDeckPoint([u,v],floor),staticAvailable=isHomeSlotAvailable(this.state!,{floor,slot}),actorAvailable=this.canPlaceHome(floor,slot);
+      return{floor,slot,x,y,available:staticAvailable&&actorAvailable,blockedReason:!staticAvailable?'static':!actorAvailable?'actor':null,
+        polygon:[[rect.left,rect.top],[rect.right,rect.top],[rect.right,rect.bottom],[rect.left,rect.bottom]].map(p=>{const[x,y]=projectDeckPoint(p as Point,floor);return{x,y};})};})) : []);
     const encoded = JSON.stringify(slots);
     if (this.canvas.dataset.settlementSlots !== encoded) this.canvas.dataset.settlementSlots = encoded;
     const plots = (this.state?.plots ?? []).slice(0, FARM_POSITIONS.length).map((plot, index) => {
@@ -554,7 +670,8 @@ export class Scene {
     this.focus('farm'); this.onSelect('farm', hit.plotId);
   }
 
-  private p(u: number, v: number, z = 0): Point { return [480 + u * .91 - v * .67, 420 + u * .34 + v * .47 - z]; }
+  private rawP(u:number,v:number,z=0):Point { return [480+u*.91-v*.67,420+u*.34+v*.47-z]; }
+  private p(u: number, v: number, z = 0): Point { return this.rawP(u,v,z+(this.renderFloor-1)*176); }
   private poly(points: Point[], fill: string, stroke = '#586759', weight = 1.7) {
     const c = this.ctx;
     c.beginPath(); points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
@@ -608,9 +725,76 @@ export class Scene {
 
   private ease(value: number) { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }
   private actionProgress() { return this.action ? Math.max(0, Math.min(1, (this.action.elapsed - this.action.walk) / this.action.work)) : 0; }
-  private navigationWorld(): NavigationWorld {
+  private navigationWorld(radius=HERO_BODY_RADIUS,actors=this.physicalActors().filter(actor=>actor.id!=='hero')): NavigationWorld {
     return createNavigationWorld(this.state?.deckLevel ?? 1,this.state?.plots.length ?? 3,
-      this.state ? getSettlement(this.state).buildings.map(building => building.slot) : []);
+      this.state ? getSettlement(this.state).buildings.map(building => building.slot) : [],
+      {floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>(i+1)as TruckFloor),activeFloor:this.activeFloor,
+        home:this.state?getHomeLocation(this.state):{floor:1,slot:0},radius,actors});
+  }
+  private choreWorld() {
+    const roster=getUnitRoster(this.state??{});
+    return this.navigationWorld(HERO_BODY_RADIUS,this.physicalActors().filter(actor=>actor.id!=='hero'&&(this.reducedMotion||roster[actor.id as UnitId].health<=0)));
+  }
+  private ensurePets() {
+    const team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
+    team.forEach((id,index)=>{if(this.petMotion.has(id))return;const scale=this.petScale(id),radius=getPetGroundRadius(id,scale),actors=this.physicalActors();
+      const motion=createPetPatrol(id,this.navigationWorld(radius,actors),this.currentHeroLocation(),actors,index,scale);if(motion)this.petMotion.set(id,motion);});
+  }
+  private advancePets(delta:number) {
+    this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
+    for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
+      if(roster[id].health<=0){motion.speed=0;motion.blend=0;continue;}
+      const actors=this.physicalActors().filter(actor=>actor.id!==id);
+      const world=this.navigationWorld(motion.radius,actors),hero=this.currentHeroLocation(),yielding=this.petYields.get(id);
+      if(yielding){
+        const target=yielding.route.target;
+        if(!motion.route&&motion.location.surface===target.surface&&motion.location.floor===target.floor&&Math.hypot(motion.location.point[0]-target.point[0],motion.location.point[1]-target.point[1])<.1){
+          this.petYields.delete(id);
+        }else{
+          // An explicit corridor exit has priority until its actual feet arrive.
+          // Following the hero's new floor must not cancel it halfway out.
+          motion.desiredFloor=hero.floor??1;
+          const key=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
+          if(motion.route!==yielding.route||key!==motion.worldKey){
+            const blocker=actors.find(actor=>motion.blockedReason===`actor:${actor.id}`);
+            if(blocker)this.tryPetYield(blocker,[...yielding.reserved,motion.location,target],Math.max(motion.radius,yielding.reservedRadius));
+            if(motion.retryRemaining>0){motion.retryRemaining=Math.max(0,motion.retryRemaining-delta);motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));continue;}
+            const route=planNavigation(world,motion.location,target)??planYieldNavigation(world,motion.location,yielding.reserved,yielding.reservedRadius);
+            if(!route){motion.retryRemaining=.35;motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));continue;}
+            yielding.route=route;motion.route=route;motion.elapsed=0;motion.retryRemaining=0;motion.pauseRemaining=0;motion.blockedReason=null;motion.worldKey=key;
+          }
+        }
+      }
+      stepPetPatrol(motion,world,hero,actors,delta,{reducedMotion:this.reducedMotion});
+      if(this.petYields.has(id)||motion.location.surface==='ladder'
+        ||motion.blockedReason!=='no-clear-patrol-route'&&!motion.blockedReason?.startsWith('actor:'))continue;
+      // A resident trying to follow an occupied stair must clear its own landing
+      // before the current climber reaches it, without replacing that climber's exit.
+      for(const actor of actors){
+        const owner=this.petMotion.get(actor.id as UnitId),lease=this.petYields.get(actor.id as UnitId);
+        if(!owner||!lease||roster[owner.id].health<=0||owner.location.surface!=='ladder'
+          ||motion.blockedReason!=='no-clear-patrol-route'&&motion.blockedReason!==`actor:${owner.id}`)continue;
+        const link=world.links.find(link=>link.id===owner.location.link),floor=motion.location.surface==='road'?0:motion.location.floor??1,
+          entry=link&&(floor===link.lower?link.points[0]:floor===link.upper?link.points[link.points.length-1]:undefined);
+        if(!entry||Math.hypot(motion.location.point[0]-entry[0],motion.location.point[1]-entry[1])>=motion.radius+owner.radius+2)continue;
+        this.tryPetYield({id,location:motion.location,radius:motion.radius},[...lease.reserved,owner.location,lease.route.target],Math.max(owner.radius,lease.reservedRadius));
+        if(this.petYields.has(id))break;
+      }
+    }
+  }
+  private drawPets(onDeck:boolean) {
+    this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[],telemetry:unknown[]=[];
+    for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
+      const location=motion.location,[x,y]=location.point,visible=(location.floor??1)===this.activeFloor;
+      const options:CompanionOptions={id,x,y,scale:this.petScale(id),time:this.reducedMotion?0:this.time,facing:motion.facing,
+        pose:roster[id].health<=0?'down':motion.speed>.05&&!motion.turnRemaining?'walk':'idle',
+        gait:{distance:motion.distance,speed:motion.speed,heading:motion.heading,blend:motion.blend,facingBlend:motion.facingBlend,reducedMotion:this.reducedMotion}};
+      if(visible&&(onDeck?location.surface==='deck':location.surface!=='deck')){drawCompanion(this.ctx,options);this.hits.push({kind:'pet',x,y:y-14,radius:24});this.pulse('pet',x,y-15,26);}
+      telemetry.push({id,x,y,visible,scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,
+        body:{x,y,radius:motion.radius,floor:location.floor??1,surface:location.surface,link:location.link??null},blockedReason:motion.blockedReason,
+        facing:options.facing,pose:options.pose,turnRemaining:motion.turnRemaining,gait:options.gait,sample:sampleCompanionGait(id,options.gait!,options.scale),contacts:companionPawContacts(options)??null});
+    }
+    this.canvas.dataset.petMotion=JSON.stringify(telemetry);
   }
   private currentHeroLocation(): NavigationLocation {
     const action=this.action;
@@ -620,25 +804,29 @@ export class Scene {
     return {...action.navigation.target,point:[...action.navigation.target.point]};
   }
   private walkTo(target: NavigationLocation) {
-    if(!this.walkingEnabled||this.action||this.suspended||this.disposed||this.constructionMode||this.planningMode||this.selectedFacilityId!==null)return;
-    const navigation=planNavigation(this.navigationWorld(),this.heroLocation,target);
+    if(!this.walkingEnabled||this.action||this.suspended||this.disposed||this.constructionMode||this.houseMoveMode||this.planningMode||this.selectedFacilityId!==null)return;
+    const navigation=planNavigation(this.navigationWorld(),this.heroLocation,target)
+      ??planNavigation(this.choreWorld(),this.heroLocation,target);
     if(!navigation)return;
     if(navigation.motion.duration<.001){this.stopWalking();return;}
     this.holdCamera();
-    this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance};
+    this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0};
     this.lastFrame=performance.now();this.publishWalking();this.render();
   }
   private publishWalking() {
     const hero=this.heroState(),location=this.currentHeroLocation(),walking=this.freeWalk,world=this.navigationWorld();
     const point=(p:Point)=>({x:p[0],y:p[1]});
     const corners=(r:{left:number;top:number;right:number;bottom:number})=>[[r.left,r.top],[r.right,r.top],[r.right,r.bottom],[r.left,r.bottom]]as Point[];
-    this.canvas.dataset.freeMovement=JSON.stringify({moving:walking!==null,enabled:this.walkingEnabled,surface:location.surface,
-      position:point(hero.point),target:walking?{...point(walking.navigation.target.point),surface:walking.navigation.target.surface}:null,
-      route:walking?walking.navigation.points.map((p,index)=>({...point(p),surface:index?walking.navigation.surfaces[index-1]:walking.navigation.start.surface})):[],
-      frameAt:this.lastFrame,elapsed:walking?.elapsed??0,total:walking?.navigation.motion.duration??0,pose:hero.pose,facing:hero.facing,climbing:hero.climbing??null,gaitDistance:this.gaitDistance,
-      world:{deckUV:world.deck,deckPolygon:corners(world.deck).map(p=>point(projectDeckPoint(p))),roadBounds:world.road,
+    this.canvas.dataset.freeMovement=JSON.stringify({moving:walking!==null,enabled:this.walkingEnabled,surface:location.surface,floor:location.floor??1,activeFloor:this.activeFloor,link:location.link??null,blockedReason:this.blockedReason,
+      body:{...point(hero.point),radius:HERO_BODY_RADIUS,floor:location.floor??1,surface:location.surface,link:location.link??null},
+      position:point(hero.point),target:walking?{...point(walking.navigation.target.point),surface:walking.navigation.target.surface,floor:walking.navigation.target.floor??1}:null,
+      route:walking?walking.navigation.points.map((p,index)=>({...point(p),surface:index?walking.navigation.surfaces[index-1]:walking.navigation.start.surface,floor:index?walking.navigation.segments[index-1].toFloor:walking.navigation.start.floor??1})):[],
+      frameAt:this.lastFrame,elapsed:walking?.elapsed??0,total:walking?.navigation.motion.duration??0,blockedFor:walking?.blockedFor??0,reroutes:walking?.reroutes??0,pose:hero.pose,facing:hero.facing,climbing:hero.climbing??null,gaitDistance:this.gaitDistance,
+      world:{deckUV:world.deck,deckPolygon:corners(world.deck).map(p=>point(projectDeckPoint(p,this.activeFloor))),roadBounds:world.road,roadOuterBounds:world.roadOuter,
+        floors:world.floors.map(f=>({id:f.id,outerPolygon:corners(f.outer).map(p=>point(projectDeckPoint(p,f.id))),deckPolygon:corners(f.deck).map(p=>point(projectDeckPoint(p,f.id)))})),
+        links:world.links.map(l=>({...l,points:l.points.map(point)})),
         ladder:{entry:point(world.ladder.entry),top:point(world.ladder.top),bottom:point(world.ladder.bottom)},
-        obstacles:world.obstacles.map(o=>{const polygon=corners(o.bounds).map(p=>o.surface==='deck'?projectDeckPoint(p):p);return{surface:o.surface,
+        obstacles:world.obstacles.map(o=>{const polygon=corners(o.bounds).map(p=>o.surface==='deck'?projectDeckPoint(p,o.floor??1):p);return{surface:o.surface,floor:o.floor??1,kind:o.kind,
           bounds:{left:Math.min(...polygon.map(p=>p[0])),top:Math.min(...polygon.map(p=>p[1])),right:Math.max(...polygon.map(p=>p[0])),bottom:Math.max(...polygon.map(p=>p[1]))},polygon:polygon.map(point)};})}});
     const detail={moving:walking!==null,surface:location.surface},eventState=JSON.stringify(detail);
     if(eventState!==this.walkEventState){this.walkEventState=eventState;this.canvas.dispatchEvent(new CustomEvent('scenewalkchange',{detail}));}
@@ -651,12 +839,13 @@ export class Scene {
     // Read-only scene telemetry also makes pauses, stairs and completion observable.
     this.canvas.dataset.sceneAction = JSON.stringify({ kind: action?.kind ?? null, phase,
       elapsed: round(action?.elapsed ?? 0), total: round(action?.duration ?? 0),
+      stalled:round(action?.stalled??0),stallLimit:CHORE_STALL_TIMEOUT,
       walk: round(action?.walk ?? 0), work: round(action?.work ?? 0),
-      from: action ? { x: action.navigation.start.point[0], y: action.navigation.start.point[1], surface: action.navigation.start.surface } : null,
-      returnPoint: action ? { x: action.navigation.returnLocation.point[0], y: action.navigation.returnLocation.point[1], surface: action.navigation.returnLocation.surface } : null,
+      from: action ? { x: action.navigation.start.point[0], y: action.navigation.start.point[1], surface: action.navigation.start.surface, floor:action.navigation.start.floor??1 } : null,
+      returnPoint: action ? { x: action.navigation.returnLocation.point[0], y: action.navigation.returnLocation.point[1], surface: action.navigation.returnLocation.surface, floor:action.navigation.returnLocation.floor??1 } : null,
       returnWalk: round(action?.navigation.returnMotion.duration ?? 0),
       route: action?.navigation.points.map(point => ({ x: point[0], y: point[1] })) ?? [], climbSegments: action?.navigation.climbSegments ?? [],
-      facilitySlot: action?.facilitySlot ?? null, facilityId: action?.facilitySlot === undefined || !this.state ? null : getSettlement(this.state).buildings.find(building => building.slot === action.facilitySlot)?.id ?? null,
+      floor:this.currentHeroLocation().floor??1,blockedReason:this.blockedReason,facilitySlot: action?.facilitySlot ?? null, facilityId: action?.facilitySlot === undefined || !this.state ? null : getSettlement(this.state).buildings.find(building => building.slot === action.facilitySlot)?.id ?? null,
       pose: hero.pose, climbing: hero.climbing ?? null, progress: round(hero.progress),
       x: round(hero.point[0]), y: round(hero.point[1]), gaitTime: round(hero.time) });
     const progress = action ? Math.min(100, Math.floor(action.elapsed / action.duration * 100)) : 0;
@@ -696,10 +885,10 @@ export class Scene {
       progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
   private heroOnDeck() {
-    return this.currentHeroLocation().surface==='deck';
+    const location=this.currentHeroLocation();return location.surface==='deck'&&(location.floor??1)===this.activeFloor;
   }
   private slotBounds(slot: number): WorldBounds {
-    const [u, v] = SETTLEMENT_SLOTS[slot], point = this.p(u, v, 95);
+    const [u, v] = SETTLEMENT_SLOTS[getSlotLocalIndex(slot)], point = this.p(u, v, 95);
     const corners = [this.p(u - 65, v - 62, 95), this.p(u + 65, v - 62, 95), this.p(u + 65, v + 62, 95), this.p(u - 65, v + 62, 95)];
     return { left: Math.min(...corners.map(p => p[0]), point[0] - 75),
       right: Math.max(...corners.map(p => p[0]), point[0] + 75),
@@ -710,7 +899,7 @@ export class Scene {
     if (!this.planningMode) return null;
     const level = this.planningMode === 'expansion' ? this.planningLevel ?? this.state?.deckLevel ?? 1 : this.state?.deckLevel ?? 1;
     const slotCount = Math.min(SETTLEMENT_SLOTS.length, level * 2);
-    const bounds = Array.from({ length: slotCount }, (_, slot) => this.slotBounds(slot));
+    const bounds = Array.from({ length: slotCount }, (_, slot) => this.slotBounds((this.activeFloor-1)*16+slot));
     if (this.planningMode === 'expansion') {
       const deck = this.deckBounds(level);
       const corners = [this.p(deck.left, deck.back, 95), this.p(deck.end, deck.back, 95), this.p(deck.end, deck.front, 95), this.p(deck.left, deck.front, 95)];
@@ -742,8 +931,8 @@ export class Scene {
   }
   private updateCamera() {
     const { level, left, end, back, front } = this.deckBounds();
-    const homeX = 480 - (level - 1) * 12, homeY = 350 + (level - 1) * 6;
-    const showFarm = this.farmFocus || this.farmMode !== null;
+    const homeX = 480 - (level - 1) * 12, homeY = 350 + (level - 1) * 6-(this.activeFloor-1)*176;
+    const showFarm = this.activeFloor===1&&(this.farmFocus || this.farmMode !== null);
     const farmCount = this.state?.plots.length ?? 3;
     const visibleFarmCount = Math.min(farmCount + 1, this.state ? getFarmCapacity(this.state) : 3, FARM_POSITIONS.length);
     const farmPoints = FARM_POSITIONS.slice(0, visibleFarmCount).map(([u, v]) => this.p(u + 35, v + 36, 112));
@@ -788,7 +977,7 @@ export class Scene {
       viewWidth = maxViewX - minViewX; viewHeight = maxViewY - minViewY;
       const center: Point = [(minViewX + maxViewX) / 2, (minViewY + maxViewY) / 2];
       const facility = this.selectedFacilityId === null || this.constructionMode || !this.state ? undefined : getSettlement(this.state).buildings.find(building => building.id === this.selectedFacilityId);
-      const selectedPoint = facility ? this.p(...SETTLEMENT_SLOTS[facility.slot], 95) : null;
+      const selectedPoint = facility ? this.p(...SETTLEMENT_SLOTS[getSlotLocalIndex(facility.slot)], 95) : null;
       // Expanded villages are explored by panning. Keep the resident's garden in
       // the home view rather than pulling the camera toward a distant truck cab.
       const gardenHomeX = Math.min(center[0], farmCenter[0] + (level > 1 ? 72 : 0));
@@ -834,6 +1023,7 @@ export class Scene {
   }
 
   private render() {
+    this.renderFloor=this.activeFloor;
     const c = this.ctx;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -846,8 +1036,9 @@ export class Scene {
     this.environment();
     this.truck();
     this.foreground();
-    this.loggingGrove();
-    if(this.freeWalk){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
+    if(this.activeFloor===1)this.loggingGrove();
+    this.drawPets(false);
+    if(this.freeWalk&&(this.freeWalk.navigation.target.floor??1)===this.activeFloor){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
     this.hero();
     this.workEffects();
     this.fireflies();
@@ -876,6 +1067,18 @@ export class Scene {
     }
     // A quiet road separates the playable wooden village from its backdrop.
     this.ctx.fillStyle = '#e8ead247'; this.ctx.fillRect(-1000, -600, 3000, 2000);
+    const night=skyNightAmount(this.state?.minutes??660);
+    if(night>0){this.ctx.fillStyle=`rgba(19,31,57,${night*.58})`;this.ctx.fillRect(left,top,right-left,bottom-top);}
+    const canvasBounds=this.canvas.getBoundingClientRect();
+    let skyInset=this.safeViewport.top;
+    for(const element of document.querySelectorAll<HTMLElement>('.scene-top,.truck-floor-controls,.settlement-objective')){
+      const bounds=element.getBoundingClientRect();
+      if(bounds.width&&bounds.height&&bounds.bottom>canvasBounds.top&&bounds.top<canvasBounds.bottom)
+        skyInset=Math.max(skyInset,bounds.bottom-canvasBounds.top);
+    }
+    const skyTop=(Math.min(this.height-52,skyInset+12)-this.dy)/this.scale,
+      skyBottom=skyTop+Math.min(96,this.height*.18)/this.scale;
+    this.canvas.dataset.skyBirds=JSON.stringify(drawSkyBirds(this.ctx,{timeSeconds:this.time/GAME_SPEED_MULTIPLIER,viewport:{left,top,right,bottom},skyTop,skyBottom,night,reducedMotion:this.reducedMotion}));
     // Foreground trees share the same painted line work as the survivors.
     this.tree(72, 226, 1.04); this.tree(25, 307, .72); this.tree(891, 196, .88);
     this.tree(1006, 252, .95);
@@ -911,6 +1114,12 @@ export class Scene {
 
   private truck() {
     const { level, left, end, back, front: deckFront } = this.deckBounds();
+    const floorArt={project:(u:number,v:number,z:number)=>this.rawP(u,v,z),bounds:{left,end,back,front:deckFront},
+      floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>({id:(i+1)as TruckFloor,z:94+i*176})),selectedFloor:this.activeFloor,
+      stairways:Array.from({length:(this.state?getTruckFloorCount(this.state):1)-1},(_,i)=>{const stair=getFloorStairs(this.state?.deckLevel??1,(i+2)as 2|3);return{from:stair.lowerFloor,to:stair.upperFloor,top:stair.top,bottom:stair.bottom,reserved:stair.reserved};}),
+      railGaps:this.activeFloor===1?[{edge:'front' as const,from:-270,to:-180}]:[],night:skyNightAmount(this.state?.minutes??660)};
+    drawTruckFloor(this.ctx,{...floorArt,pass:'structure'});
+    this.renderFloor=1;
     this.poly([this.p(left - 8, back - 6, -45), this.p(end + 118, back - 6, -45), this.p(end + 118, deckFront + 25, -45), this.p(left - 8, deckFront + 25, -45)], '#26372742', '');
     this.box(left + 12, back + 10, -6, end - left + 34, deckFront - back - 19, 63, '#557770', '#3c6660', '#38625b', '#3e3328');
     this.box(left + 15, back + 8, 31, end - left - 28, deckFront - back - 8, 47, '#7ca493', '#77a996', '#5e8c7f', '#3e3328');
@@ -921,6 +1130,7 @@ export class Scene {
     }
     this.line([this.p(left + 15, deckFront + 2, 77), this.p(end, deckFront + 2, 77)], '#d1a24f', 3);
     for (let u = left + 62; u < end + 30; u += 136) this.wheel(u, deckFront + 9);
+    this.renderFloor=this.activeFloor;
     this.box(left, back, 78, end - left, deckFront - back, 15, '#e4c28c', '#bc9669', '#caab78', '#655037');
     const deck: [Point, Point, Point, Point] = [this.p(left + 1, back + 1, 94), this.p(end, back + 1, 94), this.p(end, deckFront, 94), this.p(left + 1, deckFront, 94)];
     this.poly(deck, '#d8ab64', '', 0); paintWorldQuad(this.ctx, 'wood', deck, -.025); this.poly(deck, '', '#715135', 1.6);
@@ -929,61 +1139,17 @@ export class Scene {
       this.line([this.p(left + 1, v + 1, 94), this.p(end, v + 1, 94)], '#ffe1a34d', .7);
     }
     for (let v = 141; v < deckFront; v += 36) this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#80613c', 1.5);
-    this.railing(left + 1, back + 4, end, back + 4, 94, false);
-    this.railing(left + 2, back + 4, left + 2, deckFront - 2, 94, false);
+    drawTruckFloor(this.ctx,{...floorArt,pass:'back'});
     this.expansionDeck();
-    this.bunting(); this.settlement(); this.house(); this.farm();
+    this.bunting(); this.settlement(); this.house();if(this.activeFloor===1)this.farm();
     if (this.heroOnDeck()) this.hero();
     drawWorldSprite(this.ctx, 'crate', ...this.p(-207, -53, 96), 26, 27);
-    const team = this.state ? getSelectedTeam(this.state) : ['dog', 'cat'] as const;
-    const roster = getUnitRoster(this.state ?? {});
-    const petPositions: Point[] = [];
-    const petTelemetry: unknown[] = [];
-    team.forEach((id, index) => {
-      const resting = roster[id].health <= 0;
-      const anchor=this.petMotion.get(id)?.anchor??[-45,100,230][index],rate=.31+index*.03;
-      const position=(phase:number):Point=>this.p(anchor+Math.sin(phase)*34,-26+Math.cos(phase)*11,95);
-      let motion=this.petMotion.get(id);
-      if(!motion){const phase=index*1.8,heading=Math.atan2(.34*34*Math.cos(phase)-.47*11*Math.sin(phase),.91*34*Math.cos(phase)+.67*11*Math.sin(phase));
-        const facing:1|-1=Math.cos(heading)>=0?1:-1;
-        motion={point:position(phase),phase,time:this.time,distance:0,speed:0,heading,facing,blend:0,turnRemaining:0,nextFacing:facing,turnFrom:facing,facingBlend:facing,anchor};this.petMotion.set(id,motion);}
-      const delta=Math.max(0,Math.min(.1,(this.time-motion.time)/GAME_SPEED_MULTIPLIER));motion.time=this.time;
-      let nextPhase=motion.phase;
-      if(!resting&&!this.reducedMotion&&delta>0){
-        if(motion.turnRemaining>0){motion.turnRemaining=Math.max(0,motion.turnRemaining-delta);
-          const amount=this.ease(1-motion.turnRemaining/.3);motion.facingBlend=motion.turnFrom+(motion.nextFacing-motion.turnFrom)*amount;
-          if(!motion.turnRemaining)motion.facing=motion.nextFacing;}
-        else nextPhase+=delta*GAME_SPEED_MULTIPLIER*rate;
-      }
-      const tangent=Math.atan2(.34*34*Math.cos(nextPhase)-.47*11*Math.sin(nextPhase),.91*34*Math.cos(nextPhase)+.67*11*Math.sin(nextPhase));
-      const turn=Math.atan2(Math.sin(tangent-motion.heading),Math.cos(tangent-motion.heading));
-      motion.heading+=Math.max(-delta*8,Math.min(delta*8,turn));
-      const direction=Math.cos(motion.heading),nextFacing=direction>.18?1:direction<-.18?-1:motion.facing;
-      if(!resting&&!this.reducedMotion&&!motion.turnRemaining&&nextFacing!==motion.facing){
-        motion.turnRemaining=.3;motion.nextFacing=nextFacing;motion.turnFrom=motion.facing;nextPhase=motion.phase;
-      }
-      const point=position(nextPhase),travel=Math.hypot(point[0]-motion.point[0],point[1]-motion.point[1]);
-      // State/UI renders do not advance paws; only actual visible RAF movement does.
-      motion.phase=nextPhase;motion.point=point;motion.distance+=travel;motion.speed=delta?travel/delta:motion.speed;
-      if(resting||this.reducedMotion)motion.speed=0;
-      if(delta)motion.blend+=((motion.speed>.05&&!motion.turnRemaining?1:0)-motion.blend)*Math.min(1,delta*10);
-      motion.blend=Math.max(0,Math.min(1,motion.blend));
-      petPositions.push(point);
-      const options:CompanionOptions={id,x:point[0],y:point[1],scale:id==='dog'?.78:id==='boar'?.7:.73,
-        time:this.reducedMotion?0:this.time,facing:motion.facing,pose:resting?'down':motion.speed>.05&&!motion.turnRemaining?'walk':'idle',
-        gait:{distance:motion.distance,speed:motion.speed,heading:motion.heading,blend:motion.blend,facingBlend:motion.facingBlend,reducedMotion:this.reducedMotion}};
-      drawCompanion(this.ctx,options);
-      petTelemetry.push({id,x:point[0],y:point[1],scale:options.scale,facing:options.facing,pose:options.pose,turnRemaining:motion.turnRemaining,
-        gait:options.gait,sample:sampleCompanionGait(id,options.gait!,options.scale),contacts:companionPawContacts(options)??null});
-      this.hits.push({ kind: 'pet', x: point[0], y: point[1] - 14, radius: 24 });
-    });
-    this.canvas.dataset.petMotion=JSON.stringify(petTelemetry);
-    this.cabin();
-    this.railing(left + 3, deckFront, -244, deckFront, 94, true);
-    this.railing(-206, deckFront, end, deckFront, 94, true);
+    this.drawPets(true);
+    this.renderFloor=1;this.cabin();this.renderFloor=this.activeFloor;
+    drawTruckFloor(this.ctx,{...floorArt,pass:'front'});
     this.flowerPot(left + 25, deckFront - 21, 95, '#e5a082');
     this.flowerPot(end - 16, deckFront - 16, 95, '#80a896');
-    this.ramp();
+    if(this.activeFloor===1)this.ramp();
     if (level >= 2) {
       const q = this.p(70, deckFront - 17, 96);
       this.label(`LIVING DECK · LV.${Math.floor(level)}`, q[0], q[1], 9, '#694f2c', 700);
@@ -991,7 +1157,6 @@ export class Scene {
     if (this.action?.kind === 'expand') this.buildingDeck();
     const center = this.p(end + 50, (back + deckFront) / 2, 120);
     this.hits.unshift({kind: 'truck', x: center[0], y: center[1] + 55, radius: 97});
-    for (const point of petPositions) this.pulse('pet', point[0], point[1] - 15, 26);
     this.pulse('truck', center[0], center[1] + 50, 71);
   }
 
@@ -1027,8 +1192,18 @@ export class Scene {
   }
 
   private house() {
-    const [x, y] = this.p(-238, -104, 94);
+    const home=this.state?getHomeLocation(this.state):{floor:1 as const,slot:0};
+    if(this.houseMoveMode&&this.state)for(const slot of getHomeSlots(this.state,this.activeFloor)){
+      const footprint=getHouseFootprint({floor:this.activeFloor,slot}),[u,v]=getHousePosition({floor:this.activeFloor,slot}),p=this.p(u,v,95),available=isHomeSlotAvailable(this.state,{floor:this.activeFloor,slot})&&this.canPlaceHome(this.activeFloor,slot);
+      this.poly([this.p(footprint.left,footprint.top,95),this.p(footprint.right,footprint.top,95),this.p(footprint.right,footprint.bottom,95),this.p(footprint.left,footprint.bottom,95)],available?'#c4e4a873':'#dba99552',available?'#85ab6a':'#b98060',2);
+      this.label(`집 자리 ${slot+1}`,p[0],p[1]+8,12,'#536b47',700);
+      this.hits.push({kind:'house-slot',x:p[0],y:p[1],radius:47,plotId:slot});
+      if(slot===this.selectedHouseSlot)drawWorldSprite(this.ctx,'cottage',p[0],p[1]+5,122,143,.52);
+    }
+    if(home.floor!==this.activeFloor)return;
+    const [u,v]=getHousePosition(home),[x,y]=this.p(u,v,94);
     drawWorldSprite(this.ctx, 'cottage', x, y + 5, 122, 143);
+    if(!this.houseMoveMode&&!this.constructionMode)this.hits.push({kind:'house',x,y:y-58,radius:0,bounds:[x-61,y-138,x+61,y+8]});
     for (let i = 0; i < 3; i++) {
       const age = (this.time * .24 + i / 3) % 1, r = 3 + age * 6;
       this.ctx.globalAlpha = (1 - age) * .21;
@@ -1039,16 +1214,15 @@ export class Scene {
 
   private settlement() {
     const state = this.state, buildings = state ? getSettlement(state).buildings : [];
-    const unlocked = state ? getUnlockedSlots(state) : 2;
     const selectedType = this.constructionMode;
-    for (let slot = 0; slot < SETTLEMENT_SLOTS.length; slot++) {
-      const open = slot < unlocked;
-      const previewSlot = this.expansionPreview !== null && slot < this.expansionPreview * 2;
+    for (let local = 0; local < SETTLEMENT_SLOTS.length; local++) {
+      const slot=(this.activeFloor-1)*16+local,open=this.state?getFloorSlots(this.state,this.activeFloor).includes(slot):local<2;
+      const previewSlot = this.expansionPreview !== null && local < this.expansionPreview * 2;
       if (!open && !previewSlot) continue;
-      const [u, v] = SETTLEMENT_SLOTS[slot], point = this.p(u, v, 95);
+      const [u, v] = SETTLEMENT_SLOTS[local], point = this.p(u, v, 95);
       const building = buildings.find(item => item.slot === slot);
       const selected = selectedType !== null && slot === this.selectedSlot;
-      const valid = open && (!building || building.id === this.movingBuildingId)
+      const valid = open && (this.state?isFacilitySlotAvailable(this.state,slot,this.movingBuildingId??undefined):!building)&&this.canPlaceFacility(slot)
         && (!selectedType || (state?.deckLevel ?? 1) >= BUILDINGS[selectedType].unlockLevel);
       const corners: [Point, Point, Point, Point] = [this.p(u - 65, v - 62, 95), this.p(u + 65, v - 62, 95), this.p(u + 65, v + 62, 95), this.p(u - 65, v + 62, 95)];
       this.ctx.save();
@@ -1059,7 +1233,7 @@ export class Scene {
       if (!building) {
         const badgeSize = 12 / this.scale;
         this.label(open ? '+' : '⌑', point[0], point[1] - 2, badgeSize, open ? '#69895c' : '#74856e', 500);
-        if (selectedType || this.planningMode) this.label(open ? `${slot + 1}번 자리` : `데크 Lv.${Math.floor(slot / 2) + 1}`, point[0], point[1] + 12 / this.scale, 10 / this.scale, open ? '#705d3b' : '#60735b', 600);
+        if (selectedType || this.planningMode) this.label(open ? `${local + 1}번 자리` : `데크 Lv.${Math.floor(local / 2) + 1}`, point[0], point[1] + 12 / this.scale, 10 / this.scale, open ? '#705d3b' : '#60735b', 600);
       }
       this.hits.push({ kind: 'build-slot', x: point[0], y: point[1], radius: selectedType || this.planningMode ? 57 : 22 / this.scale, plotId: slot });
       if (selected && selectedType && valid) {
@@ -1067,9 +1241,9 @@ export class Scene {
         drawFacility(this.ctx, selectedType, point[0], point[1], width, height, .52);
       }
     }
-    const ordered = [...buildings].sort((a, b) => this.p(...SETTLEMENT_SLOTS[a.slot], 95)[1] - this.p(...SETTLEMENT_SLOTS[b.slot], 95)[1]);
+    const ordered = buildings.filter(b=>getSlotFloor(b.slot)===this.activeFloor).sort((a,b)=>this.p(...SETTLEMENT_SLOTS[getSlotLocalIndex(a.slot)],95)[1]-this.p(...SETTLEMENT_SLOTS[getSlotLocalIndex(b.slot)],95)[1]);
     for (const building of ordered) {
-      const point = this.p(...SETTLEMENT_SLOTS[building.slot], 95), [width, height] = FACILITY_SIZE[building.type];
+      const point = this.p(...SETTLEMENT_SLOTS[getSlotLocalIndex(building.slot)], 95), [width, height] = FACILITY_SIZE[building.type];
       const selected = building.id === this.selectedFacilityId;
       if (selected) {
         this.ctx.save(); this.ctx.shadowColor = '#fff2a1'; this.ctx.shadowBlur = 14;
@@ -1082,7 +1256,7 @@ export class Scene {
     }
     const shortNames: Record<BuildingType, string> = { workshop: '공방', kitchen: '부엌', waterworks: '정수소', greenhouse: '온실', watchtower: '감시소', petHouse: '보리 집' };
     for (const building of ordered) {
-      const point = this.p(...SETTLEMENT_SLOTS[building.slot], 95), [, height] = FACILITY_SIZE[building.type];
+      const point = this.p(...SETTLEMENT_SLOTS[getSlotLocalIndex(building.slot)], 95), [, height] = FACILITY_SIZE[building.type];
       const pixel = 1 / this.scale, caption = `${shortNames[building.type]} ${building.level}`;
       if (building.id === this.selectedFacilityId || building.id === this.movingBuildingId) {
         this.round(point[0] - 37 * pixel, point[1] + 5 * pixel, 74 * pixel, 19 * pixel, 8 * pixel, '#fff9e9ed', '#b8ac85');
@@ -1248,6 +1422,7 @@ export class Scene {
   }
 
   private hero() {
+    if((this.currentHeroLocation().floor??1)!==this.activeFloor)return;
     if (this.heroDrawn) return;
     this.heroDrawn = true;
     const hero = this.heroState(), [x, y] = hero.point;
@@ -1268,8 +1443,7 @@ export class Scene {
 
   private ramp() {
     const top = this.rampTop(), bottom = this.rampBottom();
-    // The atlas anchors run along the right edge; the route follows tread centers.
-    drawWorldStairs(this.ctx, [top[0] + 16.5, top[1] + 6], [bottom[0] + 16.5, bottom[1] + 6]);
+    drawTruckStairway(this.ctx,top,bottom);
     this.ctx.save(); this.ctx.setLineDash([5, 9]);
     this.line([[bottom[0], bottom[1] + 9], [157, 552], [151, 571], [130, 590]], '#e8c987', 2); this.ctx.restore();
   }
@@ -1400,7 +1574,7 @@ export class Scene {
         this.line([[0, 0], [0, -25]], '#9e7750', 4); this.round(-10, -30, 21, 9, 3, '#8faaa0', '#617e75'); c.restore();
       }
     } else if ((action.kind === 'build' || action.kind === 'upgrade') && action.facilitySlot !== undefined) {
-      const [fu, fv] = SETTLEMENT_SLOTS[action.facilitySlot], facility = this.p(fu, fv, 100);
+      const [fu, fv] = SETTLEMENT_SLOTS[getSlotLocalIndex(action.facilitySlot)], facility = this.p(fu, fv, 100);
       c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE);
       c.rotate(-.75 + Math.sin(progress * Math.PI * 4) * .7);
       this.line([[0, 0], [0, -25]], '#9e7750', 4); this.round(-10, -30, 21, 9, 3, '#8faaa0', '#617e75'); c.restore();
@@ -1444,9 +1618,5 @@ export class Scene {
       this.ellipse(x, y, 2.1, 2.1, '#fff9d7');
     }
     this.ctx.globalAlpha = 1;
-    // Two small birds on the quiet horizon.
-    const bx = 510 + Math.sin(this.time * .1) * 25, by = 90 + Math.cos(this.time * .5) * 2;
-    this.line([[bx - 7, by - 2], [bx, by + 1], [bx + 7, by - 3]], '#91aa93', 1.7);
-    this.line([[bx + 23, by + 10], [bx + 28, by + 12], [bx + 33, by + 9]], '#a0b39b', 1.5);
   }
 }

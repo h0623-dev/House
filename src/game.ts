@@ -1,7 +1,8 @@
 import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { realDuration } from './game-speed';
-import { getSettlement, validateSettlement, validateFacilityHistory, type Settlement, type FacilityHistory } from './settlement';
+import { getLegacySettlement, validateSettlement, validateFacilityHistory, validateTruckLayout, type Settlement, type FacilityHistory } from './settlement';
+import { cloneTruckLayoutFields, type TruckLayout } from './truck-layout';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 import { COMPANION_IDS, MAX_COMPANION_XP, getCompanions, isCompanionId, validateCompanionHealth, validateCompanions, type CompanionHealth, type CompanionId, type CompanionRoster } from './companions';
@@ -50,6 +51,8 @@ export interface GameState {
   seedInventory?: Record<CropId, number>;
   /** Missing in saves created before truck settlement facilities. */
   settlement?: Settlement;
+  /** Top-level so older APK bundles preserve new floors and actual placement. */
+  truckLayout?: TruckLayout;
   /** Lifetime construction records stay separate from legacy settlement schemas. */
   facilityHistory?: FacilityHistory;
   /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
@@ -140,7 +143,8 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
 function copy(state: GameState): GameState {
   return {
     ...state, resources: { ...state.resources }, seedInventory: getSeedInventory(state),
-    ...(state.settlement ? { settlement: getSettlement(state) } : {}),
+    ...(state.settlement ? { settlement: getLegacySettlement(state) } : {}),
+    ...cloneTruckLayoutFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
@@ -622,6 +626,7 @@ function validateSave(value: unknown): value is GameState {
   const seedTotal = CROP_IDS.reduce((total, id) => total + Number((value.seedInventory as Record<string, unknown>)[id]), 0);
   if (seedTotal !== value.resources.seeds) return false;
   if (Object.hasOwn(value, 'settlement') && !validateSettlement(value.settlement, { deckLevel: value.deckLevel, totalMinutes: value.totalMinutes })) return false;
+  if (Object.hasOwn(value, 'truckLayout') && !validateTruckLayout(value.truckLayout, value as unknown as GameState)) return false;
   if (Object.hasOwn(value, 'companions') && !validateCompanions(value.companions)) return false;
   if (Object.hasOwn(value, 'animalReserve') && !validateAnimalReserve(value.animalReserve)) return false;
   if (Object.hasOwn(value, 'companionTeam') && !validateCompanionTeam(value.companionTeam, { deckLevel: value.deckLevel })) return false;

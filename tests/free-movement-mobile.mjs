@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import strictAssert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { captureExecutionInputs } from './release-execution-inputs.mjs';
 
 // Actual visible mobile touches and read-only rendered frame telemetry. No game
 // methods, advanced saves, synthetic pointer events or accelerated clocks.
@@ -9,6 +10,7 @@ if (Number(version.split('.')[1]) < 20) throw Error('Free movement requires the 
 const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:5173/';
 const snapshotId = process.env.TEST_SNAPSHOT_ID || 'mutable-development-diagnostic';
 const finalSnapshot = process.env.TEST_FINAL_SNAPSHOT === '1';
+const executionInputs = await captureExecutionInputs(import.meta.url, { snapshotId, finalSnapshot });
 const diagnosticOnly = process.env.TEST_FREE_MOVEMENT_DIAGNOSTIC === '1';
 const landscapeDiagnostic = process.env.TEST_FREE_MOVEMENT_LANDSCAPE_DIAGNOSTIC === '1';
 if(landscapeDiagnostic&&!diagnosticOnly)throw Error('An isolated landscape run must be explicitly diagnostic.');
@@ -18,7 +20,7 @@ if (diagnosticOnly && finalSnapshot) throw Error('A partial diagnostic cannot be
 const startedAt = new Date();
 let assertionsExecuted = 0;
 const assert = new Proxy(strictAssert, { get(target, key) { const value = Reflect.get(target, key); return typeof value === 'function' ? (...args) => { assertionsExecuted++; return value(...args); } : value; } });
-const walks = [], gestures = [], choreStarts = [], obstacleProof = [], companionMotion = [], modalStops = [], screenshots = [], cases = [], errors = [], failedAssets = [];
+const walks = [], gestures = [], choreStarts = [], obstacleProof = [], companionMotion = [], modalStops = [], screenshots = [], cases = [], errors = [], failedAssets = [], constructionReadiness = [], constructionPreparations = [], cameraPreparations = [];
 let browser, context, page, failureEvidence;
 await mkdir('artifacts', { recursive: true });
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-haven-save-v1')));
@@ -41,6 +43,7 @@ async function touch(locator) {
  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
  assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'a finger reaches the intended button');
  await page.touchscreen.tap(point.x, point.y);
+ return {point,box};
 }
 async function tapWorld(point) {
  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the destination is physically visible on the canvas');
@@ -89,6 +92,8 @@ async function chooseGround(surface, { minDistance = 85, near, far = true, cross
  const cameraSettling=settle?await cameraSettled():null;const candidates = await page.locator('#world').evaluate((canvas, { surface, minDistance, near, far, crossObstacle, boundaryClearance, obstacleClearance }) => {
   const m = JSON.parse(canvas.dataset.freeMovement), g = JSON.parse(canvas.dataset.sceneGeometry), r = canvas.getBoundingClientRect();
   const points = [], hits = JSON.parse(canvas.dataset.sceneHits || '[]');
+  const bodyRadius=m.body.radius,boundaryPadding=Math.max(boundaryClearance,bodyRadius+2),obstaclePadding=Math.max(obstacleClearance,bodyRadius+2);
+  const companions=JSON.parse(canvas.dataset.petMotion||'[]');
   const get = p => Array.isArray(p) ? {x:p[0],y:p[1]} : p;
   const contains = (p, poly) => { let value=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=get(poly[i]),b=get(poly[j]);if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)value=!value;}return value; };
   const edgeDistance=(p,poly)=>Math.min(...poly.map((vertex,i)=>{const a=get(vertex),b=get(poly[(i+1)%poly.length]),vx=b.x-a.x,vy=b.y-a.y,t=Math.max(0,Math.min(1,((p.x-a.x)*vx+(p.y-a.y)*vy)/(vx*vx+vy*vy)));return Math.hypot(p.x-a.x-t*vx,p.y-a.y-t*vy);}));
@@ -97,9 +102,10 @@ async function chooseGround(surface, { minDistance = 85, near, far = true, cross
    : m.world.roadBounds;
   for(let y=bounds.top+12;y<bounds.bottom-12;y+=10)for(let x=bounds.left+12;x<bounds.right-12;x+=10){
    const point={x,y};if(surface==='deck'&&!contains(point,deck))continue;if(surface==='road'&&contains(point,deck))continue;
-   if(surface==='deck'?edgeDistance(point,deck)<boundaryClearance:Math.min(x-bounds.left,bounds.right-x,y-bounds.top,bounds.bottom-y)<boundaryClearance)continue;
+   if(surface==='deck'?edgeDistance(point,deck)<boundaryPadding:Math.min(x-bounds.left,bounds.right-x,y-bounds.top,bounds.bottom-y)<boundaryPadding)continue;
    if(m.world.obstacles.some(o=>o.surface===surface&&contains(point,o.polygon)))continue;
-   if(m.world.obstacles.some(o=>o.surface===surface&&edgeDistance(point,o.polygon)<obstacleClearance))continue;
+   if(m.world.obstacles.some(o=>o.surface===surface&&edgeDistance(point,o.polygon)<obstaclePadding))continue;
+   if(companions.some(p=>p.body.surface===surface&&p.body.floor===(m.activeFloor??1)&&Math.hypot(x-p.body.x,y-p.body.y)<bodyRadius+p.body.radius+14))continue;
    const screen={x:r.left+g.dx+x*g.scale,y:r.top+g.dy+y*g.scale};
    // Chromium may adjust a finger touch onto a nearby DOM button even when
    // its center barely hits the canvas. Require a clear44px canvas touch area.
@@ -208,6 +214,20 @@ async function cameraReset() {
  if(await page.locator('[data-camera-toggle]').getAttribute('aria-expanded')!=='true')await touch(page.locator('[data-camera-toggle]'));
  await touch(page.locator('[data-map-reset]'));await page.waitForTimeout(1000);await touch(page.locator('[data-camera-toggle]'));
 }
+async function revealLandscapeRoad() {
+ // The landscape home camera fits the deck; the visible grove navigation
+ // exposes road terrain without changing the hero's feet or saved progress.
+ const before=await movement(),g=await geometry(),saveBefore=await saved(),actionBefore=await action(),inputs=[];
+ for(const selector of ['[data-open="menu"]','#modal-root [data-open="grove"]','#modal-root [data-look-grove]'])inputs.push({selector,...await touch(page.locator(selector))});
+ const cameraSettling=await cameraSettled(),after=await movement(),afterGeometry=await geometry(),saveAfter=await saved(),actionAfter=await action();
+ assert.equal(after.moving,false,'landscape road exploration does not start walking');
+ assert.ok(distance(before.position,after.position)<.1,'landscape road exploration keeps the actual feet');
+ assert.deepEqual(after.target,before.target,'landscape road exploration keeps the walk destination');
+ assert.equal(actionBefore.kind,null);assert.equal(actionAfter.kind,null,'looking at the grove does not perform resource work');
+ assert.deepEqual(stableSave(saveAfter),stableSave(saveBefore),'landscape road exploration grants and spends no progress');
+ assert.equal(afterGeometry.zone,'grove','the visible grove button reveals its road camera');
+ cameraPreparations.push({label:'landscape-grove-view-to-visible-road',input:'Actual visible mobile menu, grove and look-around touches',inputs,before,after,g,afterGeometry,actionBefore,actionAfter,saveBefore,saveAfter,cameraSettling});
+}
 async function handModeTap(label) {
  const before=await movement(),saveBefore=await saved();await touch(page.locator('[data-camera-toggle]'));await touch(page.locator('[data-map-move]'));assert.equal(await page.locator('[data-map-move]').getAttribute('aria-pressed'),'true');
  await observe(label);const destination=await chooseGround('deck',{minDistance:20});await tapWorld(destination.screen);await page.waitForTimeout(150);
@@ -241,6 +261,94 @@ async function actualHit(kind) {
  const point=await page.locator('#world').evaluate((canvas,kind)=>{const hit=JSON.parse(canvas.dataset.sceneHits).find(h=>h.kind===kind),g=JSON.parse(canvas.dataset.sceneGeometry),r=canvas.getBoundingClientRect();if(!hit)return null;return{x:r.left+g.dx+hit.x*g.scale,y:r.top+g.dy+hit.y*g.scale};},kind);
  assert.ok(point,`${kind}: the actual rendered interactive object exists`);await tapWorld(point);
 }
+async function waitConstructionClear(timeout=20000) {
+ const selection=await page.locator('#construction-bar').getAttribute('data-preview'),parts=selection.split(':'),floor=Number(parts[1]),slot=Number(parts[2]);
+ assert.ok(Number.isInteger(floor)&&Number.isInteger(slot),'the selected construction footprint comes from the visible preview');
+ await page.waitForFunction(({floor,slot})=>{
+  const canvas=document.querySelector('#world'),target=JSON.parse(canvas.dataset.settlementSlots).find(item=>item.floor===floor&&item.slot===slot);
+  if(!target?.available)return false;
+  const m=JSON.parse(canvas.dataset.freeMovement),pets=JSON.parse(canvas.dataset.petMotion),poly=target.polygon;
+  const contains=p=>{let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)inside=!inside;}return inside;};
+  const edge=p=>Math.min(...poly.map((a,i)=>{const b=poly[(i+1)%poly.length],vx=b.x-a.x,vy=b.y-a.y,t=Math.max(0,Math.min(1,((p.x-a.x)*vx+(p.y-a.y)*vy)/(vx*vx+vy*vy)));return Math.hypot(p.x-a.x-t*vx,p.y-a.y-t*vy);}));
+  return [m.body,...pets.map(p=>p.body)].every(body=>body.surface!=='deck'||body.floor!==floor||!contains(body)&&edge(body)>body.radius+2);
+ },{floor,slot},{timeout});
+ return {floor,slot};
+}
+async function selectClearConstruction() {
+ const deadline=Date.now()+20000,proof={budgetMs:20000,startedAt:new Date().toISOString(),saveBefore:await saved()};constructionPreparations.push(proof);
+ await page.evaluate(()=>{
+  const canvas=document.querySelector('#world'),frames=[];
+  const capture=()=>{const m=JSON.parse(canvas.dataset.freeMovement),pets=JSON.parse(canvas.dataset.petMotion),g=JSON.parse(canvas.dataset.sceneGeometry);
+   frames.push({at:performance.now(),selection:document.querySelector('#construction-bar').dataset.preview,geometry:g,
+    slots:JSON.parse(canvas.dataset.settlementSlots).filter(slot=>slot.unlocked&&slot.floor===g.activeFloor),
+    movement:{moving:m.moving,body:m.body,target:m.target},pets,action:JSON.parse(canvas.dataset.sceneAction)});};
+  const observer=new MutationObserver(capture);capture();observer.observe(canvas,{attributes:true,attributeFilter:['data-free-movement','data-pet-motion','data-settlement-slots','data-scene-geometry']});
+  window.__constructionPreparation={frames,observer,capture};
+ });
+ try{
+  proof.cameraSettling=await cameraSettled();
+  const handle=await page.waitForFunction(()=>{
+   const canvas=document.querySelector('#world'),r=canvas.getBoundingClientRect(),g=JSON.parse(canvas.dataset.sceneGeometry),m=JSON.parse(canvas.dataset.freeMovement),
+    pets=JSON.parse(canvas.dataset.petMotion),hits=JSON.parse(canvas.dataset.sceneHits),slots=JSON.parse(canvas.dataset.settlementSlots);
+   for(const target of slots){
+    if(!target.visible||!target.unlocked||!target.available||target.floor!==g.activeFloor)continue;
+    const hit=hits.find(hit=>hit.kind==='build-slot'&&hit.plotId===target.slot);if(!hit)continue;
+    const point={x:r.left+g.dx+hit.x*g.scale,y:r.top+g.dy+hit.y*g.scale},poly=target.polygon;
+    if(point.x-22<Math.max(0,r.left+g.viewport.safeLeft)||point.x+22>Math.min(innerWidth,r.right-g.viewport.safeRight)
+      ||point.y-22<Math.max(0,r.top+g.viewport.safeTop)||point.y+22>Math.min(innerHeight,r.bottom-g.viewport.safeBottom))continue;
+    if([-22,0,22].some(dx=>[-22,0,22].some(dy=>document.elementFromPoint(point.x+dx,point.y+dy)!==canvas)))continue;
+    const contains=p=>{let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)inside=!inside;}return inside;};
+    const edge=p=>Math.min(...poly.map((a,i)=>{const b=poly[(i+1)%poly.length],vx=b.x-a.x,vy=b.y-a.y,t=Math.max(0,Math.min(1,((p.x-a.x)*vx+(p.y-a.y)*vy)/(vx*vx+vy*vy)));return Math.hypot(p.x-a.x-t*vx,p.y-a.y-t*vy);}));
+    const bodies=[m.body,...pets.map(pet=>pet.body)];
+    if(bodies.some(body=>body.surface==='deck'&&body.floor===target.floor&&(contains(body)||edge(body)<=body.radius+2)))continue;
+    return {target,point,hit,bodies,geometry:g,at:performance.now()};
+   }
+   return false;
+  },null,{timeout:Math.max(1,deadline-Date.now())});
+  proof.candidate=await handle.jsonValue();await handle.dispose();assert.ok(proof.candidate,'build-slot: the actual rendered interactive object exists');
+  proof.beforeSelection=await page.evaluate(()=>window.__constructionPreparation.frames.at(-1));
+  proof.actualTouch=await tapWorld(proof.candidate.point);
+  assert.ok(distance(proof.actualTouch.world,proof.candidate.hit)<3,'the native touch reaches the actual clear construction slot');
+  proof.selection=await waitConstructionClear(Math.max(1,deadline-Date.now()));
+  assert.equal(proof.selection.floor,proof.candidate.target.floor);assert.equal(proof.selection.slot,proof.candidate.target.slot);
+  assert.ok(Date.now()<=deadline,'selection and complete footprint readiness share the original 20-second budget');
+  proof.status='ready';
+ }catch(error){proof.status='failed';proof.failure=String(error);throw error;}
+ finally{
+  proof.frames=await page.evaluate(()=>{const trace=window.__constructionPreparation;trace.observer.disconnect();trace.capture();return trace.frames;});
+  proof.afterSelection=proof.frames.at(-1);proof.saveAfter=await saved();proof.finishedAt=new Date().toISOString();
+ }
+ assert.equal(proof.afterSelection.movement.moving,false);assert.deepEqual(proof.afterSelection.movement.target,proof.frames[0].movement.target);
+ assert.ok(distance(proof.afterSelection.movement.body,proof.frames[0].movement.body)<.1,'choosing a clear preview retains the manually selected feet');
+ assert.equal(proof.afterSelection.action.kind,null);assert.deepEqual(stableSave(proof.saveAfter),stableSave(proof.saveBefore),'preview selection changes no saved progress');
+}
+async function confirmClearConstruction() {
+ const deadline=Date.now()+20000;
+ for(let attempt=0;attempt<3&&Date.now()<deadline;attempt++){
+  const selection=await waitConstructionClear(Math.max(1,deadline-Date.now())),before=await saved(),button=page.locator('[data-construction-confirm]');
+  await button.evaluate((element,selection)=>{window.__constructionRelease=null;element.addEventListener('pointerup',event=>{
+   const canvas=document.querySelector('#world'),m=JSON.parse(canvas.dataset.freeMovement),pets=JSON.parse(canvas.dataset.petMotion);
+   window.__constructionRelease={at:performance.now(),eventAt:event.timeStamp,client:{x:event.clientX,y:event.clientY},selection,
+    target:JSON.parse(canvas.dataset.settlementSlots).find(item=>item.floor===selection.floor&&item.slot===selection.slot),bodies:[m.body,...pets.map(p=>p.body)]};
+  },{capture:true,once:true});},selection);
+  await touch(button);
+  const outcome=await page.waitForFunction(()=>{
+   const app=document.querySelector('#app'),a=JSON.parse(document.querySelector('#world').dataset.sceneAction);
+   if(app.getAttribute('aria-busy')==='true'&&a.kind==='build'&&a.from!==null)return 'accepted';
+   if(document.querySelector('#toast').textContent==='캐릭터나 동물이 지나가는 자리예요. 잠시 뒤 다시 확정해 주세요.')return 'actor-rejected';
+   return false;
+  },null,{timeout:1500});
+  const release=await page.evaluate(()=>window.__constructionRelease);assert.ok(release?.target,'a real confirm release records its actual footprint and complete body radii');
+  const result=await outcome.jsonValue();constructionReadiness.push({attempt:attempt+1,result,release,before,after:await saved()});
+  if(result==='accepted')return;
+  assert.deepEqual(stableSave(await saved()),stableSave(before),'a temporary actor rejection changes no saved resources or progress');
+  assert.equal(await page.locator('#app').getAttribute('aria-busy'),null,'the rejected occupied placement starts no chore');
+  assert.equal((await action()).kind,null);
+  assert.ok(release.bodies.some(body=>body.surface==='deck'&&body.floor===release.selection.floor&&(inside(body,release.target.polygon)||Math.min(...release.target.polygon.map((a,i)=>{const b=release.target.polygon[(i+1)%release.target.polygon.length],vx=b.x-a.x,vy=b.y-a.y,t=Math.max(0,Math.min(1,((body.x-a.x)*vx+(body.y-a.y)*vy)/(vx*vx+vy*vy)));return Math.hypot(body.x-a.x-t*vx,body.y-a.y-t*vy);}))<body.radius)),'an observed rejection independently overlaps the actual actor circle');
+ }
+ throw Error('The selected construction footprint remained occupied after bounded real confirmations.');
+}
+
 async function idleWalkTurnPets(width) {
  await observe(`natural-pets-${width}`);
  await page.waitForFunction(()=>{
@@ -281,13 +389,13 @@ async function begin(width,height) {
  await page.waitForFunction(()=>document.querySelector('#world')?.dataset.freeMovement&&JSON.parse(document.querySelector('#world').dataset.freeMovement).enabled);await cameraReset();
 }
 async function saveReceipt(status,error) {
- await writeFile(`artifacts/free-movement-v${version}${receiptSuffix}-verification.json`,JSON.stringify({version,status,baseUrl,snapshotId,finalSnapshot,diagnosticOnly,landscapeDiagnostic,assertionsExecuted,startedAt:startedAt.toISOString(),finishedAt:new Date().toISOString(),input:'Actual mobile touches and CDP touchscreen gestures',clock:'Natural browser RAF/timers; read-only rendered telemetry, no page.clock or private game calls',deviceLimit:'Chromium mobile emulation, not physical Android or iPhone',walks,gestures,choreStarts,obstacleProof,companionMotion,modalStops,screenshots,cases,errors,failedAssets,failureEvidence,...(error?{failure:String(error),stack:error.stack}:{})},null,2)+'\n');
+ await writeFile(`artifacts/free-movement-v${version}${receiptSuffix}-verification.json`,JSON.stringify({version,status,baseUrl,snapshotId,finalSnapshot,executionInputs,diagnosticOnly,landscapeDiagnostic,assertionsExecuted,startedAt:startedAt.toISOString(),finishedAt:new Date().toISOString(),input:'Actual mobile touches and CDP touchscreen gestures',clock:'Natural browser RAF/timers; read-only rendered telemetry, no page.clock or private game calls',deviceLimit:'Chromium mobile emulation, not physical Android or iPhone',walks,gestures,choreStarts,obstacleProof,companionMotion,modalStops,constructionReadiness,constructionPreparations,cameraPreparations,screenshots,cases,errors,failedAssets,failureEvidence,...(error?{failure:String(error),stack:error.stack}:{})},null,2)+'\n');
 }
 try {
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
  for(const[width,height]of(landscapeDiagnostic?[[844,390]]:diagnosticOnly?[[360,740]]:[[360,740],[390,844],[844,390]])){
   await begin(width,height);if(diagnosticOnly&&!landscapeDiagnostic)await idleWalkTurnPets(width);await walk(`empty-deck-${width}`,'deck');await retarget(`retarget-current-feet-${width}`);await shot(`reached-deck-${width}`);
-  if(width>height)await gesture('landscape-pan-to-visible-road',false,false,{dx:0,dy:-125});
+  if(width>height){await gesture('landscape-pan-to-visible-road',false,false,{dx:0,dy:-125});await revealLandscapeRoad();}
   const down=await walk(`deck-to-road-${width}`,'road');assert.ok(down.frames.some(f=>f.movement.climbing==='down'),'the road journey visibly descends the stairs');
   const up=await walk(`road-to-deck-${width}`,'deck');assert.ok(up.frames.some(f=>f.movement.climbing==='up'),'the deck journey visibly ascends the stairs');await ladderRetarget(`retarget-midway-on-ladder-${width}`);
   await gesture(`drag-does-not-walk-${width}`);await cameraReset();await gesture(`cancelled-drag-does-not-walk-${width}`,false,true);await cameraReset();await gesture(`pinch-does-not-walk-${width}`,true);await cameraReset();await handModeTap(`hand-mode-tap-does-not-walk-${width}`);
@@ -302,7 +410,7 @@ try {
    await walk('manual-position-before-chop','road');await touch(page.locator('[data-nav="farm"]'));const chopped=await observeChore('chop-from-manual-road-position',()=>touch(page.locator('[data-quick="chop"]')),'chop');assert.equal(chopped.saveAfter.stats.chops,chopped.saveBefore.stats.chops+1);assert.equal(chopped.saveAfter.resources.wood,chopped.saveBefore.resources.wood+18);await home();
    await walk('manual-position-before-building','deck');const beforeBuild=await saved();await touch(page.locator('[data-nav="build"]'));await touch(page.locator('[data-build-type="waterworks"]'));await page.waitForTimeout(650);
    await actualHit('build-slot');assert.equal(await page.locator('[data-construction-confirm]').isDisabled(),false);assert.equal((await movement()).moving,false);await touch(page.locator('[data-construction-cancel]'));assert.deepEqual((await saved()).resources,beforeBuild.resources);await home();
-   await touch(page.locator('[data-nav="build"]'));await touch(page.locator('[data-build-type="waterworks"]'));await page.waitForTimeout(650);await actualHit('build-slot');await observeChore('construction-from-manual-position',()=>touch(page.locator('[data-construction-confirm]')),'build');
+   await touch(page.locator('[data-nav="build"]'));await touch(page.locator('[data-build-type="waterworks"]'));await page.waitForTimeout(650);await selectClearConstruction();await observeChore('construction-from-manual-position',()=>confirmClearConstruction(),'build');
    const built=await saved();assert.equal(built.resources.wood,beforeBuild.resources.wood-12);assert.equal(built.resources.scrap,beforeBuild.resources.scrap-4);assert.equal(built.settlement.buildings.length,1);await touch(page.locator('[data-facility-close]'));await actualHit('facility');assert.equal(await page.locator('#facility-sheet[data-facility="1"]').isVisible(),true);assert.equal((await movement()).moving,false);await touch(page.locator('[data-facility-close]'));await actualHit('facility-start');assert.equal((await saved()).settlement.stats.productions,1);assert.equal((await movement()).moving,false);assert.equal(await page.locator('#facility-sheet').isVisible(),false,'the actual in-game production bubble starts production without reopening the sheet');await home();
    await walk('deliberate-occupied-footprint-detour','deck',{crossObstacle:true});
    await actualHit('pet');assert.equal(await page.locator('#modal-root').isVisible(),true);assert.match(await page.locator('#modal-root').innerText(),/보리/);assert.equal((await movement()).moving,false);await closeModal();
