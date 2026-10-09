@@ -1,5 +1,6 @@
 import type { ActionResult, GameState, Resource } from './game';
 import { formatGameDuration } from './game-time';
+import { cloneCompanions } from './companions';
 
 export const BUILDING_TYPES = ['waterworks', 'kitchen', 'workshop', 'petHouse', 'greenhouse', 'watchtower'] as const;
 export type BuildingType = typeof BUILDING_TYPES[number];
@@ -121,8 +122,9 @@ function copy(state: GameState): GameState {
     quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
+    ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
     ...(state.facilityHistory ? { facilityHistory: getFacilityHistory(state) } : {}),
-    expedition: state.expedition ? { ...state.expedition } : null,
+    expedition: state.expedition ? { ...state.expedition, ...(state.expedition.participantIds ? { participantIds: [...state.expedition.participantIds] } : {}) } : null,
     settlement: getSettlement(state),
   };
 }

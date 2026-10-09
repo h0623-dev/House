@@ -1,6 +1,6 @@
 {
   "name": "road-haven",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "tsx --test tests/*.test.ts",
     "android:sync": "npm run build && cap sync android",
+    "test:animals": "node tests/animal-battle-mobile.mjs",
     "test:browser": "node tests/browser-smoke.mjs",
     "android:debug": "bash scripts/build-android.sh debug",
     "android:release": "bash scripts/build-android.sh release",

@@ -40,11 +40,14 @@ async function loadFixture(state, label) {
  await page.evaluate(state => localStorage.setItem('time-display-qa-fixture', JSON.stringify(state)), state); await page.reload();
  await page.locator('#resident-name').getByText(state.name, { exact: true }).waitFor(); await pauseWorld();
  const loaded = await saved();
- for (const key of ['resources', 'plots', 'settlement', 'growthQuests', 'facilityHistory', 'stats', 'energy', 'xp']) assert.deepEqual(loaded[key], state[key], `${label}: loading preserves ${key}`);
+ for (const key of ['resources', 'plots', 'settlement', 'growthQuests', 'facilityHistory', 'stats', 'energy', 'xp', 'companions']) assert.deepEqual(loaded[key], state[key], `${label}: loading preserves ${key}`);
 }
 function productionFixture(fresh, remaining) {
  const state = structuredClone(fresh);
  state.name = '초 단위 시간 검사'; state.health = 80; state.lastSaved = 0;
+ // Healing now belongs to the two animal allies. This declared saved injury
+ // keeps the real recovery cooldown test available without injuring a farmer.
+ state.companions = { dog: { health: 80, xp: 0 }, cat: { health: 80, xp: 0 } };
  state.stats.gathers = 1; state.stats.harvests = 1; state.xp = 45; state.level = 1;
  state.growthQuests = { claimed: ['road-supplies', 'first-carrot', 'rainwater-home'] };
  state.facilityHistory = { builtTypes: ['waterworks'], upgradedFacilityIds: [] };
@@ -122,7 +125,7 @@ try {
  cases.push('Actual5-second production reaches1초 then ready, without0/negative labels; ready state grants nothing, one collection awards4 water, reload grants nothing twice.');
 
  await touch(page.locator('[data-nav="hunt"]')); await touch(page.locator('[data-start-hunt]')); await page.locator('.battle-screen').waitFor();
- assert.match(await page.locator('[data-battle-time]').innerText(), /^\d+초$/, 'the battle elapsed-time HUD also uses seconds');
+ assert.match(await page.locator('.battle-progress [data-battle-time]').innerText(), /^\d+초$/, 'the battle elapsed-time HUD also uses seconds');
  await page.waitForFunction(() => !document.querySelector('[data-skill="sweep"]').disabled, null, { timeout: 5000 });
  for (const [skill, limit] of [['sweep', 4], ['dash', 4], ['heal', 8]]) {
   await touch(page.locator(`[data-skill="${skill}"]`)); const text = await page.locator(`[data-skill="${skill}"] .battle-skill-cooldown`).innerText();

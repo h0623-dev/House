@@ -70,7 +70,7 @@ async function openPetOnMap() {
   }, { u, v });
   assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the pet roaming area is reachable on the painted truck');
   await page.mouse.click(point.x, point.y);
-  if (await page.locator('.pet-modal-art').isVisible()) return;
+  if (await page.locator('#modal-root [data-companion-card="dog"]').isVisible()) return;
   if (await page.locator('#modal-root').isVisible()) await close();
  }
  assert.fail('Tapping the visible pet roaming area must open the pet interaction');
@@ -200,6 +200,9 @@ async function enterBattle(stage = 1) {
  await page.locator('[data-start-hunt]').click();
  await page.locator('.battle-screen').waitFor();
  assert.ok((await save()).expedition, 'battle entry must be persisted before fighting');
+ assert.equal((await save()).expedition.animalParty, true, 'the battle saves the participating animal party');
+ assert.equal(await page.locator('[data-battle-ally="dog"]').isVisible(), true, 'the dog has an individual party card');
+ assert.equal(await page.locator('[data-battle-ally="cat"]').isVisible(), true, 'the cat has an individual party card');
 }
 
 async function retreat() {
@@ -303,9 +306,9 @@ try {
  assert.equal((await save()).resources.food, food, 'entry must not grant the eventual battle reward');
  await page.clock.runFor(600);
  await page.getByRole('button', { name: '전투 일시정지', exact: true }).click();
- const pausedTime = await page.locator('[data-battle-time]').textContent();
+ const pausedTime = await page.locator('.battle-progress [data-battle-time]').textContent();
  await page.clock.runFor(3000);
- assert.equal(await page.locator('[data-battle-time]').textContent(), pausedTime);
+ assert.equal(await page.locator('.battle-progress [data-battle-time]').textContent(), pausedTime);
  await page.locator('[data-battle="resume"]').click();
  await page.locator('[data-skill="sweep"]').click();
  assert.equal(await page.locator('[data-skill="sweep"]').isDisabled(), true);

@@ -550,7 +550,7 @@ test('a hunt starts with a single energy payment and no upfront loot or experien
   assert.equal(started.state.xp, state.xp);
   assert.equal(started.state.health, state.health);
   assert.equal(started.state.stats.hunts, 1);
-  assert.deepEqual(started.state.expedition, { id: 1, stage: 2 });
+  assert.deepEqual(started.state.expedition, { id: 1, stage: 2, animalParty: true, participantIds: ['dog', 'cat'] });
   assert.equal(JSON.stringify(state), before);
   assert.equal(beginHunt(started.state, 1).ok, false);
   assert.equal(performAction(started.state, 'rest').ok, false);
@@ -560,24 +560,24 @@ test('a hunt starts with a single energy payment and no upfront loot or experien
   assert.equal(legacyAction.state, state);
 });
 
-test('hunts validate stage, health, and energy before charging the player', () => {
+test('hunts validate stage, healthy animals, and energy before charging the player', () => {
   const state = createGame();
   for (const stage of [0, 4, 1.5, NaN, Infinity]) {
     assert.equal(beginHunt(state, stage).state, state);
     assert.equal(beginHunt(state, stage).ok, false);
   }
-  for (const patch of [{ health: 14 }, { energy: 15 }]) {
+  for (const patch of [{ companions: { dog: { health: 0, xp: 0 }, cat: { health: 0, xp: 0 } } }, { energy: 15 }]) {
     const unavailable = { ...state, ...patch };
     assert.equal(beginHunt(unavailable, 1).state, unavailable);
     assert.equal(beginHunt(unavailable, 1).ok, false);
   }
-  assert.equal(beginHunt({ ...state, energy: 16, health: 15 }, 1).ok, true);
+  assert.equal(beginHunt({ ...state, energy: 16, health: 1 }, 1).ok, true);
 });
 
 test('victories grant stage-specific loot once and record the actual health and kills', () => {
   const initial = createGame();
   const started = beginHunt(initial, 3).state;
-  const result: HuntResult = { outcome: 'victory', stage: 3, remainingHealth: 63, enemiesDefeated: 12, duration: 42.5 };
+  const result: HuntResult = { outcome: 'victory', stage: 3, remainingHealth: 63, companionHealth: { dog: 63, cat: 42 }, enemiesDefeated: 8, duration: 42.5 };
   const won = finishHunt(started, result, started.expedition!.id);
   assert.equal(won.ok, true);
   assert.equal(won.state.expedition, null);
@@ -586,10 +586,11 @@ test('victories grant stage-specific loot once and record the actual health and 
   assert.equal(won.state.resources.scrap, initial.resources.scrap + 6);
   assert.equal(won.state.xp, 50);
   assert.equal(won.state.energy, started.energy);
-  assert.equal(won.state.health, 63);
+  assert.equal(won.state.health, initial.health);
+  assert.deepEqual(won.state.companions, { dog: { health: 63, xp: 30 }, cat: { health: 42, xp: 30 } });
   assert.equal(won.state.stats.hunts, 1);
   assert.equal(won.state.stats.battlesWon, 1);
-  assert.equal(won.state.stats.defeatedEnemies, 12);
+  assert.equal(won.state.stats.defeatedEnemies, 8);
   assert.equal(won.state.totalMinutes, initial.totalMinutes + 255);
   assert.equal(started.expedition?.id, 1);
   assert.equal(finishHunt(won.state, result, 1).ok, false);
@@ -605,9 +606,13 @@ test('defeat and retreat retain combat damage, grant no loot, and let the player
     const started = beginHunt(initial, 1).state;
     const finished = finishHunt(started, {
       outcome, stage: 1, remainingHealth: outcome === 'defeat' ? 0 : 41, enemiesDefeated: 2, duration: 20,
+      companionHealth: outcome === 'defeat' ? { dog: 0, cat: 0 } : { dog: 41, cat: 29 },
     }, started.expedition!.id);
     assert.equal(finished.ok, true);
-    assert.equal(finished.state.health, outcome === 'defeat' ? 1 : 41);
+    assert.equal(finished.state.health, initial.health);
+    assert.deepEqual(finished.state.companions, outcome === 'defeat'
+      ? { dog: { health: 0, xp: 0 }, cat: { health: 0, xp: 0 } }
+      : { dog: { health: 41, xp: 0 }, cat: { health: 29, xp: 0 } });
     assert.deepEqual(finished.state.resources, initial.resources);
     assert.equal(finished.state.xp, 0);
     assert.equal(finished.state.stats.battlesWon, 0);
@@ -636,7 +641,7 @@ test('interrupted expeditions survive saving and recover as unrewarded retreats'
 
 test('malformed or mismatched battle results never change the pending expedition', () => {
   const started = beginHunt(createGame(), 1).state;
-  const valid: HuntResult = { outcome: 'victory', stage: 1, remainingHealth: 90, enemiesDefeated: 6, duration: 30 };
+  const valid: HuntResult = { outcome: 'victory', stage: 1, remainingHealth: 90, companionHealth: { dog: 90, cat: 70 }, enemiesDefeated: 8, duration: 30 };
   const badResults: unknown[] = [
     null, {}, { ...valid, stage: 2 }, { ...valid, outcome: 'unknown' },
     { ...valid, remainingHealth: NaN }, { ...valid, remainingHealth: Infinity },
@@ -649,7 +654,7 @@ test('malformed or mismatched battle results never change the pending expedition
     assert.equal(settled.state, started);
   }
   for (const token of [0, 2, NaN, 1.5]) assert.equal(finishHunt(started, valid, token).state, started);
-  assert.equal(finishHunt(started, { ...valid, remainingHealth: 101 }, 1).state.health, 100);
+  assert.equal(finishHunt(started, { ...valid, remainingHealth: 101 }, 1).state, started);
 });
 
 test('original version 1 saves migrate new counters without changing existing progress', () => {

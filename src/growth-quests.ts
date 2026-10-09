@@ -1,6 +1,7 @@
 import type { ActionResult, GameState, Resource } from './game';
 import { CROP_IDS, type CropId } from './crops';
 import { getBuiltTypes, getSettlement, getUpgradedFacilityRecord, type BuildingType } from './settlement';
+import { cloneCompanions } from './companions';
 
 export type GrowthQuestStatus = 'locked' | 'active' | 'ready' | 'claimed';
 export interface GrowthQuestProgress { claimed: string[] }
@@ -58,7 +59,7 @@ export const GROWTH_QUESTS: readonly GrowthQuestDefinition[] = Object.freeze([
   quest('better-facility', 3, '더 든든한 생활 시설', '시설 1곳을 2단계로 개선하기', 'upgradedFacilities', 1, { kind: 'upgrade' }, { resources: { wood: 24, scrap: 12 }, xp: 35 }, '생산품을 먼저 받은 뒤 시설을 개선해요. 한 번에 생산하는 양이 늘어나요.'),
   quest('boris-home', 4, '보리에게도 작은 집', '보리의 오두막 건설하기', 'building', 1, { kind: 'build', buildingType: 'petHouse' }, { resources: { food: 4, wood: 8 }, xp: 35 }, '보리에게 간식을 주면 작은 나뭇가지를 모아 와요.'),
   quest('full-baskets', 4, '풍성해진 우리 텃밭', '작물 총 8밭 수확하기', 'harvests', 8, { kind: 'harvest' }, { resources: { water: 6 }, seeds: { corn: 3, strawberry: 3 }, xp: 40 }, '물 주기와 수확을 이어가요. 수확하면 같은 씨앗도 돌아와 다시 심을 수 있어요.'),
-  quest('safe-road', 4, '돌아올 마을이 있어요', '좀비 전투 스테이지 1번 승리하기', 'battlesWon', 1, { kind: 'hunt' }, { resources: { wood: 20, scrap: 12 }, xp: 40 }, '보리와 1구역부터 도전해요. 체력 15·기력 16을 준비하고 기술을 사용해 보세요.'),
+  quest('safe-road', 4, '돌아올 마을이 있어요', '동물 친구들과 전투 스테이지 1번 승리하기', 'battlesWon', 1, { kind: 'hunt' }, { resources: { wood: 20, scrap: 12 }, xp: 40 }, '강아지 보리와 고양이 나비가 싸워요. 건강한 동물 친구와 기력 16을 준비하고 기술을 사용해 보세요.'),
   quest('third-deck', 4, '새로운 이웃을 맞을 자리', '트럭 데크 3단계 만들기', 'deck', 3, { kind: 'expand' }, { resources: { wood: 30, scrap: 16 }, xp: 45 }, '목재와 고철을 모아 마을을 넓혀요. 새 시설 두 종류가 열려요.'),
   quest('greenhouse-garden', 5, '계절을 돌보는 온실', '작은 온실 건설하기', 'building', 1, { kind: 'build', buildingType: 'greenhouse' }, { resources: { water: 8, wood: 10 }, xp: 45 }, '데크 3단계에서 온실을 지어요. 물을 공급해 식량을 안정적으로 생산해요.'),
   quest('road-scanner', 5, '도로를 살피는 새 눈', '도로 감시소 건설하기', 'building', 1, { kind: 'build', buildingType: 'watchtower' }, { resources: { wood: 16, scrap: 10 }, xp: 45 }, '감시소의 스캐너로 폐부품을 찾아요. 생산에 추가 재료는 필요하지 않아요.'),
@@ -128,6 +129,7 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
     plots: state.plots.map(plot => ({ ...plot })), quests: [...state.quests], stats: { ...state.stats },
     ...(state.settlement ? { settlement: getSettlement(state) } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
+    ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
     ...(state.facilityHistory ? { facilityHistory: { builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     expedition: null,
     growthQuests: { claimed: [...claimed, definition.id] },

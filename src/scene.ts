@@ -2,7 +2,8 @@ import { formatGameDuration, gameMinutesToSeconds } from './game-time';
 import { GAME_SPEED_MULTIPLIER, realDuration } from './game-speed';
 import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, type GameState, type Plot } from './game';
 import { drawHero, type HeroPose } from './actors';
-import { drawPet, drawZombie } from './creatures';
+import { drawZombie } from './creatures';
+import { drawCompanion } from './companion-art';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady, worldImages } from './world-art';
 import { drawCropSprite } from './crop-art';
 import { BUILDINGS, getSettlement, getUnlockedSlots, type BuildingType } from './settlement';
@@ -747,11 +748,17 @@ export class Scene {
     this.bunting(); this.settlement(); this.house(); this.farm();
     if (this.heroOnDeck()) this.hero();
     drawWorldSprite(this.ctx, 'crate', ...this.p(-207, -53, 96), 26, 27);
-    const dogU = 90 + Math.sin(this.time * .37) * 55;
-    const dogV = -14 + Math.cos(this.time * .37) * 15;
+    const dogResting=(this.state?.companions?.dog.health??100)<=0;
+    const dogPhase=dogResting||this.reducedMotion?0:this.time*.37;
+    const dogU = 90 + Math.sin(dogPhase) * 55;
+    const dogV = -14 + Math.cos(dogPhase) * 15;
     const dog = this.p(dogU, dogV, 95);
-    this.dog(dog[0], dog[1], .78, Math.cos(this.time * .37) > 0);
+    this.dog(dog[0], dog[1], .78, Math.cos(dogPhase) > 0);
     this.hits.push({kind: 'pet', x: dog[0], y: dog[1] - 15, radius: 29});
+    const catResting=(this.state?.companions?.cat.health??100)<=0;
+    const catPhase=(catResting||this.reducedMotion?0:this.time*.31)+1.8,cat=this.p(-45+Math.sin(catPhase)*34,-26+Math.cos(catPhase)*11,95);
+    drawCompanion(this.ctx,{id:'cat',x:cat[0],y:cat[1],scale:.73,time:this.reducedMotion?0:this.time,facing:Math.cos(catPhase)>0?1:-1,pose:catResting?'down':this.reducedMotion?'idle':'walk'});
+    this.hits.push({kind:'pet',x:cat[0],y:cat[1]-14,radius:24});
     this.cabin();
     this.railing(left + 3, deckFront, -244, deckFront, 94, true);
     this.railing(-206, deckFront, end, deckFront, 94, true);
@@ -1165,7 +1172,7 @@ export class Scene {
   }
 
   private dog(x: number, y: number, s: number, right: boolean) {
-    drawPet(this.ctx, { x, y, scale: s, time: this.reducedMotion ? 0 : this.time, facing: right ? 1 : -1, pose: 'walk' });
+    drawCompanion(this.ctx, { id:'dog',x, y, scale: s, time: this.reducedMotion ? 0 : this.time, facing: right ? 1 : -1, pose: (this.state?.companions?.dog.health??100)<=0?'down':this.reducedMotion?'idle':'walk' });
   }
 
   private pulse(kind: string, x: number, y: number, radius: number) {

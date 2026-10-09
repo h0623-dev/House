@@ -29,7 +29,7 @@ const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-ha
 const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(nav('farm'));
  await locator.scrollIntoViewIfNeeded();
  const box = await locator.boundingBox();
  assert.ok(box, 'the touch target must be rendered');
@@ -49,13 +49,22 @@ async function heldTouch(locator, session) {
  await page.waitForTimeout(1250);
  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
-async function pauseWorldTime() {
- const button = page.getByRole('button', { name: '시간 일시정지', exact: true });
- if (await button.count()) await touch(button);
+async function menuItem(kind) {
+ if (await page.locator('#modal-root').isVisible()) await closeModal();
+ await touch(page.locator('[data-open="menu"]'));
+ await touch(page.locator(`#modal-root [data-open="${kind}"]`));
 }
+async function setPaused(paused) {
+ if ((await page.locator('.time-button').getAttribute('aria-label') === '시간 계속') === paused) return;
+ await menuItem('settings'); await touch(page.locator('#modal-root [data-pause]'));
+ await touch(page.locator('#modal-root [data-save]')); await closeModal();
+}
+async function pauseWorldTime() { await setPaused(true); }
 async function closeModal() { await touch(page.locator('#modal-root [data-close]').first()); }
 async function fixture(state) {
- await page.evaluate(state => localStorage.setItem('road-haven-touch-fixture', JSON.stringify(state)), state);
+ // Declared boundary saves start at their chosen game clock. Reusing the
+ // first welcome save's old timestamp would simulate an unintended absence.
+ await page.evaluate(state => localStorage.setItem('road-haven-touch-fixture', JSON.stringify({ ...state, lastSaved: 0 })), state);
  await page.reload();
  await page.locator('#resident-name').getByText(state.name, { exact: true }).waitFor();
  await pauseWorldTime();
@@ -86,7 +95,7 @@ async function chore(name, trigger, { noCommit, repeatedTouches, screenshot } = 
  assert.equal(await quick('rest').isDisabled(), false, `${name} must restore recovery controls`);
 }
 async function assertHudFits(width, height) {
- if (!await page.locator('#farm-tray').isVisible()) await touch(page.locator('[data-farm-toggle]'));
+ if (!await page.locator('#farm-tray').isVisible()) await touch(nav('farm'));
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, `${width}×${height}: no main-screen scrolling`);
  for (const action of ['harvest', 'water', 'plant', 'chop', 'gather', 'rest']) {
   const button = quick(action), box = await button.boundingBox();
@@ -209,7 +218,7 @@ try {
 
   await touch(quick('rest'));
   assert.ok((await saved()).energy > 30);
-  await touch(page.locator('[data-open="expand"]'));
+  await menuItem('expand');
   await chore(`expand-${width}`, () => touch(page.locator('#modal-root [data-action="expand"]')));
   assert.equal((await saved()).deckLevel, 2);
   assert.equal((await saved()).plots.length, 4);
@@ -222,9 +231,9 @@ try {
   assert.ok((await saved()).expedition);
   await page.waitForTimeout(600);
   await touch(page.getByRole('button', { name: '전투 일시정지', exact: true }));
-  const pausedTime = await page.locator('[data-battle-time]').textContent();
+  const pausedTime = await page.locator('.battle-progress [data-battle-time]').textContent();
   await page.waitForTimeout(1100);
-  assert.equal(await page.locator('[data-battle-time]').textContent(), pausedTime);
+  assert.equal(await page.locator('.battle-progress [data-battle-time]').textContent(), pausedTime);
   await touch(page.locator('[data-battle="resume"]'));
   await touch(page.locator('[data-skill="sweep"]'));
   assert.equal(await page.locator('[data-skill="sweep"]').isDisabled(), true);
@@ -281,7 +290,7 @@ try {
   if (width === 360) {
    // A slow tap crossing a live UI tick should still activate the exact plot
    // and the bag's gathering button. Time remains real and unpaused here.
-   await touch(page.getByRole('button', { name: '시간 계속', exact: true }));
+   await setPaused(false);
    await touch(nav('farm'));
    await touch(page.locator('#farm-context [data-open="farm"]'));
    const touchSession = await context.newCDPSession(page);
@@ -300,6 +309,7 @@ try {
    const injured = structuredClone(fresh);
    injured.health = 2;
    injured.energy = 0;
+   injured.companions = { dog: { health: 0, xp: 0 }, cat: { health: 0, xp: 0 } };
    await fixture(injured);
    await touch(nav('hunt'));
    await touch(page.locator('[data-stage="2"]'));
@@ -307,11 +317,11 @@ try {
    assert.equal(await page.locator('[data-rest-retry="hunt"]').isVisible(), true, 'an exhausted hunting entry must show a recovery choice');
    await touch(page.locator('[data-rest-retry="hunt"]'));
    assert.equal(await page.locator('[data-stage="2"].selected').isVisible(), true, 'rest preserves the selected hunting destination');
-   assert.ok((await saved()).health < 15, 'the severely injured fixture still needs a second rest');
+   assert.ok((await saved()).health < 15, 'the farmer remains below the obsolete human combat threshold');
+   assert.equal((await saved()).companions.dog.health, 35, 'the actual meal recovers the dog for animal combat');
+   assert.equal((await saved()).companions.cat.health, 35, 'the actual meal recovers the cat for animal combat');
+   assert.ok((await saved()).energy >= 16, 'the actual rest restores enough entry energy');
    assert.equal(await page.locator('.battle-screen').count(), 0, 'rest never silently starts a battle');
-   await touch(page.locator('[data-start-hunt]'));
-   await touch(page.locator('[data-rest-retry="hunt"]'));
-   assert.ok((await saved()).health >= 15);
    await touch(page.locator('[data-start-hunt]'));
    await page.locator('.battle-screen').waitFor();
    assert.equal((await saved()).expedition.stage, 2);
@@ -324,11 +334,17 @@ try {
    growing.plots = growing.plots.map(plot => ({ ...plot, plantedAt: growing.totalMinutes, watered: true }));
    await fixture(growing);
    await touch(quick('harvest'));
-   assert.equal(await page.locator('.activity-block-reason').isVisible(), true, 'unready harvest explains why it cannot complete');
+   assert.equal(await page.locator('#planting-toolbar[data-farm-mode="harvest"]').isVisible(), true, 'unready harvest remains the continuous in-game tool');
+   assert.match(await page.locator('#planting-seed-status').innerText(), /수확할 밭이 없어요|작물이 자라길 기다려요/, 'the in-game tool explains that the new crops must grow first');
+   assert.equal(await page.locator('.activity-block-reason').isVisible(), true, 'unready harvest also offers its recovery guidance');
+   assert.match(await page.locator('.activity-block-reason').innerText(), /아직 다 자란 작물이 없어요|기다려/, 'the guidance explains the actual maturity boundary');
    await touch(page.locator('[data-show-farm]'));
-   assert.equal(await page.locator('#modal-root').isVisible(), false);
+   assert.equal(await page.locator('#modal-root').isVisible(), false, 'the actual guidance link returns to the in-game farm');
+   assert.equal(await page.locator('#app').getAttribute('aria-busy'), null, 'unready crops do not start a fake harvesting animation');
    assert.equal(await nav('farm').getAttribute('aria-current'), 'page');
    assert.equal((await saved()).stats.harvests, growing.stats.harvests, 'an unready harvest never grants a crop reward');
+   assert.equal((await saved()).plots.every(plot => plot.plantedAt === growing.totalMinutes && plot.watered), true, 'the declared newly watered crop fixture retains its actual planting boundaries');
+   await stopPlanting();
   }
 
   const late = structuredClone(fresh);
@@ -385,7 +401,7 @@ try {
  await touch(page.locator('[data-start]'));
  await pauseWorldTime();
  const beforeSlow = await saved();
- if (!await page.locator('#farm-tray').isVisible()) await touch(page.locator('[data-farm-toggle]'));
+ if (!await page.locator('#farm-tray').isVisible()) await touch(nav('farm'));
  const slowButtonBox = await quick('chop').boundingBox();
  assert.ok(slowButtonBox, 'the slow-rendering duplicate-touch target is visible after opening the farm tray');
  await chore('woodcutting-at-350ms-visible-frames', () => touch(quick('chop')), {
