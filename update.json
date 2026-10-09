@@ -1,9 +1,9 @@
 {
-  "version": "0.13.0",
-  "versionCode": 13,
+  "version": "0.14.0",
+  "versionCode": 14,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.13.0-debug.apk",
-  "sha256": "55a4cda0547f20856e5a36de411c996f51778f2baff351ae9675d3527d8005e4",
-  "notes": "데크 단계에 따라 밭을 최대 18칸까지 확장할 수 있습니다. 생산·씨앗 성장·전투 시간 안내를 초 단위로 통일하고, 생산 남은 시간을 실제 기다리는 초로 표시합니다. 기존 v0.8 이상 앱은 APK 재설치 없이 자동 패치로 적용됩니다.",
-  "publishedAt": "2026-10-09T01:12:36.607Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.14.0-debug.apk",
+  "sha256": "e32c61bb70bd0e45a2c339e4781bd94c94ac470e9fe93819d032d46668192b1d",
+  "notes": "트럭 마을을 크게 보여 주는 화면과 간단한 메뉴, 시설 말풍선에서 바로 생산·수령, 마을 의뢰 3종, 작업 중 생산 진행과 최대 210초 부재 성장, 데크 확장 결과 미리 보기. 기존 마을과 연속 농사를 유지하며 시작 패치 후에도 부재 성장을 보존합니다.",
+  "publishedAt": "2026-10-09T03:04:52.448Z"
 }
