@@ -1,0 +1,17 @@
+/* The game already reserves the top/status bar and bottom/home indicator. */
+.game-shell{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+.battle-shell{width:min(1100px,calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right)))}
+#player-name{font-size:16px}
+.pwa-install-steps{padding-left:22px;margin:16px 0;line-height:1.9;font-size:12px;color:#53664a}
+.pwa-install-steps li+li{margin-top:10px}
+.pwa-install-note{padding:12px;border-radius:12px;background:#e8eedb;color:#52694d;font-size:11px;line-height:1.8}
+.pwa-welcome-install{margin-top:14px;font-size:11px;color:#53664a}
+.pwa-welcome-install summary{cursor:pointer;padding:10px 0;font-weight:700}
+.pwa-welcome-install .pwa-install-steps{font-size:11px;margin:5px 0 10px}
+@media(max-width:680px),(orientation:landscape) and (max-height:600px){
+ .modal-backdrop:not(.planning-catalog):not(.planning-expansion){padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+ .modal-backdrop:not(.planning-catalog):not(.planning-expansion)>.modal{max-height:calc(100dvh - max(12px,env(safe-area-inset-top)) - max(12px,env(safe-area-inset-bottom)))}
+}
+@media(orientation:landscape) and (max-height:600px){
+ .planning-catalog>.modal,.planning-expansion>.modal{right:max(8px,env(safe-area-inset-right))}
+}

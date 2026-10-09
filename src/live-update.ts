@@ -1,4 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+import { getWebUpdateClient,isWebUpdateSupported } from './web-update';
+export { setWebUpdateActivationGuard,getWebUpdateDiagnostics } from './web-update';
 
 export type LiveUpdateStatus='idle'|'checking'|'downloading'|'ready'|'error';
 export interface LiveUpdateState {status:LiveUpdateStatus;progress:number;version?:string;contentVersion?:number;message:string}
@@ -20,8 +22,8 @@ let foregroundListenersInstalled=false;
 let nativeEventGeneration=0;
 const retryDelays=[15_000,45_000,120_000,300_000];
 const listeners=new Set<(state:LiveUpdateState)=>void>();
-export const isLiveUpdateSupported=()=>Capacitor.isNativePlatform()&&Capacitor.getPlatform()==='android';
-const native=isLiveUpdateSupported;
+const native=()=>Capacitor.isNativePlatform()&&Capacitor.getPlatform()==='android';
+export const isLiveUpdateSupported=()=>native()||(!Capacitor.isNativePlatform()&&isWebUpdateSupported());
 function update(next:LiveUpdateState){state=next;for(const listener of listeners)listener({...next});return {...next};}
 function receiveNativeEvent(next:LiveUpdateState){nativeEventGeneration++;return update(next);}
 function receiveSnapshot(next:LiveUpdateState,requestedAt:number){
@@ -49,10 +51,20 @@ function installForegroundListeners(){
  window.addEventListener('pagehide',clearRetry);
 }
 export function getLiveUpdateState():LiveUpdateState{return {...state};}
+/** Peer-tab contention can delay a web attempt without changing ready status. */
+export function canActivateLiveUpdate():boolean {
+ return isLiveUpdateSupported()&&!activating&&state.status==='ready'&&(native()||getWebUpdateClient(receiveNativeEvent).canActivate());
+}
 export async function initializeLiveUpdates(onState?:(state:LiveUpdateState)=>void,options:{checkOnInitialize?:boolean}={}):Promise<LiveUpdateState>{
  if(onState){listeners.add(onState);onState({...state});}
- if(!native())return {...state};
+ if(!isLiveUpdateSupported())return {...state};
  if(!initializing)initializing=(async()=>{
+  if(!native()){
+   await getWebUpdateClient(receiveNativeEvent).initialize();
+   installForegroundListeners();
+   if(options.checkOnInitialize!==false)void checkLiveUpdate();
+   return {...state};
+  }
   // Acknowledge this rendered boot before a ready listener can activate another bundle.
   await ContentUpdater.acknowledge();
   await ContentUpdater.addListener('contentStateChanged',receiveNativeEvent);
@@ -65,24 +77,31 @@ export async function initializeLiveUpdates(onState?:(state:LiveUpdateState)=>vo
  return initializing;
 }
 export async function checkLiveUpdate():Promise<LiveUpdateState>{
- if(!native()||activating)return {...state};
+ if(!isLiveUpdateSupported()||activating)return {...state};
  if(checking)return checking;
  clearRetry();
  const requestedAt=nativeEventGeneration;
- checking=ContentUpdater.check().then(next=>receiveSnapshot(next,requestedAt)).catch(failure).then(next=>{
+ const operation=native()?ContentUpdater.check():getWebUpdateClient(receiveNativeEvent).check();
+ checking=operation.then(next=>receiveSnapshot(next,requestedAt)).catch(failure).then(next=>{
   if(next.status==='error')scheduleRetry();
   else if(next.status==='idle'||next.status==='ready')retryAttempt=0;
   return next;
  }).finally(()=>{checking=null;});
  return checking;
 }
-/** Call after saved gameplay is idle; Android reloads the same local origin. */
+/** Call after saved gameplay is idle; each backend preserves its local origin. */
 export async function activateLiveUpdate():Promise<boolean>{
- if(!native()||activating||state.status!=='ready')return false;
+ if(!isLiveUpdateSupported()||activating||state.status!=='ready')return false;
  activating=true;clearRetry();
- try{await ContentUpdater.activate();return true;}catch(error){activating=false;failure(error);return false;}
+ try{
+  if(native()){await ContentUpdater.activate();return true;}
+  const accepted=await getWebUpdateClient(receiveNativeEvent).activate();
+  if(!accepted)activating=false;
+  return accepted;
+ }catch(error){activating=false;failure(error);return false;}
 }
 /** A rendered, usable game confirms the new content booted successfully. */
 export async function acknowledgeLiveUpdate():Promise<void>{
  if(native())try{await ContentUpdater.acknowledge();}catch(error){failure(error);}
+ else if(isLiveUpdateSupported())try{await getWebUpdateClient(receiveNativeEvent).acknowledge();}catch(error){failure(error);}
 }

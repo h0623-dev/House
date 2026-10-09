@@ -1,6 +1,6 @@
 # 게임 콘텐츠 자동 업데이트
 
-0.8.0 이상 앱은 호환되는 게임 코드·그림·스타일을 설치 확인 없이 업데이트합니다. 0.10.0 콘텐츠부터 게임 시작 화면에서 확인·다운로드·검증·적용을 진행한 뒤 저장한 마을에 들어갑니다. 네이티브 Android 기능 변경에는 별도의 APK와 Android 설치 확인이 필요합니다. 브라우저 버전에는 네이티브 콘텐츠 저장·적용 기능이 없습니다.
+0.8.0 이상 앱은 호환되는 게임 코드·그림·스타일을 설치 확인 없이 업데이트합니다. 0.10.0 콘텐츠부터 게임 시작 화면에서 확인·다운로드·검증·적용을 진행한 뒤 저장한 마을에 들어갑니다. 네이티브 Android 기능 변경에는 별도의 APK와 Android 설치 확인이 필요합니다. v0.18부터 iPhone과 웹은 같은 사이트의 Service Worker로 자동 패치합니다. [iPhone 안내](IOS.md)에 설치·오프라인·저장 범위를 기록했습니다. 네이티브 Android 업데이터와 웹 업데이터는 별도로 작동합니다.
 
 앱은 시작·복귀 시 고정 HTTPS 주소 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/game-update.json`을 확인합니다. 서명된 정보의 버전·네이티브 호환 범위를 확인하고 새 콘텐츠 ZIP을 앱 전용 공간에 다운로드합니다. ECDSA 서명, ZIP SHA-256, 압축 경로·크기·정확한 파일 목록과 각 파일 해시를 검증합니다. 공개 키는 앱에 포함하며 비공개 서명 키는 저장소에 넣지 않습니다.
 
@@ -10,7 +10,17 @@
 
 아직 0.8·0.9 콘텐츠를 실행 중인 앱이 0.10 이상 콘텐츠를 처음 받는 동안에는 이전 버전의 백그라운드 확인·안전한 트럭 홈 자동 적용 방식이 사용됩니다. 그 패치가 적용된 뒤부터 시작 패치 화면이 동작합니다. 0.7 이하 앱에는 콘텐츠 업데이터가 없으므로 같은 서명의 최신 APK를 한 번 설치해야 하며, 이후 호환되는 게임 업데이트는 APK 재설치 없이 받을 수 있습니다.
 
+## v0.18 웹 자동 패치
+
+웹 배포는 `/House/` 범위의 `sw.js`와 `web-update.json`, 홈 화면 manifest, 해당 버전의 모든 정적 파일을 함께 게시합니다. 새 worker는 파일별 바이트 수와 SHA-256을 검사한 후 완성 표시를 기록합니다. 다운로드·변조·저장 공간 오류가 있으면 미완성 캐시만 지우고 이전 버전을 유지합니다. 같은 경로·해시·크기의 그림과 폰트는 검증한 이전 캐시에서 재사용합니다.
+
+처음 캐시를 준비할 때 열린 문서를 강제로 다시 불러오지 않습니다. 이후 패치는 실행·복귀·연결 복구 시 확인하고, 게임의 안전한 홈에서 저장한 뒤 적용합니다. 같은 범위의 다른 탭도 작업·전투·열린 창을 마치고 잠금에 동의해야 합니다. 다른 탭은 공유 저장을 덮어쓰지 않고 메모리의 진행을 잠급니다. 모든 탭을 잠근 뒤 시작한 탭이 마지막으로 저장하며, 저장 실패나 응답 시간 초과는 전체 적용을 취소합니다. 잠금 중 화면 숨김·reload의 자동 저장은 중단해 오래된 탭의 저장이 최신 진행을 덮어쓰지 않도록 합니다. 새 버전으로 부팅한 모든 탭의 확인 뒤에만 더 낮은 버전 캐시를 정리합니다.
+
+웹 해시는 같은 HTTPS 배포의 파일 완전성을 검사하며 Android의 별도 ECDSA 서명 검증과 구분됩니다. HTTPS와 브라우저의 저장 API가 필요합니다. iOS의 저장 공간 정리·사용자 사이트 데이터 삭제 뒤에는 인터넷 연결로 파일을 다시 준비해야 합니다. 게임 저장은 해당 기기에 보관하고 브라우저·홈 화면 앱·Android 간 공유나 클라우드 동기화는 하지 않습니다.
+
 ## 배포
+
+0.18.0은 iPhone 홈 화면 플레이와 웹 자동 패치를 추가하며 콘텐츠 버전 18, Android 네이티브 호환 범위 8–18로 배포합니다. 기존 0.8–0.17 앱은 같은 서명 콘텐츠를 받으므로 APK를 다시 설치할 필요가 없습니다. 게임 규칙과 v0.17의 저장 형식은 유지합니다.
 
 0.17.0은 6종 동료·최대 3명 편성, 시설 Lv.5·생산 개선, 데크 Lv.8·시설 16자리·밭 수용량 24칸, 맵을 보여 주는 건설 화면을 콘텐츠 버전 17, 네이티브 호환 범위 8–17로 배포합니다. 기존 0.8–0.16 앱은 새 APK 설치 없이 호환 콘텐츠를 받을 수 있습니다. 보상 수령 기록과 기존 마을 저장은 같은 로컬 주소에서 유지됩니다.
 
@@ -29,7 +39,7 @@
 ```bash
 npm run build
 node scripts/create-content-release.mjs dist \
-  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.17.0-content.zip
+  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.18.0-content.zip
 ```
 
 도구는 `artifacts/game-update.json`, 콘텐츠 ZIP, SHA-256 파일을 만듭니다. ZIP에는 검증된 웹 빌드만 들어가며 새 서명이 앱에 고정된 공개 키와 맞는지 확인합니다. ZIP을 `gh-pages/content/`에 올린 뒤 마지막에 같은 브랜치의 루트 `game-update.json`을 게시합니다. 미리 테스트하는 미래 버전 정보는 공개하지 않습니다.
@@ -71,3 +81,13 @@ v0.15 배포에서는 GitHub Pages의 게시 용량을 줄이기 위해 `gh-page
 | --- | ---: | --- |
 | [0.12.0 ZIP](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.12.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.12.0-content.zip.sha256) | 46,339,317 | `3884fa48e6c66fc8b8f58f0f3d8d19da54be900955e456dcef2a383d517935b3` |
 | [0.13.0 ZIP](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.13.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.13.0-content.zip.sha256) | 46,341,444 | `c37a9e283c4148a3f4fbc069ab9e8489f3a7b4a6bc955ee5c02752df472aa25e` |
+
+## v0.18 보관 주소
+
+최신 게시 용량을 유지하기 위해 v0.14–v0.16 콘텐츠 ZIP과 체크섬 6개는 기존 공개 커밋의 고정 주소로 보관합니다. 전체 바이트·SHA-256·HTTP 200을 확인했으며 Git 이력을 삭제하거나 다시 쓰지 않습니다. 최신 브랜치에는 기존 APK 전체와 v0.17·v0.18 콘텐츠, 이전 웹이 참조하는 자산을 유지합니다.
+
+| 콘텐츠 | ZIP 바이트 | SHA-256 |
+|---|---:|---|
+| [0.14.0 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.14.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.14.0-content.zip.sha256) | 46,346,954 | `c0dcf880ca84c165507e51b0ea76fbeb0f4c987b9f6e7c5abc9b57d4afbd4e45` |
+| [0.15.0 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.15.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.15.0-content.zip.sha256) | 46,347,011 | `0eef40b76c7632d5ac8f86f6c8176778534554d26b930575a916eb164e513e02` |
+| [0.16.0 ZIP](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.16.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/61d5fed2f1fa2bd05272d909c6706292e8f02492/content/road-haven-0.16.0-content.zip.sha256) | 48,007,391 | `b66212829ebb500618296053bb98933a6535b59e4d5a3193ea124c42766ca336` |

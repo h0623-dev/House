@@ -389,8 +389,10 @@ try {
  await close();
 
  await menuItem('settings');
- await page.getByRole('button', { name: '앱 새 버전 확인', exact: true }).click();
- await page.getByText(/아직 배포 서버가 연결되지 않았어요/).waitFor();
+ assert.equal(await page.locator('.native-feature-update').count(), 0, 'the web game keeps Android APK installation controls out of its settings');
+ await page.getByRole('button', { name: '게임 업데이트 다시 확인', exact: true }).click();
+ await page.locator('[data-live-update-message]').filter({ hasText: '최신 게임으로 여행하고 있어요.' }).waitFor();
+ assert.equal(await page.evaluate(() => navigator.serviceWorker.getRegistration().then(registration => Boolean(registration?.active))), true, 'manual web update confirmation uses the actual active web worker');
  await close();
  const portraitSources = await page.locator('#profile img, #profile svg image').evaluateAll(images => [...new Set(images.map(image => image.getAttribute('src') || image.getAttribute('href')).filter(Boolean))]);
  assert.ok(portraitSources.length, 'the profile must display the new illustrated character art');

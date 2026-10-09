@@ -18,7 +18,7 @@ const result = await build({
   format: 'iife',
   target: ['es2022'],
   // The offline file has no remote update endpoint or injected environment values.
-  define: { 'import.meta.env': '{}' },
+  define: { 'import.meta.env': '{}', '__ROAD_HAVEN_WEB_PWA__': 'false' },
   loader: {
     '.ttf': 'dataurl',
     '.woff': 'dataurl',
@@ -50,6 +50,7 @@ const licenses = await Promise.all([
 ]);
 const source = await readFile(path.join(root, 'index.html'), 'utf8');
 const html = source
+  .replace(/<(?:link|meta)\b[^>]*\bdata-pwa-only\b[^>]*>\s*/g, '')
   .replace(/<title>.*?<\/title>/, '<title>RoadHaven browser play · 로드헤이븐</title>')
   .replace('</head>', () => `<link rel="icon" href="data:,"><style>${stylesheet.replace(/<\/style/gi, '<\\/style')}</style></head>`)
   .replace('<script type="module" src="/src/main.ts"></script>',

@@ -1,16 +1,16 @@
 # 로드헤이븐 웹 플레이 배포
 
-v0.17.0은 정적 웹 호스팅에서 실행할 수 있습니다. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
+v0.18.0은 iPhone 홈 화면 앱과 정적 웹 호스팅에서 실행할 수 있습니다. [iPhone 설치 안내](IOS.md)를 참고하세요. 웹 버전 저장 데이터는 해당 브라우저에 보관되며 Android 앱과 별도로 관리됩니다.
 
 ## 준비된 파일
 
-- `artifacts/web-play/`: 웹 서버에 올릴 정적 사이트. `index.html`, `assets/`, `fonts/`, `.nojekyll`을 함께 배포합니다.
-- `artifacts/road-haven-0.17.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
-- `artifacts/road-haven-0.17.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
+- `artifacts/web-play/`: 웹 서버에 올릴 정적 사이트. `index.html`, `assets/`, `fonts/`, `manifest.webmanifest`, `sw.js`, `web-update.json`, `.nojekyll`을 함께 배포합니다.
+- `artifacts/road-haven-0.18.0-web.zip`: 위 디렉터리 내용이 압축 파일의 최상위에 들어 있는 배포용 ZIP입니다.
+- `artifacts/road-haven-0.18.0-play.html`: 코드·스타일·폰트를 모두 포함하는 단일 HTML입니다. 재생성은 `node scripts/build-standalone.mjs`로 할 수 있습니다.
 
 `fonts/OFL-NotoSansKR.txt`와 `fonts/OFL-DMSans.txt`는 포함된 글꼴의 라이선스입니다. 배포할 때 함께 보관하세요. 생성된 `artifacts/` 디렉터리는 소스 저장소의 Git 추적에서 제외됩니다.
 
-v0.17 최종 정적 사이트의 26개 파일과 웹 ZIP의 정확한 파일 목록·전체 바이트를 검증했습니다. 같은 소스의 Android 내장 웹 파일 및 단일 HTML과 함께 수정하지 않는 QA 사본에 보관했으며, 단일 HTML에는 외부 정적 파일 참조가 없습니다. 공개 게시 응답 검증과 브라우저 플레이 검증은 [이번 버전 검수 기록](research/v017-playtest-results.md)에 별도로 기록합니다.
+v0.18 최종 정적 사이트의 30개 파일과 웹 ZIP의 정확한 파일 목록·전체 바이트를 검증했습니다. 같은 소스의 Android 내장 웹 파일 26개 및 단일 HTML과 함께 수정하지 않는 QA 사본 `v018-r2`에 보관했습니다. 총 57개 파일은 실제 로컬 HTTP 응답과도 바이트가 같습니다. 단일 HTML에는 외부 정적 파일 참조가 없으며 웹 전용 설치·패치 파일은 네이티브 업데이터에서 제외합니다. 실제 Service Worker의 오프라인 재실행과 안전한 적용은 [v0.18 검수](research/v018-playtest-results.md)에 기록합니다. 이전 결과는 [v0.17 검수](research/v017-playtest-results.md)에 보관합니다.
 
 ## 정적 사이트 다시 빌드하기
 
@@ -21,6 +21,13 @@ npx --no-install tsc --noEmit
 npx --no-install vite build --base=/House/ --outDir artifacts/web-play --emptyOutDir
 touch artifacts/web-play/.nojekyll
 cp node_modules/@fontsource-variable/dm-sans/LICENSE artifacts/web-play/fonts/OFL-DMSans.txt
+node --input-type=module <<'JS'
+import fs from 'node:fs';
+import { createPwaRelease } from './scripts/web-pwa-plugin.mjs';
+const {version}=JSON.parse(fs.readFileSync('package.json','utf8'));
+const {versionCode}=JSON.parse(fs.readFileSync('release-version.json','utf8'));
+await createPwaRelease('artifacts/web-play',{version,contentVersion:versionCode,base:'/House/'});
+JS
 python3 - <<'PY'
 import json
 from pathlib import Path
@@ -35,7 +42,7 @@ with ZipFile(f'artifacts/road-haven-{version}-web.zip', 'w', ZIP_DEFLATED) as ar
 PY
 ```
 
-Vite의 `--base=/House/` 옵션은 이번 게시 경로에 맞춰 HTML의 JavaScript/CSS, CSS의 이미지·폰트 경로를 `/House/` 아래로 생성합니다. `index.html`, `assets/`, `fonts/`를 그 하위 경로에 함께 올립니다. 다른 호스팅 경로에서는 해당 경로로 `--base`를 바꿔 다시 빌드하세요. 별도 소스 수정이나 CSS 경로 치환은 필요하지 않습니다.
+Vite의 `--base=/House/` 옵션은 이번 게시 경로에 맞춰 HTML의 JavaScript/CSS, CSS의 이미지·폰트 경로를 `/House/` 아래로 생성합니다. `index.html`, `assets/`, `fonts/`를 그 하위 경로에 함께 올립니다. 다른 호스팅 경로에서는 manifest의 `id`·`scope`·`start_url`도 해당 경로에 맞추고 `VITE_PWA_ENABLED=1`과 `--base`로 다시 빌드하세요. `/House/` 빌드는 기본으로 PWA를 생성하고, 일반 네이티브 `/` 빌드는 worker·웹 descriptor·설치 태그를 제외합니다. 최종 폰트 라이선스·`.nojekyll` 추가 뒤 `createPwaRelease`로 목록을 다시 생성하여 실제 게시 파일과 해시를 맞춥니다. 별도 소스 수정이나 CSS 경로 치환은 필요하지 않습니다.
 
 ## GitHub Pages 설정
 
@@ -61,7 +68,7 @@ GitHub Pages를 사용할 수 있는 저장소와 설정 권한이 필요합니�
 - 테스트 환경의 관리형 Chromium은 `file://` 탐색을 차단하므로 단일 HTML을 파일로 직접 여는 방식은 이 환경에서 검증하지 못했습니다.
 
 
-게임 콘텐츠 자동 업데이트는 Android 앱의 전용 기능입니다. 웹과 단일 HTML은 현재 포함된 버전을 실행하며 Android의 저장 및 다운로드 공간과 별개입니다.
+v0.18부터 HTTPS 웹과 iPhone 홈 화면 앱은 실행·복귀·재연결 시 새 패치를 확인합니다. 파일을 모두 준비한 뒤 작업·전투를 마치고 안전한 홈에서 저장하여 자동 적용하며, 실패하면 이전 버전으로 계속 플레이합니다. 첫 캐시 준비 뒤에는 오프라인 재실행도 가능합니다. 단일 HTML은 포함된 버전을 실행합니다. Android의 저장·업데이터와 웹은 별도입니다.
 
 ## v0.17 편성·시설·트럭 성장
 
