@@ -120,6 +120,7 @@ function copy(state: GameState): GameState {
     ...(state.seedInventory ? { seedInventory: { ...state.seedInventory } } : {}),
     quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
+    ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.facilityHistory ? { facilityHistory: getFacilityHistory(state) } : {}),
     expedition: state.expedition ? { ...state.expedition } : null,
     settlement: getSettlement(state),

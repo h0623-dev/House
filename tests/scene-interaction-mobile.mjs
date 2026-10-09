@@ -17,14 +17,19 @@ const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-ha
 const geometry = () => page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneGeometry));
 const quick = action => page.locator(`[data-quick="${action}"]`);
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => element.matches('[data-map-zoom],[data-map-reset],[data-map-move]'))) await touch(page.locator('[data-camera-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-nav="farm"]'));
  await locator.scrollIntoViewIfNeeded(); const box = await locator.boundingBox(); assert.ok(box);
  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
  assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'a physical finger reaches the intended button');
  await page.touchscreen.tap(point.x, point.y);
 }
 async function shot(name) { const path = `artifacts/v${version}-scene-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
-async function pauseWorld() { const button = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await button.count()) await touch(button); }
+async function pauseWorld() {
+ await touch(page.locator('[data-open="menu"]')); await touch(page.locator('#modal-root [data-open="settings"]'));
+ const button = page.locator('#modal-root [data-pause]'); if ((await button.innerText()).trim() === '잠시 멈춤') await touch(button);
+ await touch(page.locator('#modal-root .modal-close'));
+}
 async function resetZoom() { await touch(page.locator('[data-map-reset]')); await page.waitForTimeout(450); assert.equal((await geometry()).mapZoom, 1); }
 async function zoomControls(label) {
  const before = await geometry(); await touch(page.locator('[data-map-zoom="1"]')); await page.waitForTimeout(450); const bigger = await geometry();
@@ -66,9 +71,17 @@ async function recordMotion(action, width) {
  await page.waitForFunction(() => { const frame = JSON.parse(document.querySelector('#world')?.dataset.sceneAction || 'null'); return frame?.climbing === 'down' && frame.progress > .4; }, null, { timeout: 12000 }); await shot(`${action}-ladder-down-${width}`);
  await page.waitForFunction(() => JSON.parse(document.querySelector('#world')?.dataset.sceneAction || 'null')?.phase === 'working', null, { timeout: 16000 });
  assert.deepEqual((await saved()).resources, before.resources, 'arriving at the worksite has not granted the materials');
- await shot(`${action}-work-${width}`);
- await zoomControls(`${action} while working`);
- await page.waitForFunction(() => { const frame = JSON.parse(document.querySelector('#world')?.dataset.sceneAction || 'null'); return frame?.climbing === 'up' && frame.progress > .4; }, null, { timeout: 16000 }); await shot(`${action}-ladder-up-${width}`);
+ // Observe the return while exercising UI controls. The ladder can otherwise
+ // pass during a screenshot or menu check before a later sequential wait starts.
+ await Promise.all([
+  (async () => {
+   assert.equal(await page.locator('[data-nav="bag"]').isDisabled(), false, 'inventory remains available while the resident works');
+   await touch(page.locator('[data-open="menu"]')); assert.equal(await page.locator('#modal-root [data-open="settlement-goals"]').isVisible(), true, 'growth planning remains reachable during a chore');
+   await touch(page.locator('#modal-root .modal-close'));
+   await shot(`${action}-work-${width}`); await zoomControls(`${action} while working`);
+  })(),
+  (async () => { await page.waitForFunction(() => { const frame = JSON.parse(document.querySelector('#world')?.dataset.sceneAction || 'null'); return frame?.climbing === 'up' && frame.progress > .4; }, null, { timeout: 16000 }); await shot(`${action}-ladder-up-${width}`); })(),
+ ]);
  await page.waitForFunction(() => !document.querySelector('#app')?.hasAttribute('aria-busy'), null, { timeout: 30000 });
  const elapsedMs = Date.now() - start, after = await saved();
  const samples = await page.evaluate(() => { clearInterval(window.__sceneMotionTimer); return window.__sceneMotion; });
@@ -112,6 +125,8 @@ try {
   page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations.push({ width, url: frame.url(), at: new Date().toISOString() }); });
   page.on('pageerror', error => errors.push(error.message)); page.on('response', response => { if (response.status() >= 400 && ['image', 'font', 'script', 'stylesheet'].includes(response.request().resourceType())) failedAssets.push(`${response.status()} ${response.url()}`); });
   await page.goto(baseUrl); await page.waitForLoadState('networkidle'); await touch(page.locator(`[data-gender="${width === 360 ? 'female' : 'male'}"]`)); await touch(page.locator('[data-start]')); await pauseWorld();
+  await page.waitForTimeout(600); const freshPlots = await page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.farmPlots));
+  assert.ok(Math.hypot(freshPlots[1].x - freshPlots[0].x, freshPlots[1].y - freshPlots[0].y) >= 41, 'the starting beds stay readable on the narrow phone');
   await zoomControls(`home-${width}`); await pinch(await canvasCenter(), 1.4); assert.ok((await geometry()).mapZoom > 1.2, 'two fingers also zoom the settlement home'); await resetZoom();
   if (width === 390) { const point = await canvasCenter(); await worldAt(point); await page.mouse.move(point.x, point.y); await page.mouse.wheel(0, -180); await page.waitForTimeout(450); assert.ok((await geometry()).mapZoom > 1.25, 'a mouse wheel zooms the same painted map'); await page.mouse.wheel(0, 180); await page.waitForTimeout(450); assert.ok(Math.abs((await geometry()).mapZoom - 1) < .02); assert.equal(await page.evaluate(() => scrollY), 0); await resetZoom(); }
   for (let index = 0; index < 10; index++) await touch(page.locator('[data-map-zoom="-1"]'));
@@ -141,7 +156,7 @@ try {
    for (const selector of ['[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]']) { const box = await page.locator(selector).boundingBox(); assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.y >= 0 && box.x + box.width <= 844 && box.y + box.height <= 390, 'zoom and reset controls remain reachable in landscape'); }
    await zoomControls('landscape'); await shot('landscape-zoom-controls');
   }
-  cases.push(`${width}px: visible +/-/reset in home/farm/grove/work, clamp .75–2.5, actual two-finger home/farm/grove pinch and farm cancel without queued work, subsequent single planting charged once, actual road gather and chop.`);
+  cases.push(`${width}px: readable starting beds, expandable +/-/reset in home/farm/grove/work, clamp .75–2.5, actual two-finger home/farm/grove pinch and farm cancel without queued work, subsequent single planting charged once, growth menu access during actual road gathering and chopping.`);
   await context.close();
  }
  assert.equal(navigations.length, 2, 'each phone context loaded once without hidden reloads'); assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
@@ -149,5 +164,6 @@ try {
  console.log(`PASS: ${assertionsExecuted} scene interaction assertions, real pinch/cancel and ${motionRuns.length} complete road animation samples.`);
 } catch (error) {
  if (page && !page.isClosed()) await shot('failure').catch(() => {});
- await writeFile(`artifacts/scene-interaction-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', baseUrl, assertionsExecuted, cases, timings, motionRuns, navigations, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n'); throw error;
+ const failedMotionSamples = page && !page.isClosed() ? await page.evaluate(() => (window.__sceneMotion ?? []).map(({ at, frame, busy }) => ({ at, frame, busy }))).catch(() => []) : [];
+ await writeFile(`artifacts/scene-interaction-v${version}-verification.json`, JSON.stringify({ version, status: 'failed', baseUrl, assertionsExecuted, cases, timings, motionRuns, failedMotionSamples, navigations, screenshots, errors, failedAssets, failure: String(error) }, null, 2) + '\n'); throw error;
 } finally { await browser.close(); }

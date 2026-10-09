@@ -32,7 +32,7 @@ const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const plantingMode = () => page.locator('#planting-toolbar');
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(nav('farm'));
  await locator.scrollIntoViewIfNeeded();
  const box = await locator.boundingBox();
  assert.ok(box, 'the intended touch target is rendered');
@@ -46,10 +46,19 @@ async function shot(name) {
  screenshots.push(path);
 }
 async function pauseWorld() {
- const pause = page.getByRole('button', { name: '시간 일시정지', exact: true });
- if (await pause.count()) await touch(pause);
+ // Pause through the visible menu, retaining real animation timers.
+ await touch(page.locator('[data-open="menu"]'));
+ await touch(page.locator('#modal-root [data-open="settings"]'));
+ await touch(page.locator('#modal-root [data-pause]'));
+ assert.match(await page.locator('#modal-root [data-pause]').innerText(), /계속하기/);
+ // Persist the visible paused state so exact-cost checks do not read an
+ // earlier autosave from before the menu was opened.
+ await touch(page.locator('#modal-root [data-save]'));
+ await touch(page.locator('#modal-root [data-close]').first());
 }
 async function fixture(state) {
+ // Declared fixtures contain no absence interval; offline catch-up is tested separately.
+ state = { ...state, lastSaved: Date.now() };
  await page.evaluate(state => localStorage.setItem('road-haven-seed-fixture', JSON.stringify(state)), state);
  await page.reload();
  await page.locator('#resident-name').getByText(state.name, { exact: true }).waitFor();
@@ -135,7 +144,7 @@ async function assertInventoryLayout(width, height) {
   assert.ok(box && box.width >= 44 && box.height >= 44, `${crop.name} seed has a finger-sized target`);
   assert.ok(box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${crop.name} card is reachable by scrolling the inventory`);
   assert.match(await card.innerText(), new RegExp(crop.name));
-  assert.match(await card.innerText(), new RegExp(String(crop.minutes)));
+  assert.match(await card.innerText(), new RegExp(`${Math.ceil(crop.minutes / 2)}초`));
   const sources = await card.locator('img, svg image').evaluateAll(images => images.map(image => image.getAttribute('src') || image.getAttribute('href')).filter(Boolean));
   assert.ok(sources.length, `${crop.name} has illustrated seed art`);
   assert.equal(await card.locator('.crop-icon').getAttribute('aria-label'), `${crop.name} 씨앗`, 'crop art describes the actual chosen species');
@@ -247,8 +256,12 @@ try {
   await waitBusy();
   await touchPlot(2);
   await touchPlot(3);
+  await touch(nav('home'));
+  assert.equal(await nav('home').getAttribute('aria-current'), 'page', 'home can be viewed while the chosen planting job is active');
+  await touch(nav('farm'));
+  assert.equal(await plantingMode().getAttribute('data-farm-mode'), 'plant', 'reopening the farm during work keeps the selected seed tool');
   await touch(page.locator('[data-plant-cancel]'));
-  await waitIdle(`cancel-only-future-work-${width}`, cancelStart, 14000);
+  await waitIdle(`home-farm-then-explicit-cancel-only-future-work-${width}`, cancelStart, 14000);
   state = await saved();
   assert.equal(state.plots[0].cropId, 'potato');
   assert.equal(state.plots.slice(1).every(plot => plot.plantedAt === null), true, 'cancel discards every queued planting after the current visible job');
@@ -286,13 +299,17 @@ try {
    await waitBusy();
    await touchPlot(2);
    await touch(nav('home'));
-   await waitIdle('navigation-stops-future-planting', navStart, 14000);
+   assert.equal(await nav('home').getAttribute('aria-current'), 'page', 'requested home view opens during the current chore');
+   await waitIdle('home-view-preserves-chosen-queued-planting', navStart, 18000);
    state = await saved();
    assert.equal(state.plots[0].cropId, 'tomato');
-   assert.equal(state.plots[1].plantedAt, null);
-   assert.equal(state.seedInventory.tomato, 3);
-   assert.equal(await plantingMode().isVisible(), false);
-   assert.equal(await nav('home').getAttribute('aria-current'), 'page', 'requested navigation happens after the current chore');
+   assert.equal(state.plots[1].cropId, 'tomato', 'viewing home preserves the planting job already chosen by the player');
+   assert.equal(state.plots.slice(2).every(plot => plot.plantedAt === null), true);
+   assert.equal(state.seedInventory.tomato, 2);
+   assert.equal(state.resources.seeds, 22);
+   assert.equal(state.energy, 92, 'both chosen planting jobs each charge one seed and four energy');
+   assert.equal(await plantingMode().isVisible(), false, 'the home view keeps the farm tray closed');
+   assert.equal(await nav('home').getAttribute('aria-current'), 'page');
 
    const tired = lateFixture(fresh, { energy: 0 });
    await fixture(tired);
@@ -313,7 +330,7 @@ try {
    assert.equal(state.resources.water, tired.resources.water - 1);
    assert.equal(state.energy, 51, 'one paid rest and one planting commit exactly once');
    await cancelMode();
-   cases.push('Changing seeds and navigation discard pending work; cancel preserves the current job; low-energy recovery keeps the selected crop and commits once');
+   cases.push('Changing seeds discards old pending work; home view preserves chosen jobs; reopening the farm and explicit cancel discards queued jobs while preserving the current job; low-energy recovery keeps the selected crop and commits once');
   }
 
   if (width === 390) {
@@ -347,13 +364,15 @@ try {
    growing.plots = crops.map((crop, index) => ({ id: index + 1, cropId: crop.id, plantedAt: growing.totalMinutes - 90, watered: true }));
    growing.plots.push({ id: 7, plantedAt: null, watered: false }, { id: 8, plantedAt: null, watered: false });
    await fixture(growing);
+   const pausedGrowthState = await saved();
    await touch(nav('farm'));
    await touch(page.locator('#farm-context [data-open="farm"]'));
    for (let index = 0; index < crops.length; index++) {
     const crop = crops[index], card = page.locator(`[data-plot-card="${index + 1}"]`);
     assert.match(await card.innerText(), new RegExp(crop.name), 'each growing plot identifies its actual crop');
     const percentage = await card.locator('.quest-progress > span').evaluate(element => parseFloat(element.style.width));
-    assert.ok(Math.abs(percentage - 90 / crop.minutes * 100) < .05, `${crop.name} uses its own growing duration`);
+    const elapsedGrowthMinutes = pausedGrowthState.totalMinutes - growing.plots[index].plantedAt;
+    assert.ok(Math.abs(percentage - Math.min(1, elapsedGrowthMinutes / crop.minutes) * 100) < .05, `${crop.name} uses its own growing duration against the visible paused clock`);
    }
    await shot('six-growing-crops');
    await touch(page.locator('#modal-root [data-close]').first());

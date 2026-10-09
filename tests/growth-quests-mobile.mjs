@@ -26,14 +26,32 @@ const nav = section => page.locator(`[data-nav="${section}"]`);
 const claimed = state => state.growthQuests?.claimed ?? [];
 const facilities = state => state.settlement?.buildings ?? [];
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-nav="farm"]'));
  await locator.scrollIntoViewIfNeeded(); const box = await locator.boundingBox(); assert.ok(box, 'the touch target is rendered');
  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
  assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'the finger reaches the intended control');
  await page.touchscreen.tap(point.x, point.y);
  return point;
 }
-async function pauseWorld() { const button = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await button.count()) await touch(button); }
+async function menuItem(kind) {
+ if (await page.locator('#modal-root').isVisible()) await touch(page.locator('#modal-root [data-close]').first());
+ await touch(page.locator('[data-open="menu"]'));
+ await touch(page.locator(`#modal-root [data-open="${kind}"]`));
+}
+async function setPaused(paused) {
+ const current = await page.locator('.time-button').getAttribute('aria-label') === '시간 계속';
+ if (current === paused) return;
+ const selected = await page.locator('#facility-sheet').isVisible() ? Number(await page.locator('#facility-sheet').getAttribute('data-facility')) : null;
+ await menuItem('settings'); await touch(page.locator('#modal-root [data-pause]'));
+ await touch(page.locator('#modal-root [data-close]').first());
+ if (selected !== null) {
+  await page.waitForTimeout(900);
+  const point = await page.locator('#world').evaluate((canvas, id) => { const slot = JSON.parse(canvas.dataset.settlementSlots).find(slot => slot.buildingId === id), r = canvas.getBoundingClientRect(); return { x: r.left + slot.facilityX, y: r.top + slot.facilityY }; }, selected);
+  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the selected facility can be reopened after setting time');
+  await page.touchscreen.tap(point.x, point.y); await page.locator(`#facility-sheet[data-facility="${selected}"]`).waitFor();
+ }
+}
+async function pauseWorld() { await setPaused(true); }
 async function close() { if (await page.locator('#modal-root').isVisible()) await touch(page.locator('#modal-root [data-close]').first()); }
 async function shot(name) { const path = `artifacts/v${version}-growth-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
 function validateFixture(state) {
@@ -48,7 +66,7 @@ async function reload(state) {
 }
 async function makeContext(width, height) {
  const context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
- await context.addInitScript(() => { const fixture = localStorage.getItem('growth-qa-fixture'); if (fixture) { localStorage.setItem('road-haven-save-v1', fixture); localStorage.removeItem('growth-qa-fixture'); localStorage.removeItem('road-haven-selected-seed-v1'); } });
+ await context.addInitScript(() => { const fixture = localStorage.getItem('growth-qa-fixture'); if (fixture) { const state = JSON.parse(fixture); state.lastSaved = Date.now(); localStorage.setItem('road-haven-save-v1', JSON.stringify(state)); localStorage.removeItem('growth-qa-fixture'); localStorage.removeItem('road-haven-selected-seed-v1'); } });
  page = await context.newPage();
  page.on('pageerror', error => errors.push(error.message));
  page.on('response', response => { const kind = response.request().resourceType(); if (response.status() >= 400 && ['image', 'font', 'script', 'stylesheet'].includes(kind)) failedAssets.push(`${response.status()} ${response.url()}`); if (response.ok() && kind === 'image') successfulImages.add(response.url()); });
@@ -63,7 +81,7 @@ async function touchSummary(locator) {
  await page.touchscreen.tap(point.x, point.y);
 }
 async function openBoard(id) {
- if (!await page.locator('[data-growth-board]').isVisible()) await touch(page.locator('[data-open="settlement-goals"]'));
+ if (!await page.locator('[data-growth-board]').isVisible()) await menuItem('settlement-goals');
  await page.locator('[data-growth-board]').waitFor();
  if (id && !await card(id).count()) {
   const all = page.locator('[data-growth-all-goals]'); if (!await all.evaluate(element => element.open)) await touchSummary(all.locator(':scope > summary'));
@@ -173,7 +191,7 @@ try {
   start = Date.now(); before = await go('first-carrot', { works: true }); await waitIdle(`quest-first-harvest-${width}`, start); assert.equal((await saved()).stats.harvests, 1); assert.equal((await saved()).resources.food, before.resources.food + 4); await claim('first-carrot');
   const waterworks = await buildForQuest('rainwater-home', 0); await claim('rainwater-home'); await go('first-delivery'); await page.locator(`[data-facility-start="${waterworks}"]`).waitFor();
   before = await saved(); await touch(page.locator(`[data-facility-start="${waterworks}"]`)); let state = await saved(); assert.deepEqual(state.resources, before.resources); assert.equal(state.settlement.stats.productions, 1); assert.equal(facilities(state)[0].readyAt - facilities(state)[0].startedAt, 90);
-  if (width === 360) { start = Date.now(); await touch(page.getByRole('button', { name: '시간 계속', exact: true })); await page.locator(`[data-facility-collect="${waterworks}"]`).waitFor({ state: 'visible', timeout: 55000 }); await pauseWorld(); timings.push({ name: 'quest-first-production-natural-90-minutes', elapsedMs: Date.now() - start }); assert.ok(Date.now() - start >= 42000); }
+  if (width === 360) { start = Date.now(); await setPaused(false); await page.locator(`[data-facility-collect="${waterworks}"]`).waitFor({ state: 'visible', timeout: 55000 }); await pauseWorld(); timings.push({ name: 'quest-first-production-natural-90-minutes', elapsedMs: Date.now() - start }); assert.ok(Date.now() - start >= 42000); }
   else { state = await saved(); state.name = '390 생산 시간 경과'; state.totalMinutes = facilities(state)[0].readyAt; state.day = Math.floor(state.totalMinutes / 1440) + 1; state.minutes = state.totalMinutes % 1440; await reload(state); await go('first-delivery'); }
   await touch(page.locator(`[data-facility-collect="${waterworks}"]`)); state = await saved(); assert.equal(state.resources.water, before.resources.water + 4); assert.equal(state.settlement.stats.collections, 1); await claim('first-delivery');
   assert.equal(await page.locator('[data-growth-board]').getAttribute('data-current-quest'), 'new-seeds', 'claiming the chapter finale directly displays the next task');
@@ -186,7 +204,7 @@ try {
    const collect = lateState('뒤 챕터 수령 목적지 fixture'); collect.growthQuests.claimed = GROWTH_QUESTS.slice(0, 10).map(quest => quest.id); collect.settlement.stats.collections = 3; collect.settlement.stats.productions = 4; collect.settlement.buildings[1].level = 1; collect.settlement.buildings[1].startedAt = collect.totalMinutes - 120; collect.settlement.buildings[1].readyAt = collect.totalMinutes; await reload(collect); before = await go('steady-deliveries'); assert.equal(await page.locator('#facility-sheet').getAttribute('data-facility'), '2'); await touch(page.locator('[data-facility-collect="2"]')); assert.equal((await saved()).resources.food, before.resources.food + 5); assert.equal((await saved()).settlement.stats.collections, 4); await claim('steady-deliveries');
    const hunt = lateState('뒤 챕터 사냥 목적지 fixture'); hunt.growthQuests.claimed = GROWTH_QUESTS.slice(0, 14).map(quest => quest.id); hunt.stats.battlesWon = 0; hunt.stats.hunts = 0; hunt.stats.defeatedEnemies = 0; await reload(hunt); before = await go('safe-road'); assert.equal(await page.locator('[data-stage="1"]').getAttribute('aria-pressed'), 'true'); assert.deepEqual((await saved()).resources, before.resources); await touch(page.locator('[data-start-hunt]')); await page.locator('.battle-screen').waitFor(); assert.ok((await saved()).expedition); await touch(page.locator('[data-battle="retreat"]')); await touch(page.locator('[data-battle="confirm-retreat"]')); await touch(page.locator('[data-battle="finish"]')); assert.equal((await saved()).stats.battlesWon, 0); await uiStatus('safe-road', 'active');
    await page.setViewportSize({ width: 844, height: 390 }); await openBoard('safe-road'); await card('safe-road').locator('[data-quest-goto]').scrollIntoViewIfNeeded(); const gotoBox = await card('safe-road').locator('[data-quest-goto]').boundingBox(); assert.ok(gotoBox.width >= 44 && gotoBox.height >= 44); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await shot('landscape-board'); await page.setViewportSize({ width: 390, height: 844 });
-   const legacy = lateState('v8 중복 시설 12곳 복구 fixture', true); delete legacy.growthQuests; delete legacy.stats.plantings; delete legacy.stats.waterings; await reload(legacy); state = await saved(); assert.deepEqual(state.resources, legacy.resources); assert.equal(state.xp, legacy.xp); assert.equal(state.level, legacy.level); assert.deepEqual(state.seedInventory, legacy.seedInventory); assert.equal(Object.hasOwn(state.stats, 'plantings'), false, 'loading does not force newly normalized counters into the original legacy JSON'); assert.equal(Object.hasOwn(state.stats, 'waterings'), false); assert.deepEqual(claimed(state), []);
+   const legacy = lateState('v8 중복 시설 12곳 복구 fixture', true); delete legacy.growthQuests; delete legacy.stats.plantings; delete legacy.stats.waterings; await reload(legacy); state = await saved(); assert.deepEqual(state.resources, legacy.resources); assert.equal(state.xp, legacy.xp); assert.equal(state.level, legacy.level); assert.deepEqual(state.seedInventory, legacy.seedInventory); assert.equal(state.stats.plantings, 0, 'persisting the offline-clock baseline normalizes old counters without inventing farming progress'); assert.equal(state.stats.waterings, 0); assert.deepEqual(claimed(state), []);
    await inspectBoard(Object.fromEntries(GROWTH_QUESTS.map((quest, index) => [quest.id, index === 0 ? 'ready' : 'locked'])));
    for (const id of ['new-seeds', 'tender-watering']) { await openBoard(id); assert.equal(await history(id).locator('[data-history-count]').innerText(), '0 / 2', 'in-memory legacy progress starts at zero'); }
    await reload(); assert.deepEqual((await saved()).resources, legacy.resources); assert.equal((await saved()).xp, legacy.xp);

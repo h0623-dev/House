@@ -127,6 +127,7 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
     ...state, resources: { ...state.resources, seeds: seedTotal }, seedInventory: seeds,
     plots: state.plots.map(plot => ({ ...plot })), quests: [...state.quests], stats: { ...state.stats },
     ...(state.settlement ? { settlement: getSettlement(state) } : {}),
+    ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.facilityHistory ? { facilityHistory: { builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     expedition: null,
     growthQuests: { claimed: [...claimed, definition.id] },

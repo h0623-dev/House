@@ -47,9 +47,18 @@ const close = async () => page.locator('#modal-root [data-close]').click();
 const quick = action => page.locator('#quick-actions [data-quick="' + action + '"]');
 const nav = section => page.locator('[data-nav="' + section + '"]');
 async function openFarmTray() {
- if (!await page.locator('#farm-tray').isVisible()) await page.locator('[data-farm-toggle]').click();
+ if (!await page.locator('#farm-tray').isVisible()) await nav('farm').click();
 }
 async function clickQuick(action) { await openFarmTray(); await quick(action).click(); }
+async function menuItem(kind) {
+ if (await page.locator('#modal-root').isVisible()) await close();
+ await page.locator('[data-open="menu"]').click();
+ await page.locator(`#modal-root [data-open="${kind}"]`).click();
+}
+async function pauseWorld() {
+ if (await page.locator('.time-button').getAttribute('aria-label') !== '시간 일시정지') return;
+ await menuItem('settings'); await page.locator('#modal-root [data-pause]').click(); await close();
+}
 async function openPetOnMap() {
  await nav('home').click(); await page.clock.runFor(2000);
  // The pet shortcut moved onto the painted truck. Touch its roaming area in
@@ -107,7 +116,7 @@ async function assertHudFits(width, height) {
   assert.ok(iconBox && captionBox && captionBox.y >= iconBox.y + iconBox.height - 1, action + ' caption must be below the icon');
   assert.ok(await caption.evaluate(element => parseFloat(getComputedStyle(element).fontSize) <= 12), action + ' caption should remain smaller than the button icon');
  }
- for (const section of ['home', 'farm', 'build', 'hunt', 'bag', 'settings']) {
+ for (const section of ['home', 'farm', 'build', 'hunt', 'bag']) {
   const box = await nav(section).boundingBox();
   assert.ok(box && box.y >= 0 && box.y + box.height <= height + 1, section + ' navigation must stay in the viewport');
   assert.ok(box.width >= 44 && box.height >= 44, section + ' navigation needs a finger-sized target');
@@ -212,7 +221,7 @@ try {
  await page.locator('[data-start]').click();
  assert.equal((await save()).gender, 'male');
  assert.equal((await save()).name, '노을');
- await page.getByRole('button', { name: '시간 일시정지', exact: true }).click();
+ await pauseWorld();
  await assertHudFits(360, 740);
  await screenshot('mobile-small-home');
  await assertHudFits(390, 844);
@@ -230,16 +239,9 @@ try {
  // The farm camera is settled before translating this world point into screen pixels.
  await selectPlot(3);
  await page.clock.runFor(2000);
- const firstPlot = await page.locator('#world').evaluate(canvas => {
-  const rect = canvas.getBoundingClientRect(), geometry = JSON.parse(canvas.dataset.sceneGeometry);
-  return { x: rect.left + geometry.dx + 354.03 * geometry.scale, y: rect.top + geometry.dy + 317.12 * geometry.scale };
- });
- await page.mouse.click(firstPlot.x, firstPlot.y);
- assert.equal(await page.locator('#plot-action').getAttribute('data-plot'), '1', 'tapping a rendered plot must select that exact plot');
- // Each plot is selectable in the HUD; no farm management modal is required.
- assert.equal(await page.locator('#plot-action').getAttribute('data-action'), 'harvest');
  const beforeHarvest = await save();
- await chore(quick('harvest'), async () => {
+ // A mature planter is now an immediate harvest action, with no extra toolbar tap.
+ await chore(paintedPlot(1), async () => {
   assert.equal((await save()).stats.harvests, beforeHarvest.stats.harvests);
   assert.equal((await save()).resources.food, beforeHarvest.resources.food);
  }, { repeatTap: true, workScreenshot: 'mobile-harvesting' });
@@ -269,7 +271,7 @@ try {
  assert.notEqual((await save()).plots[0].plantedAt, null);
  await stopPlanting();
 
- await page.locator('[data-open="expand"]').click();
+ await menuItem('expand');
  await chore(page.locator('#modal-root [data-action="expand"]'), async () => assert.equal((await save()).deckLevel, 1));
  assert.equal((await save()).deckLevel, 2);
  assert.equal((await save()).plots.length, 4);
@@ -282,8 +284,7 @@ try {
  await page.locator('#modal-root [data-zone="grove"]').click();
  await page.clock.runFor(2000);
  await screenshot('mobile-grove');
- await openFarmTray();
- await page.locator('#farm-context [data-open="grove"]').click();
+ await menuItem('grove');
  await page.clock.runFor(350);
  await screenshot('mobile-grove-guide');
  await close();
@@ -338,7 +339,7 @@ try {
  assert.equal((await save()).deckLevel, 2);
  assert.equal((await save()).stats.battlesWon, 1);
  assert.equal((await save()).resources.food, afterWin.resources.food, 'reload must not grant a second battle reward');
- await page.getByRole('button', { name: '시간 일시정지', exact: true }).click();
+ await pauseWorld();
 
  // All stages use the same direct hunt entry and safe return path.
  for (const stage of [2, 3]) {
@@ -374,7 +375,7 @@ try {
  await page.getByRole('button', { name: '보리 쓰다듬기', exact: true }).click();
  await close();
 
- await nav('settings').click();
+ await menuItem('settings');
  await page.getByRole('button', { name: '앱 새 버전 확인', exact: true }).click();
  await page.getByText(/아직 배포 서버가 연결되지 않았어요/).waitFor();
  await close();
@@ -446,7 +447,10 @@ try {
  await context.addInitScript(() => {
   const fixture = localStorage.getItem('road-haven-visual-test-input');
   if (fixture) {
-   localStorage.setItem('road-haven-save-v1', fixture);
+   // This declared visual fixture starts at its chosen game clock with no absence.
+   // Zero is the model's unstarted offline baseline; page.clock installs its Date shim separately.
+   const state = JSON.parse(fixture); state.lastSaved = 0;
+   localStorage.setItem('road-haven-save-v1', JSON.stringify(state));
    localStorage.removeItem('road-haven-visual-test-input');
   }
  });
@@ -454,7 +458,7 @@ try {
  await page.setViewportSize({ width: 390, height: 844 });
  await page.reload();
  await page.locator('#resident-name').getByText('노을').waitFor();
- await page.getByRole('button', { name: '시간 일시정지', exact: true }).click();
+ await pauseWorld();
  await page.clock.runFor(2000);
  assert.equal((await save()).deckLevel, 6);
  assert.equal((await save()).plots.length, 8);
@@ -473,7 +477,7 @@ try {
  await page.evaluate(fixture => localStorage.setItem('road-haven-visual-test-input', JSON.stringify(fixture)), nightDeck);
  await page.reload();
  await page.locator('#resident-name').getByText('노을').waitFor();
- await page.getByRole('button', { name: '시간 일시정지', exact: true }).click();
+ await pauseWorld();
  await page.clock.runFor(2000);
  assert.equal(await page.locator('#clock').textContent(), '21:00');
  await assertHudFits(360, 740);

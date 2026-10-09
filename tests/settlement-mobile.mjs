@@ -20,14 +20,33 @@ const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-ha
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const buildings = state => state.settlement?.buildings || [];
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-nav="farm"]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('.map-controls')))) await touch(page.locator('[data-camera-toggle]'));
  await locator.scrollIntoViewIfNeeded();
  const box = await locator.boundingBox(); assert.ok(box, 'the touch target is rendered');
  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
  assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'the finger reaches the intended button');
  await page.touchscreen.tap(point.x, point.y);
 }
-async function pauseWorld() { const button = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await button.count()) await touch(button); }
+async function menuItem(kind) {
+ if (await page.locator('#modal-root').isVisible()) await touch(page.locator('#modal-root [data-close]').first());
+ await touch(page.locator('[data-open="menu"]'));
+ await touch(page.locator(`#modal-root [data-open="${kind}"]`));
+}
+async function setPaused(paused) {
+ const current = await page.locator('.time-button').getAttribute('aria-label') === '시간 계속';
+ if (current === paused) return;
+ const selected = await page.locator('#facility-sheet').isVisible() ? Number(await page.locator('#facility-sheet').getAttribute('data-facility')) : null;
+ await menuItem('settings'); await touch(page.locator('#modal-root [data-pause]'));
+ await touch(page.locator('#modal-root [data-close]').first());
+ if (selected !== null) {
+  await page.waitForTimeout(900);
+  const point = await page.locator('#world').evaluate((canvas, id) => { const slot = JSON.parse(canvas.dataset.settlementSlots).find(slot => slot.buildingId === id), r = canvas.getBoundingClientRect(); return { x: r.left + slot.facilityX, y: r.top + slot.facilityY }; }, selected);
+  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the selected facility can be reopened after setting time');
+  await page.touchscreen.tap(point.x, point.y); await page.locator(`#facility-sheet[data-facility="${selected}"]`).waitFor();
+ }
+}
+async function pauseWorld() { await setPaused(true); }
 async function shot(name) { const path = `artifacts/v${version}-settlement-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
 async function reload(state) {
  if (state) await page.evaluate(state => localStorage.setItem('settlement-qa-fixture', JSON.stringify(state)), state);
@@ -36,7 +55,7 @@ async function reload(state) {
 }
 async function context(width, height) {
  const result = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
- await result.addInitScript(() => { const fixture = localStorage.getItem('settlement-qa-fixture'); if (fixture) { localStorage.setItem('road-haven-save-v1', fixture); localStorage.removeItem('settlement-qa-fixture'); } });
+ await result.addInitScript(() => { const fixture = localStorage.getItem('settlement-qa-fixture'); if (fixture) { const state = JSON.parse(fixture); state.lastSaved = Date.now(); localStorage.setItem('road-haven-save-v1', JSON.stringify(state)); localStorage.removeItem('settlement-qa-fixture'); } });
  page = await result.newPage(); attachErrors(page); await page.goto(baseUrl); await page.waitForLoadState('networkidle');
  await touch(page.locator('[data-start]')); await pauseWorld();
  return result;
@@ -49,11 +68,39 @@ function attachErrors(target) {
 async function geometry() { return page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.sceneGeometry)); }
 async function slots() { return page.locator('#world').evaluate(canvas => JSON.parse(canvas.dataset.settlementSlots)); }
 async function tapSlot(slot, facility = false) {
- const target = await page.locator('#world').evaluate((canvas, args) => {
+ const locate = () => page.locator('#world').evaluate((canvas, args) => {
   const slot = JSON.parse(canvas.dataset.settlementSlots).find(slot => slot.slot === args.slot), rect = canvas.getBoundingClientRect();
   return { x: rect.left + (args.facility ? slot.facilityX : slot.x), y: rect.top + (args.facility ? slot.facilityY : slot.y) };
  }, { slot, facility });
- assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', target), true, `slot ${slot} is reachable on the visible map`);
+ const visible = point => page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point);
+ let target = await locate();
+ if (!await visible(target)) {
+  // Late villages retain readable scale. Explore their far slots with the same
+  // camera toggle, hand mode and physical drag available to the player.
+  const before = await saved();
+  if (await page.locator('[data-camera-toggle]').getAttribute('aria-expanded') !== 'true') await touch(page.locator('[data-camera-toggle]'));
+  if (await page.locator('[data-map-move]').getAttribute('aria-pressed') !== 'true') await touch(page.locator('[data-map-move]'));
+  await touch(page.locator('[data-camera-toggle]'));
+  for (let attempt = 0; attempt < 12 && !await visible(target); attempt++) {
+   const motion = await page.locator('#world').evaluate((canvas, target) => {
+    const r = canvas.getBoundingClientRect(), points = [];
+    for (let y = r.top + 35; y < r.bottom - 35; y += 20) for (let x = r.left + 35; x < r.right - 35; x += 20) {
+     if (document.elementFromPoint(x, y) === canvas) points.push({ x, y, score: Math.hypot(x - (r.left + r.width * .5), y - (r.top + r.height * .55)) });
+    }
+    points.sort((a, b) => a.score - b.score); const origin = points[0]; if (!origin) return null;
+    const dx = Math.max(-100, Math.min(100, origin.x - target.x)), dy = Math.max(-110, Math.min(110, origin.y - target.y));
+    return { origin: { x: origin.x, y: origin.y }, destination: { x: Math.max(r.left + 8, Math.min(r.right - 8, origin.x + dx)), y: Math.max(r.top + 8, Math.min(r.bottom - 8, origin.y + dy)) } };
+   }, target);
+   assert.ok(motion, 'a readable village leaves free map space for dragging');
+   const session = await page.context().newCDPSession(page);
+   await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...motion.origin, id: 1 }] });
+   for (let step = 1; step <= 5; step++) { await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: motion.origin.x + (motion.destination.x - motion.origin.x) * step / 5, y: motion.origin.y + (motion.destination.y - motion.origin.y) * step / 5, id: 1 }] }); await page.waitForTimeout(30); }
+   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await session.detach(); await page.waitForTimeout(200); target = await locate();
+  }
+  await touch(page.locator('[data-camera-toggle]')); await touch(page.locator('[data-map-move]')); await touch(page.locator('[data-camera-toggle]'));
+  target = await locate(); assert.deepEqual((await saved()).resources, before.resources, 'exploring distant facility slots never spends or awards resources');
+ }
+ assert.equal(await visible(target), true, `slot ${slot} is reachable on the visible map after ordinary panning`);
  await page.touchscreen.tap(target.x, target.y);
 }
 async function home() { await touch(nav('home')); await page.waitForTimeout(1100); }
@@ -81,6 +128,7 @@ async function chore(action) {
  timings.push({ name: action, elapsedMs: Date.now() - before }); assert.ok(Date.now() - before >= 2500, 'ordinary resource work uses visible real-time animation');
 }
 async function fit(width, height, selectors) {
+ if (selectors.some(selector => selector.includes('data-map-')) && await page.locator('[data-camera-toggle]').getAttribute('aria-expanded') !== 'true') await touch(page.locator('[data-camera-toggle]'));
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, `${width}×${height} has no main-screen overflow`);
  for (const selector of selectors) { const control = page.locator(selector), box = await control.boundingBox(); assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${selector} stays finger sized and in the viewport`); const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }; assert.equal(await control.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, `${selector} remains physically reachable without another HUD control covering it`); }
 }
@@ -133,12 +181,12 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'prepareUpdate').length), 0, 'new content on the previous compatible native engine does not request an APK');
   assert.equal(await page.evaluate(() => window.__updateFixture.state.content.contentVersion), versionCode);
   const legacyLoaded = await saved(); assert.equal(legacyLoaded.name, previousEngineSave.name); assert.deepEqual(legacyLoaded.resources, previousEngineSave.resources); assert.deepEqual(legacyLoaded.seedInventory, previousEngineSave.seedInventory); assert.equal(legacyLoaded.xp, previousEngineSave.xp); assert.equal(legacyLoaded.level, previousEngineSave.level);
-  await touch(page.locator('[data-next-goal]')); assert.equal(await page.locator('[data-quest-chapter]').count(), 0); assert.equal(await page.locator('[data-growth-quest]').count(), 1); assert.equal(await page.locator('[data-growth-history]').count(), 24); assert.equal(await page.locator('[data-growth-all-goals]').evaluate(details => details.open), false); assert.deepEqual((await saved()).resources, previousEngineSave.resources); assert.equal((await saved()).growthQuests?.claimed.length ?? 0, 0);
+  await menuItem('settlement-goals'); assert.equal(await page.locator('[data-quest-chapter]').count(), 0); assert.equal(await page.locator('[data-growth-quest]').count(), 1); assert.equal(await page.locator('[data-growth-history]').count(), 24); assert.equal(await page.locator('[data-growth-all-goals]').evaluate(details => details.open), false); assert.deepEqual((await saved()).resources, previousEngineSave.resources); assert.equal((await saved()).growthQuests?.claimed.length ?? 0, 0);
   cases.push(`Private loaded content${versionCode} on native engine8: minimum native8 skips APK, new quest UI renders and previous save gains no resource/XP/seed gifts`);
   await result.close(); return;
  }
  if (web) {
-  await touch(nav('settings')); await touch(page.locator('[data-update]')); assert.match(await page.locator('[data-native-update-message]').innerText(), /최신/);
+  await menuItem('settings'); await touch(page.locator('[data-update]')); assert.match(await page.locator('[data-native-update-message]').innerText(), /최신/);
   await result.unroute('**/update.json*'); await result.route('**/update.json*', manifest(future));
   await touch(page.locator('[data-update]')); await page.locator('[data-download]').waitFor(); assert.equal((await page.locator('[data-native-update-message]').innerText()).includes(future.version), true); assert.equal(await page.locator('[data-install-update]').isVisible(), false);
   await shot('private-web-future-release'); await result.close(); return;
@@ -148,7 +196,7 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
  if (contentOnly) {
   await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.plugin === 'Updater' && call.method === 'getVersion'));
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'prepareUpdate').length), 0, 'compatible content updates do not force an APK download');
-  await touch(page.getByRole('button', { name: '시간 계속', exact: true }));
+  await setPaused(false);
   if (failActivation) {
    await emit('ContentUpdater', { status: 'ready', progress: 100, contentVersion: future.versionCode, version: future.version, message: 'Private failure fixture ready' });
    await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.method === 'activate'));
@@ -176,14 +224,14 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   assert.equal(await page.locator('#app').evaluate(app => app.inert), true); assert.equal(await page.locator('.content-applying-notice').isVisible(), true);
   const applyingScreenshot = `artifacts/v${version}-ui-update-applying-360.png`; await page.setViewportSize({ width: 360, height: 740 }); await page.screenshot({ path: applyingScreenshot, fullPage: true }); screenshots.push(applyingScreenshot); await page.setViewportSize({ width: 390, height: 844 });
   const lockedClock = await page.locator('#clock').innerText(), lockedSave = await saved();
-  for (const selector of ['[data-nav="farm"]', '[data-nav="hunt"]', '[data-open="build"]', '[data-farm-toggle]']) { const box = await page.locator(selector).boundingBox(); assert.ok(box); await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2); }
+  for (const selector of ['[data-nav="farm"]', '[data-nav="hunt"]', '[data-nav="build"]', '[data-camera-toggle]']) { const box = await page.locator(selector).boundingBox(); assert.ok(box); await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2); }
   const lockedCanvas = await page.locator('#world').boundingBox(); await page.touchscreen.tap(lockedCanvas.x + lockedCanvas.width / 2, lockedCanvas.y + lockedCanvas.height / 2);
   await page.waitForTimeout(1600); assert.equal(await page.locator('#clock').innerText(), lockedClock, 'game time stops while asynchronous activation is pending'); assert.deepEqual((await saved()).resources, lockedSave.resources); assert.equal(await page.locator('#modal-root').isVisible(), false); assert.equal(await page.locator('.chore-status').isVisible(), false);
   await page.waitForTimeout(1600); assert.equal(await page.locator('#app').evaluate(app => app.inert), true, 'successful activation keeps input locked until Android reloads'); assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'activate').length), 1);
   cases.push('Private mocked content bridge: compatible release skips APK, progress notification, active chore, persistent tool, modal and battle block activation, idle home saves then activates exactly once');
  } else {
   await result.unroute('**/update.json*'); await result.route('**/update.json*', manifest(future));
-  await touch(nav('settings')); await touch(page.locator('[data-update]')); await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.method === 'prepareUpdate'));
+  await menuItem('settings'); await touch(page.locator('[data-update]')); await page.waitForFunction(() => window.__updateFixture.calls.some(call => call.method === 'prepareUpdate'));
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'prepareUpdate').length), 1);
   await emit('Updater', { status: 'downloading', progress: 25, revision: 2, version: future.version, versionCode: future.versionCode, message: 'Private fixture 25%' });
   assert.equal(await page.locator('[data-native-update-progress]').isVisible(), true); assert.equal(await page.locator('[data-native-update-progress] i').evaluate(element => element.style.width), '25%');
@@ -194,7 +242,7 @@ async function updateFixture(contentOnly = false, web = false, failActivation = 
   await page.locator('[data-install-update]').waitFor(); await shot('private-native-install-ready');
   assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'installUpdate').length), 0);
   await touch(page.locator('[data-install-update]')); assert.equal(await page.evaluate(() => window.__updateFixture.calls.filter(call => call.method === 'installUpdate').length), 1);
-  await touch(nav('settings')); assert.match(await page.locator('[data-install-update]').innerText(), /허용/);
+  await menuItem('settings'); assert.match(await page.locator('[data-install-update]').innerText(), /허용/);
   await page.evaluate(() => window.__updateFixture.emit('Updater', { status: 'installing', progress: 100, revision: 7, message: 'Private fixture Android confirmation' }));
   assert.equal(await page.locator('[data-install-update]').isDisabled(), true);
   await page.evaluate(() => window.__updateFixture.emit('Updater', { status: 'downloading', progress: 2, revision: 6, message: 'Private stale event' }));
@@ -209,14 +257,14 @@ try {
   const height = width === 360 ? 740 : 844, mobile = await context(width, height), fresh = await saved();
   assert.deepEqual(fresh.resources, { wood: 24, scrap: 12, food: 8, water: 16, seeds: 23 }); assert.equal(buildings(fresh).length, 0);
   assert.equal(await page.locator('#farm-tray').isVisible(), false, 'a new home emphasizes the truck settlement');
-  await fit(width, height, ['[data-nav="home"]', '[data-nav="build"]', '[data-nav="farm"]', '[data-nav="hunt"]', '[data-nav="bag"]', '[data-nav="settings"]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-farm-toggle]']);
+  await fit(width, height, ['[data-nav="home"]', '[data-nav="build"]', '[data-nav="farm"]', '[data-nav="hunt"]', '[data-nav="bag"]', '[data-open="menu"]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-camera-toggle]']);
   await touch(nav('build')); assert.equal(await page.locator('[data-build-type]').count(), 6);
   const art = await page.locator('.building-card-art .facility-art').evaluateAll(async images => Promise.all(images.map(async image => { const source = image.querySelector('image').getAttribute('href'); const loaded = new Image(); loaded.src = source; await loaded.decode(); return { viewBox: image.getAttribute('viewBox'), width: loaded.naturalWidth, height: loaded.naturalHeight }; })));
   assert.equal(new Set(art.map(image => image.viewBox)).size, 6); assert.equal(art.every(image => image.width > 0 && image.height > 0), true, 'all six distinct facility graphics decode');
   await touch(page.locator('[data-build-type="workshop"]')); assert.equal(await page.locator('#construction-bar').isVisible(), false); assert.deepEqual((await saved()).resources, fresh.resources); assert.equal(buildings(await saved()).length, 0); await touch(page.locator('#modal-root [data-close]').first());
   await catalog('waterworks'); await tapSlot(2); assert.equal(await page.locator('[data-construction-confirm]').isDisabled(), true, 'a locked deck slot cannot be selected for construction'); assert.deepEqual((await saved()).resources, fresh.resources);
-  await tapSlot(0); assert.deepEqual((await saved()).resources, fresh.resources); await fit(width, height, ['[data-construction-confirm]', '[data-construction-cancel]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-open="settlement-goals"]']); await shot(`preview-${width}`); await touch(page.locator('[data-construction-cancel]')); assert.equal(buildings(await saved()).length, 0);
-  const waterworks = await build('waterworks', 1, 12, 4); assert.equal(waterworks, 1); await fit(width, height, ['[data-facility-start="1"]', '[data-facility-upgrade="1"]', '[data-facility-move="1"]', '[data-facility-close]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-open="settlement-goals"]']); await shot(`first-home-${width}`);
+  await tapSlot(0); assert.deepEqual((await saved()).resources, fresh.resources); await fit(width, height, ['[data-construction-confirm]', '[data-construction-cancel]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-next-goal]']); await shot(`preview-${width}`); await touch(page.locator('[data-construction-cancel]')); assert.equal(buildings(await saved()).length, 0);
+  const waterworks = await build('waterworks', 1, 12, 4); assert.equal(waterworks, 1); await fit(width, height, ['[data-facility-start="1"]', '[data-facility-upgrade="1"]', '[data-facility-move="1"]', '[data-facility-close]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-next-goal]']); await shot(`first-home-${width}`);
   await catalog('kitchen'); await tapSlot(1, true); assert.equal(await page.locator('[data-construction-confirm]').isDisabled(), true); assert.equal(buildings(await saved()).length, 1); await touch(page.locator('[data-construction-cancel]'));
   const insufficient = await saved(); await catalog('kitchen'); await tapSlot(0); await touch(page.locator('[data-construction-confirm]')); assert.equal(buildings(await saved()).length, 1, 'insufficient materials cannot confirm construction'); assert.deepEqual((await saved()).resources, insufficient.resources); assert.equal(await page.locator('#construction-bar').isVisible(), true); await touch(page.locator('[data-construction-cancel]'));
   await selectFacility(1); await move(1, 0); const beforeStart = await saved(); await touch(page.locator('[data-facility-start="1"]')); let state = await saved(), facility = buildings(state)[0];
@@ -225,7 +273,7 @@ try {
   await touch(page.locator('[data-facility-upgrade="1"]')); assert.equal(await page.locator('[data-upgrade-confirm]').count(), 0); assert.deepEqual((await saved()).resources, state.resources);
   await move(1, 1); await reload(); assert.deepEqual(buildings(await saved())[0], { ...facility, slot: 1 });
   if (width === 360) {
-   await selectFacility(1); const cycleStart = Date.now(); await touch(page.getByRole('button', { name: '시간 계속', exact: true }));
+   await selectFacility(1); const cycleStart = Date.now(); await setPaused(false);
    await page.locator('[data-facility-collect="1"]').waitFor({ state: 'visible', timeout: 55000 }); await pauseWorld();
    timings.push({ name: 'naturally-grown-waterworks-90-game-minutes', elapsedMs: Date.now() - cycleStart }); assert.ok(Date.now() - cycleStart >= 42000, 'one facility batch matures with genuine browser time');
   } else await reload(matureProduction(await saved()));
@@ -239,7 +287,7 @@ try {
    await touch(page.locator('[data-map-zoom="1"]')); await page.waitForTimeout(1500); assert.ok((await geometry()).mapZoom > beforePan.mapZoom); assert.ok((await geometry()).scale > beforePan.scale * 1.15, 'zoom enlarges the painted world');
    await touch(page.locator('[data-map-zoom="-1"]')); await page.waitForTimeout(1400); await home();
    await chore('gather'); await chore('chop'); const beforeExpand = await saved(), oldSlotCount = (await slots()).filter(slot => slot.unlocked).length; await shot('before-expansion');
-   await touch(page.locator('[data-open="expand"]')); await touch(page.locator('#modal-root [data-action="expand"]'));
+   await menuItem('expand'); await touch(page.locator('#modal-root [data-action="expand"]'));
    await page.waitForFunction(() => document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 1500 }); await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 30000 });
    state = await saved(); assert.equal(state.deckLevel, 2); assert.equal(state.plots.length, 4); assert.equal(state.resources.wood, beforeExpand.resources.wood - 24); assert.equal(state.resources.scrap, beforeExpand.resources.scrap - 12); await home();
    assert.equal((await slots()).filter(slot => slot.unlocked).length, oldSlotCount + 2); await shot('after-expansion');
@@ -252,7 +300,7 @@ try {
    await touch(page.locator('[data-facility-upgrade="1"]')); await page.locator('[data-upgrade-confirm="1"]').waitFor(); await touch(page.locator('#modal-root [data-close]').first()); assert.deepEqual((await saved()).resources, beforeUpgrade.resources);
    await touch(page.locator('[data-facility-upgrade="1"]')); await touch(page.locator('[data-upgrade-confirm="1"]')); state = await saved(); assert.equal(buildings(state)[0].level, 2); assert.equal(state.resources.wood, beforeUpgrade.resources.wood - 24); assert.equal(state.resources.scrap, beforeUpgrade.resources.scrap - 8);
    await touch(page.locator('[data-facility-start="1"]')); await reload(matureProduction(await saved())); await claim(1, 'water', 8);
-   await home(); const beforeGoals = await saved(); await touch(page.locator('[data-open="settlement-goals"]')); assert.equal(await page.locator('[data-quest-chapter]').count(), 0); assert.equal(await page.locator('[data-growth-quest]').count(), 1); assert.equal(await page.locator('[data-growth-history]').count(), 24); assert.equal(await page.locator('[data-growth-all-goals]').evaluate(details => details.open), false); assert.equal(await page.locator('[data-growth-legacy]').count(), 3); assert.deepEqual((await saved()).resources, beforeGoals.resources, 'opening the growth board and legacy records grants no reward'); await touch(page.locator('#modal-root [data-close]').first());
+   await home(); const beforeGoals = await saved(); await menuItem('settlement-goals'); assert.equal(await page.locator('[data-quest-chapter]').count(), 0); assert.equal(await page.locator('[data-growth-quest]').count(), 1); assert.equal(await page.locator('[data-growth-history]').count(), 24); assert.equal(await page.locator('[data-growth-all-goals]').evaluate(details => details.open), false); assert.equal(await page.locator('[data-growth-legacy]').count(), 3); assert.deepEqual((await saved()).resources, beforeGoals.resources, 'opening the growth board and legacy records grants no reward'); await touch(page.locator('#modal-root [data-close]').first());
    cases.push('360px real-touch placement/cancel/cost once/occupied rejection, natural production, active timer-preserving relocation, normal resource gathering and animated expansion, kitchen/workshop inputs and claims, confirmed level-two upgrade and scaled yield');
   } else {
    const all = structuredClone(fresh); all.name = '여섯 시설 검사'; all.deckLevel = 3; all.stats.expansions = 2; all.plots.push({ id: 4, plantedAt: null, watered: false }, { id: 5, plantedAt: null, watered: false });
@@ -261,7 +309,7 @@ try {
    await reload(all); await home(); assert.equal((await slots()).filter(slot => slot.unlocked).length, 6); assert.equal((await slots()).filter(slot => slot.buildingId !== null).length, 6); assert.deepEqual((await saved()).resources, all.resources, 'ready facilities do not grant a load reward'); await shot('all-six-facilities');
    for (const building of all.settlement.buildings) { await selectFacility(building.id); assert.equal(await page.locator('#facility-sheet').getAttribute('data-facility'), String(building.id)); await touch(page.locator('[data-facility-close]')); }
    const legacy = structuredClone(fresh); legacy.name = '기존 저장 검사'; delete legacy.settlement; delete legacy.growthQuests; delete legacy.stats.plantings; delete legacy.stats.waterings; previousEngineSave = structuredClone(legacy); await reload(legacy); assert.equal(buildings(await saved()).length, 0); assert.deepEqual((await saved()).resources, legacy.resources); assert.deepEqual((await saved()).plots, legacy.plots); await reload(); assert.deepEqual((await saved()).resources, legacy.resources);
-   await page.setViewportSize({ width: 844, height: 390 }); await home(); await fit(844, 390, ['[data-nav="home"]', '[data-nav="build"]', '[data-farm-toggle]']); await build('kitchen', 0, 16, 6); await fit(844, 390, ['[data-facility-start="1"]', '[data-facility-move="1"]', '[data-facility-close]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-open="settlement-goals"]']); await shot('landscape-facility');
+   await page.setViewportSize({ width: 844, height: 390 }); await home(); await fit(844, 390, ['[data-nav="home"]', '[data-nav="build"]', '[data-camera-toggle]']); await build('kitchen', 0, 16, 6); await fit(844, 390, ['[data-facility-start="1"]', '[data-facility-move="1"]', '[data-facility-close]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-next-goal]']); await shot('landscape-facility');
    cases.push('390px real-touch facility preview/build/move/start/ready/claim persistence, unchanged legacy save resources and crops, landscape facility controls');
   }
   await mobile.close();

@@ -1,4 +1,4 @@
-import { formatGameDuration } from './game-time';
+import { formatGameDuration, gameMinutesToSeconds } from './game-time';
 import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, type GameState, type Plot } from './game';
 import { drawHero, type HeroPose } from './actors';
 import { drawPet, drawZombie } from './creatures';
@@ -8,9 +8,10 @@ import { BUILDINGS, getSettlement, getUnlockedSlots, type BuildingType } from '.
 import { drawFacility, facilityArtReady } from './settlement-art';
 import { createMotionRoute, sampleMotionRoute, type MotionRoute } from './scene-motion';
 import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
+import itemAtlasUrl from './assets/items-anime.png';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'build-slot';
+type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number };
 type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather';
 type FarmAction = 'plant' | 'water' | 'harvest';
@@ -72,6 +73,7 @@ export class Scene {
   private selectedFacilityId: number | null = null;
   private queuedPlotIds: number[] = [];
   private plantingCropId: CropId = 'carrot';
+  private itemAtlas = (() => { const image = new Image(); image.decoding = 'async'; image.src = itemAtlasUrl; return image; })();
   private camera = { x: 480, y: 350, zoom: 1 };
   private treeCutAt = -100;
   private heroDrawn = false;
@@ -197,13 +199,17 @@ export class Scene {
       this.endMapGesture(false); if (moved) return;
     }
     if (event.pointerId === this.farmStroke?.pointerId) { this.flushFarmTouch(); this.pointerMove(event); this.endFarmStroke(false); return; }
-    if (this.mapMoveMode || this.action || this.farmMode) return;
+    // Menus and facility collection remain available while the resident is working.
+    // The game controller decides whether a new resource-consuming job can begin.
+    if (this.mapMoveMode) return;
     const { candidates, plots, x, y } = this.pointerHits(event.clientX, event.clientY);
+    const facilityAction = candidates.filter(item => item.kind === 'facility-collect' || item.kind === 'facility-start')
+      .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
     const foreground = [...candidates].reverse().find(item => (item.kind === 'pet' || item.kind === 'character') && Math.hypot(item.x - x, item.y - y) < item.radius);
     const workTree = candidates.find(item => item.kind === 'grove-work');
     const slots = candidates.filter(item => item.kind === 'build-slot').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
-    const hit = this.constructionMode ? slots[0] : foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
+    const hit = this.constructionMode ? slots[0] : facilityAction ?? foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
     if (hit) { this.focus(hit.kind); this.onSelect(hit.kind, hit.plotId); }
   };
   private wheelInput = (event: WheelEvent) => {
@@ -416,7 +422,11 @@ export class Scene {
       return { slot, x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale),
         unlocked: slot < unlocked, buildingId: building?.id ?? null,
         facilityX: round(this.dx + point[0] * this.scale), facilityY: round(this.dy + (point[1] - 44) * this.scale),
-        readyX: round(this.dx + point[0] * this.scale), readyY: round(this.dy + (point[1] - size[1] - 18) * this.scale) };
+        readyX: round(this.dx + point[0] * this.scale), readyY: round(this.dy + (point[1] - size[1] - 18) * this.scale),
+        action: !building ? null : building.readyAt === null ? 'facility-start'
+          : (this.state?.totalMinutes ?? 0) >= building.readyAt ? 'facility-collect' : null,
+        remainingSeconds: building?.readyAt === null || !building ? null
+          : gameMinutesToSeconds(building.readyAt - (this.state?.totalMinutes ?? 0)) };
     });
     const encoded = JSON.stringify(slots);
     if (this.canvas.dataset.settlementSlots !== encoded) this.canvas.dataset.settlementSlots = encoded;
@@ -476,6 +486,13 @@ export class Scene {
   private label(text: string, x: number, y: number, size: number, color: string, weight = 600, align: CanvasTextAlign = 'center') {
     this.ctx.fillStyle = color; this.ctx.font = `${weight} ${size}px "Noto Sans KR Variable", system-ui, sans-serif`;
     this.ctx.textAlign = align; this.ctx.fillText(text, x, y);
+  }
+  private resourceIllustration(resource: string, x: number, y: number, size: number) {
+    if (!this.itemAtlas.complete || !this.itemAtlas.naturalWidth) return;
+    const cell = ({ wood: 0, scrap: 1, food: 2, water: 3 } as Record<string, number>)[resource];
+    if (cell === undefined) return;
+    const source = this.itemAtlas.naturalWidth / 4;
+    this.ctx.drawImage(this.itemAtlas, cell * source, 0, source, source, x - size / 2, y - size / 2, size, size);
   }
   private box(u: number, v: number, z: number, w: number, d: number, h: number, top: string, front: string, side: string, outline = '#68705b') {
     const faces: [Point, Point, Point, Point][] = [
@@ -595,10 +612,20 @@ export class Scene {
       const center: Point = [(minViewX + maxViewX) / 2, (minViewY + maxViewY) / 2];
       const facility = this.selectedFacilityId === null || this.constructionMode || !this.state ? undefined : getSettlement(this.state).buildings.find(building => building.id === this.selectedFacilityId);
       const selectedPoint = facility ? this.p(...SETTLEMENT_SLOTS[facility.slot], 95) : null;
-      const targetX = this.constructionMode ? center[0] : selectedPoint?.[0] ?? center[0];
+      // Expanded villages are explored by panning. Keep the resident's garden in
+      // the home view rather than pulling the camera toward a distant truck cab.
+      const gardenHomeX = Math.min(center[0], farmCenter[0] + (level > 1 ? 72 : 0));
+      const targetX = this.constructionMode ? center[0] : selectedPoint?.[0] ?? gardenHomeX;
       const targetY = this.constructionMode ? center[1] : selectedPoint ? selectedPoint[1] - 52 : center[1];
       const desiredZoom = facility ? 1.35 : 1;
       target = { x: targetX, y: targetY, zoom: desiredZoom };
+    }
+    // A whole-deck fit made an eighteen-bed village shrink to finger-inaccessible
+    // miniatures. At phone widths the home view now keeps a readable village scale;
+    // the same drag/pinch camera exposes the rest of the expanded deck.
+    if (this.zone === 'home' && !showFarm) {
+      viewWidth = Math.min(viewWidth, Math.max(700, this.width / 1.05));
+      viewHeight = Math.min(viewHeight, viewWidth * availableHeight / this.width);
     }
     // Keep the viewport as well as the camera fixed after a manual move. An action
     // starting or ending must not silently change the map's scale under the finger.
@@ -658,7 +685,8 @@ export class Scene {
       const sky = this.ctx.createLinearGradient(0, -200, 0, 800); sky.addColorStop(0, '#efe8cc'); sky.addColorStop(1, '#7e8060');
       this.ctx.fillStyle = sky; this.ctx.fillRect(-1000, -600, 3000, 2000);
     }
-    this.ctx.fillStyle = '#f0f4db24'; this.ctx.fillRect(-1000, -600, 3000, 2000);
+    // A quiet road separates the playable wooden village from its backdrop.
+    this.ctx.fillStyle = '#e8ead247'; this.ctx.fillRect(-1000, -600, 3000, 2000);
     // Foreground trees share the same painted line work as the survivors.
     this.tree(72, 226, 1.04); this.tree(25, 307, .72); this.tree(891, 196, .88);
     this.tree(1006, 252, .95);
@@ -807,21 +835,38 @@ export class Scene {
     for (const building of ordered) {
       const point = this.p(...SETTLEMENT_SLOTS[building.slot], 95), [, height] = FACILITY_SIZE[building.type];
       const pixel = 1 / this.scale, caption = `${shortNames[building.type]} ${building.level}`;
-      this.round(point[0] - 19 * pixel, point[1] + 5 * pixel, 38 * pixel, 13 * pixel, 6 * pixel, '#fff9e9e8', '#b8ac85');
-      this.label(caption, point[0], point[1] + 14 * pixel, 8 * pixel, '#53654b', 600);
-      if (!state || building.readyAt === null) continue;
+      if (building.id === this.selectedFacilityId || building.id === this.movingBuildingId) {
+        this.round(point[0] - 37 * pixel, point[1] + 5 * pixel, 74 * pixel, 19 * pixel, 8 * pixel, '#fff9e9ed', '#b8ac85');
+        this.label(caption, point[0], point[1] + 18 * pixel, 10 * pixel, '#53654b', 700);
+      }
+      // Placement previews own the map while building: production controls must
+      // not cover a free slot or intercept a placement confirmation.
+      if (!state || selectedType) continue;
+      const bubble: Point = [point[0], point[1] - height - 18];
+      if (building.readyAt === null) {
+        this.round(bubble[0] - 22 * pixel, bubble[1] - 19 * pixel, 44 * pixel, 38 * pixel, 12 * pixel, '#f3f3dcf2', '#b3b791');
+        this.poly([[bubble[0] - 5 * pixel, bubble[1] - 10 * pixel], [bubble[0] + 7 * pixel, bubble[1] - 3 * pixel], [bubble[0] - 5 * pixel, bubble[1] + 4 * pixel]], '#6c925a', '', 0);
+        this.label('생산', bubble[0], bubble[1] + 14 * pixel, 9 * pixel, '#596d49', 700);
+        this.hits.push({ kind: 'facility-start', x: bubble[0], y: bubble[1], radius: 22 * pixel, plotId: building.id });
+        continue;
+      }
       const ready = state.totalMinutes >= building.readyAt;
       if (ready) {
-        const bubble: Point = [point[0], point[1] - height - 18];
-        this.round(bubble[0] - 16 * pixel, bubble[1] - 12 * pixel, 32 * pixel, 24 * pixel, 10 * pixel, '#fff2ba', '#b49352');
-        this.label('받기', bubble[0], bubble[1] + 3 * pixel, 9 * pixel, '#6a683b', 700);
-        this.hits.push({ kind: 'facility', x: bubble[0], y: bubble[1], radius: 22 * pixel, plotId: building.id });
+        this.ctx.save(); this.ctx.shadowColor = '#3f4b2938'; this.ctx.shadowBlur = 7 * pixel; this.ctx.shadowOffsetY = 2 * pixel;
+        this.round(bubble[0] - 24 * pixel, bubble[1] - 22 * pixel, 48 * pixel, 44 * pixel, 13 * pixel, '#fff1ba', '#b99b55');
+        this.ctx.restore();
+        const definition = BUILDINGS[building.type];
+        this.resourceIllustration(definition.yieldResource, bubble[0] - 10 * pixel, bubble[1] - 5 * pixel, 25 * pixel);
+        this.label(`+${definition.yieldAmount * building.level}`, bubble[0] + 10 * pixel, bubble[1] - 1 * pixel, 11 * pixel, '#68713e', 800);
+        this.label('받기', bubble[0], bubble[1] + 15 * pixel, 9 * pixel, '#796638', 700);
+        this.hits.push({ kind: 'facility-collect', x: bubble[0], y: bubble[1], radius: 24 * pixel, plotId: building.id });
       } else {
         const duration = building.readyAt - (building.startedAt ?? state.totalMinutes);
         const progress = duration > 0 ? Math.max(0, Math.min(1, (state.totalMinutes - (building.startedAt ?? state.totalMinutes)) / duration)) : 0;
-        this.round(point[0] - 15 * pixel, point[1] + 20 * pixel, 30 * pixel, 3 * pixel, 1.5 * pixel, '#687c5733');
-        if (progress > 0) this.round(point[0] - 15 * pixel, point[1] + 20 * pixel, 30 * progress * pixel, 3 * pixel, 1.5 * pixel, '#88ae7c');
-        if (selectedType || building.id === this.selectedFacilityId) this.label(formatGameDuration(building.readyAt - state.totalMinutes), point[0], point[1] + 33 * pixel, 7 * pixel, '#5b7354', 600);
+        this.round(bubble[0] - 23 * pixel, bubble[1] - 15 * pixel, 46 * pixel, 30 * pixel, 10 * pixel, '#edf2ddf0', '#b1c0a0');
+        this.label(formatGameDuration(building.readyAt - state.totalMinutes), bubble[0], bubble[1] + 1 * pixel, 11 * pixel, '#52714b', 700);
+        this.round(bubble[0] - 17 * pixel, bubble[1] + 7 * pixel, 34 * pixel, 3 * pixel, 1.5 * pixel, '#687c5733');
+        if (progress > 0) this.round(bubble[0] - 17 * pixel, bubble[1] + 7 * pixel, 34 * progress * pixel, 3 * pixel, 1.5 * pixel, '#88ae7c');
       }
     }
   }

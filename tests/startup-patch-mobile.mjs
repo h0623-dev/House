@@ -1,6 +1,8 @@
 import { chromium } from '@playwright/test';
 import strictAssert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tsImport } from 'tsx/esm/api';
+const { getCropProgress } = await tsImport('../src/game.ts', import.meta.url);
 
 // The native bridge and release manifest below are private browser fixtures.
 // They exercise the shipped startup integration, real timers and actual touches;
@@ -17,7 +19,7 @@ const assert = new Proxy(strictAssert, { get(target, key) { const value = Reflec
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
 const cases = [], timings = [], screenshots = [], errors = [], failedAssets = [], canceledImages = [], navigations = [];
 const successfulImages = new Set();
-let page, originalSave;
+let page, originalSave, offlineOriginalSave, fixtureStartedAt = 0;
 const stableSave = value => { const result = structuredClone(value); if (result) delete result.lastSaved; return result; };
 const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('road-haven-save-v1')));
 const bridgeCalls = () => page.evaluate(() => window.__startupFixture.calls);
@@ -45,7 +47,25 @@ async function touch(locator) {
  assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'the real finger reaches the requested button');
  await page.touchscreen.tap(point.x, point.y);
 }
-async function pauseWorld() { const button = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await button.count()) await touch(button); }
+async function menuItem(kind) {
+ if (await page.locator('#modal-root').isVisible()) await touch(page.locator('#modal-root [data-close]').first());
+ await touch(page.locator('[data-open="menu"]'));
+ await touch(page.locator(`#modal-root [data-open="${kind}"]`));
+}
+async function setPaused(paused) {
+ const current = await page.locator('.time-button').getAttribute('aria-label') === '시간 계속';
+ if (current === paused) return;
+ const selected = await page.locator('#facility-sheet').isVisible() ? Number(await page.locator('#facility-sheet').getAttribute('data-facility')) : null;
+ await menuItem('settings'); await touch(page.locator('#modal-root [data-pause]'));
+ await touch(page.locator('#modal-root [data-close]').first());
+ if (selected !== null) {
+  await page.waitForTimeout(900);
+  const point = await page.locator('#world').evaluate((canvas, id) => { const slot = JSON.parse(canvas.dataset.settlementSlots).find(slot => slot.buildingId === id), r = canvas.getBoundingClientRect(); return { x: r.left + slot.facilityX, y: r.top + slot.facilityY }; }, selected);
+  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, 'the selected facility can be reopened after setting time');
+  await page.touchscreen.tap(point.x, point.y); await page.locator(`#facility-sheet[data-facility="${selected}"]`).waitFor();
+ }
+}
+async function pauseWorld() { await setPaused(true); }
 async function beginGame() { await page.locator('[data-start]').waitFor(); await touch(page.locator('[data-start]')); await pauseWorld(); }
 async function waitPlayable() {
  await page.waitForFunction(() => !document.querySelector('[data-startup-patch]') && document.querySelector('#world')?.dataset.sceneGeometry && !document.querySelector('#app')?.inert, null, { timeout: 10000 });
@@ -60,13 +80,14 @@ async function noApk() {
  assert.equal((await callsFor('prepareUpdate')).length, 0, 'compatible content never downloads an APK');
  assert.equal((await callsFor('installUpdate')).length, 0, 'compatible content never opens an Android installer');
 }
-async function fixture(mode, { existing = false, width = 390, height = 844, storageFailure = false } = {}) {
+async function fixture(mode, { existing = false, width = 390, height = 844, storageFailure = false, absenceSeconds = 0 } = {}) {
  const context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
  await context.route('**/update.json*', route => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ version, versionCode, minimumNativeVersionCode: 8, apkUrl: 'https://example.invalid/private-never-downloaded.apk', sha256: 'a'.repeat(64), notes: 'Private browser fixture only', publishedAt: '2026-10-08T00:00:00Z' }) }));
- await context.addInitScript(({ mode, existingSave, version, versionCode, storageFailure }) => {
+ await context.addInitScript(({ mode, existingSave, version, versionCode, storageFailure, absenceSeconds }) => {
   const saveKey = 'road-haven-save-v1', marker = 'startup-private-applied', callsKey = 'startup-private-calls';
   if (existingSave && !sessionStorage.getItem('startup-private-seeded')) {
-   localStorage.setItem(saveKey, JSON.stringify(existingSave));
+   // Zero declares no away-time baseline; absence scenarios explicitly set a real past timestamp.
+   localStorage.setItem(saveKey, JSON.stringify({ ...existingSave, lastSaved: absenceSeconds ? Date.now() - absenceSeconds * 1000 : 0 }));
    localStorage.setItem('road-haven-selected-seed-v1', 'potato');
    sessionStorage.setItem('startup-private-seeded', 'true');
   }
@@ -123,9 +144,26 @@ async function fixture(mode, { existing = false, width = 390, height = 844, stor
     return {};
    },
   };
- }, { mode, existingSave: existing ? originalSave : null, version, versionCode, storageFailure });
- page = await context.newPage(); attachErrors(page); await page.goto(nativeUrl);
+ }, { mode, existingSave: existing ? absenceSeconds ? offlineOriginalSave : originalSave : null, version, versionCode, storageFailure, absenceSeconds });
+ page = await context.newPage(); attachErrors(page); fixtureStartedAt = Date.now(); await page.goto(nativeUrl);
  return context;
+}
+async function assertVillageAfterPlayable() {
+ const after = await saved(), seconds = Math.ceil((Date.now() - fixtureStartedAt) / 1000) + 2;
+ assert.ok(after.totalMinutes >= originalSave.totalMinutes && after.totalMinutes - originalSave.totalMinutes <= seconds * 2, 'after fallback, only the bounded real elapsed time may advance the village clock');
+ assert.equal(after.day, Math.floor(after.totalMinutes / 1440) + 1); assert.equal(after.minutes, after.totalMinutes % 1440);
+ assert.deepEqual(stableSave(after), stableSave({ ...originalSave, day: after.day, minutes: after.minutes, totalMinutes: after.totalMinutes }), 'playable startup preserves inventory, crops, buildings, quests, stats and rewards exactly');
+}
+function assertClockOnly(after, before, maximumAdvance, message) {
+ assert.ok(after.totalMinutes >= before.totalMinutes && after.totalMinutes - before.totalMinutes <= maximumAdvance, message);
+ assert.equal(after.day, Math.floor(after.totalMinutes / 1440) + 1); assert.equal(after.minutes, after.totalMinutes % 1440);
+ assert.deepEqual(stableSave(after), stableSave({ ...before, day: after.day, minutes: after.minutes, totalMinutes: after.totalMinutes }), 'clock catch-up neither collects crops nor grants resources, XP, stats, quests or facility rewards');
+}
+function assertCappedAbsence(activated) {
+ assert.equal(activated.totalMinutes, offlineOriginalSave.totalMinutes + 420, '300 seconds away consumes exactly the 210-second cap before native activation');
+ assertClockOnly(activated, offlineOriginalSave, 420, 'the full capped absence is applied once');
+ const previouslyGrowing = offlineOriginalSave.plots.find(plot => plot.plantedAt !== null && plot.watered && getCropProgress(offlineOriginalSave, plot) < 1);
+ assert.ok(previouslyGrowing); assert.equal(getCropProgress(activated, activated.plots.find(plot => plot.id === previouslyGrowing.id)), 1, 'the previously growing crop is mature after catch-up and remains uncollected');
 }
 async function record(name) { await noApk(); cases.push(name); }
 
@@ -134,6 +172,12 @@ try {
  const web = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
  page = await web.newPage(); attachErrors(page); await page.goto(baseUrl); await beginGame(); originalSave = await saved();
  assert.ok(originalSave); assert.equal(await page.locator('[data-startup-patch]').count(), 0, 'web launch remains immediately playable');
+ // A second legitimate save has a growing watered crop, so away time can mature
+ // it. The ordinary dry starter crop intentionally stops at 70% until watered.
+ await touch(page.locator('[data-nav="farm"]')); await touch(page.locator('[data-quick="water"]'));
+ await page.waitForFunction(() => document.querySelector('#app').hasAttribute('aria-busy'));
+ await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 30000 });
+ offlineOriginalSave = await saved(); assert.equal(offlineOriginalSave.stats.waterings, originalSave.stats.waterings + 1); assert.equal(offlineOriginalSave.resources.water, originalSave.resources.water - 1);
  await web.close();
 
  let context = await fixture('current');
@@ -159,7 +203,7 @@ try {
  // the verified native reload boundary and checks subsequent normal boot only.
  await page.reload(); await waitPlayable(); await pauseWorld();
  assert.equal(await page.locator('[data-start]').count(), 0, 'an existing village bypasses new-player welcome after the simulated native reload');
- assert.deepEqual(stableSave(await saved()), stableSave(originalSave));
+ await assertVillageAfterPlayable();
  assert.equal((await callsFor('activate')).length, 1); assert.ok((await callsFor('acknowledge')).length >= 2, 'both browser boots acknowledge content through the native bridge');
  await record('Real-time download and verification UI, exactly-once pre-play activation, untouched village and selected seed, manual second-boot boundary, compatible native8 has no APK activity'); await context.close();
 
@@ -169,6 +213,26 @@ try {
  assert.equal(await page.locator('#app').evaluate(app => app.inert), true);
  assert.deepEqual(stableSave(await saved()), stableSave(originalSave));
  await record('Native ready completion crossing an older busy snapshot activates once immediately, preserving the saved village without waiting for fallback'); await context.close();
+
+ // Existing villages must consume their absence before a cached update saves/reloads them.
+ context = await fixture('cached', { existing: true, absenceSeconds: 300 });
+ await page.waitForFunction(() => window.__startupFixture.calls.some(call => call.method === 'activate'));
+ let activationSave = JSON.parse((await callsFor('activate')).at(-1).save); assertCappedAbsence(activationSave);
+ await page.waitForTimeout(1500); assert.equal((await callsFor('activate')).length, 1); assert.equal(await page.locator('#app').evaluate(app => app.inert), true);
+ await page.reload(); await waitPlayable(); await pauseWorld();
+ assert.equal((await callsFor('activate')).length, 1, 'the successful cached patch does not request activation twice');
+ assertClockOnly(await saved(), activationSave, (Math.ceil((Date.now() - activationSave.lastSaved) / 1000) + 2) * 2, 'manual native reload consumes only the short new absence, never the original 300 seconds again');
+ await record('Cached update after 300 seconds away saves the capped +420 game minutes before activation; crops mature without rewards and the simulated native reload never repeats the old absence'); await context.close();
+
+ context = await fixture('activation-error', { existing: true, absenceSeconds: 300 });
+ await page.waitForFunction(() => window.__startupFixture.calls.some(call => call.method === 'activate'));
+ activationSave = JSON.parse((await callsFor('activate')).at(-1).save); assertCappedAbsence(activationSave);
+ await waitPlayable(); await pauseWorld();
+ assertClockOnly(await saved(), activationSave, (Math.ceil((Date.now() - activationSave.lastSaved) / 1000) + 2) * 2, 'activation rejection continues the already-caught-up village without another catch-up');
+ const afterRejected = await saved(); await page.reload(); await waitPlayable(); await pauseWorld();
+ assert.equal((await callsFor('activate')).length, 2, 'a later launch retries the rejected patch once');
+ assertClockOnly(await saved(), afterRejected, (Math.ceil((Date.now() - afterRejected.lastSaved) / 1000) + 2) * 2, 'reloading after a rejected patch cannot replay the old capped absence');
+ await record('Rejected cached activation preserves the already-consumed offline clock and original inventory; continuation and later relaunch cannot replay the 300-second absence'); await context.close();
 
  context = await fixture('cached');
  await page.locator('[data-patch-phase="applying"]').waitFor(); await assertBeforeGame();
@@ -183,8 +247,8 @@ try {
  await record('Cached verified content applies before first welcome; simulated native reload preserves the actual new-player name and gender choice'); await context.close();
 
  context = await fixture('offline', { existing: true });
- await waitPlayable(); await pauseWorld(); assert.deepEqual(stableSave(await saved()), stableSave(originalSave));
- assert.equal((await callsFor('activate')).length, 0); await touch(page.locator('[data-nav="settings"]'));
+ await waitPlayable(); await pauseWorld(); await assertVillageAfterPlayable();
+ assert.equal((await callsFor('activate')).length, 0); await menuItem('settings');
  // Once offline fallback opens the village, real game time may advance before
  // the finger reaches pause. Save that legitimate paused state through the UI
  // and use it as the exact baseline for the subsequent background patch.
@@ -209,8 +273,8 @@ try {
  const continueBox = await page.locator('[data-patch-continue]').boundingBox(); assert.ok(continueBox.width >= 44 && continueBox.height >= 44, 'the patch continue action is finger sized');
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, 'patch UI fits a small phone');
  await shot('slow-network-360'); await touch(page.locator('[data-patch-continue]')); await waitPlayable(); await pauseWorld();
- assert.deepEqual(stableSave(await saved()), stableSave(originalSave)); assert.equal((await callsFor('activate')).length, 0);
- await touch(page.locator('[data-nav="settings"]')); await page.evaluate(() => window.__startupFixture.ready()); await page.waitForTimeout(700);
+ await assertVillageAfterPlayable(); assert.equal((await callsFor('activate')).length, 0);
+ await menuItem('settings'); await page.evaluate(() => window.__startupFixture.ready()); await page.waitForTimeout(700);
  assert.equal((await callsFor('activate')).length, 0); await touch(page.locator('#modal-root [data-close]').first());
  await page.waitForFunction(() => window.__startupFixture.calls.some(call => call.method === 'activate'));
  assert.equal((await callsFor('activate')).length, 1); await record('A genuinely slow startup offers a finger-sized continue control; the pending compatible patch still waits for safe gameplay after continuing'); await context.close();
@@ -218,7 +282,7 @@ try {
  context = await fixture('activation-error', { existing: true });
  await page.locator('[data-patch-phase="applying"]').waitFor(); await waitPlayable(); await pauseWorld();
  await page.waitForTimeout(1700); assert.equal((await callsFor('activate')).length, 1, 'failed activation cannot become an immediate restart loop');
- assert.deepEqual(stableSave(await saved()), stableSave(originalSave));
+ await assertVillageAfterPlayable();
  await touch(page.locator('[data-nav="farm"]')); await touch(page.locator('[data-quick="gather"]'));
  await page.waitForFunction(() => document.querySelector('#app').hasAttribute('aria-busy'));
  await page.waitForFunction(() => !document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 30000 });

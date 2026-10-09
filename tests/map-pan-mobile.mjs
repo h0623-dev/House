@@ -18,7 +18,8 @@ const geometry = () => page.locator('#world').evaluate(canvas => JSON.parse(canv
 const nav = section => page.locator(`[data-nav="${section}"]`);
 async function shot(name) { const path = `artifacts/v${version}-map-pan-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => element.matches('[data-map-zoom],[data-map-reset],[data-map-move]'))) await touch(page.locator('[data-camera-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-nav="farm"]'));
  await locator.scrollIntoViewIfNeeded(); const box = await locator.boundingBox(); assert.ok(box, 'the control is rendered');
  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
  assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'the physical finger reaches the intended control');
@@ -27,7 +28,13 @@ async function touch(locator) {
 async function worldAt(point, label = 'map gesture') {
  assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, `${label} contacts the actual visible canvas`);
 }
-async function pauseWorld() { const button = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await button.count()) await touch(button); }
+async function setWorldPaused(paused) {
+ await touch(page.locator('[data-open="menu"]')); await touch(page.locator('#modal-root [data-open="settings"]'));
+ const button = page.locator('#modal-root [data-pause]'); const currentlyPaused = (await button.innerText()).trim() === '계속하기';
+ if (currentlyPaused !== paused) await touch(button);
+ await touch(page.locator('#modal-root .modal-close'));
+}
+async function pauseWorld() { await setWorldPaused(true); }
 async function resetView() { await touch(page.locator('[data-map-reset]')); await page.waitForTimeout(850); assert.equal((await geometry()).mapZoom, 1); }
 async function handMode(enabled) {
  const control = page.locator('[data-map-move]'); if ((await control.getAttribute('aria-pressed') === 'true') !== enabled) await touch(control);
@@ -41,6 +48,9 @@ async function plotPoint(id) {
 }
 async function slotPoint(id, facility = false) {
  return page.locator('#world').evaluate((canvas, { id, facility }) => { const slot = JSON.parse(canvas.dataset.settlementSlots).find(item => item.slot === id), r = canvas.getBoundingClientRect(); return { x: r.left + (facility ? slot.facilityX : slot.x), y: r.top + (facility ? slot.facilityY : slot.y) }; }, { id, facility });
+}
+async function facilityActionPoint(id) {
+ return page.locator('#world').evaluate((canvas, id) => { const slot = JSON.parse(canvas.dataset.settlementSlots).find(item => item.buildingId === id), r = canvas.getBoundingClientRect(); return { x: r.left + slot.readyX, y: r.top + slot.readyY, action: slot.action }; }, id);
 }
 async function emptyPoint(delta = { x: 40, y: 0 }, nearPlot) {
  return page.locator('#world').evaluate((canvas, { delta, nearPlot }) => {
@@ -78,7 +88,7 @@ async function pan(label, delta, options = {}) {
  await page.waitForTimeout(620); const settled = await geometry();
  assert.ok(Math.abs(released.dx - before.dx - delta.x) < 7, `${label}: the painted world follows the horizontal finger movement`);
  assert.ok(Math.abs(released.dy - before.dy - delta.y) < 7, `${label}: the painted world follows the vertical finger movement`);
- assert.ok(Math.abs(settled.dx - released.dx) < 2 && Math.abs(settled.dy - released.dy) < 2, `${label}: releasing the finger never snaps the view back`);
+ assert.ok(Math.abs(settled.dx - released.dx) < 2 && Math.abs(settled.dy - released.dy) < 2, `${label}: releasing the finger never snaps the view back (${JSON.stringify({ released, settled })})`);
  assert.ok(Math.abs(settled.scale - before.scale) < .004, `${label}: dragging does not accidentally zoom`);
  movements.push({ label, delta, before, released, settled }); return settled;
 }
@@ -91,6 +101,7 @@ async function pinch(origin, cancel = false) {
  await session.send('Input.dispatchTouchEvent', { type: cancel ? 'touchCancel' : 'touchEnd', touchPoints: [] }); await session.detach(); await page.waitForTimeout(500);
 }
 async function fits(label) {
+ if (!await page.locator('[data-map-move]').isVisible()) await touch(page.locator('[data-camera-toggle]'));
  const { width, height } = page.viewportSize();
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, `${label}: the screen itself does not scroll`);
  for (const selector of ['[data-map-move]', '[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]']) {
@@ -110,7 +121,7 @@ async function emptyFarmFixture() {
 try {
  for (const [width, height] of [[360, 740], [390, 844]]) {
   context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
-  await context.addInitScript(() => { const fixture = localStorage.getItem('map-pan-empty-farm-fixture'); if (fixture) { localStorage.setItem('road-haven-save-v1', fixture); localStorage.removeItem('map-pan-empty-farm-fixture'); } });
+  await context.addInitScript(() => { const fixture = localStorage.getItem('map-pan-empty-farm-fixture'); if (fixture) { const state = JSON.parse(fixture); state.lastSaved = Date.now(); localStorage.setItem('road-haven-save-v1', JSON.stringify(state)); localStorage.removeItem('map-pan-empty-farm-fixture'); } });
   page = await context.newPage(); page.on('pageerror', error => errors.push(error.message)); page.on('response', response => { if (response.status() >= 400 && ['image', 'font', 'script', 'stylesheet'].includes(response.request().resourceType())) failedAssets.push(`${response.status()} ${response.url()}`); });
   await page.goto(baseUrl); await page.waitForLoadState('networkidle'); await touch(page.locator(`[data-gender="${width === 360 ? 'female' : 'male'}"]`)); await touch(page.locator('[data-start]')); await pauseWorld(); await page.waitForTimeout(1000);
   await fits(`home ${width}`); await handMode(false); const home = await geometry(), initial = await saved();
@@ -127,11 +138,14 @@ try {
   await pan(`${width} drag from construction slot`, { x: 38, y: 25 }, { origin: await slotPoint(0) });
   assert.equal(await page.locator('[data-construction-confirm]').isDisabled(), true, 'a construction drag never selects a build slot'); assert.deepEqual((await saved()).resources, initial.resources);
   await resetView(); const slot = await slotPoint(0); await worldAt(slot); await page.touchscreen.tap(slot.x, slot.y); assert.equal(await page.locator('[data-construction-confirm]').isDisabled(), false, 'a subsequent ordinary tap still previews a slot');
-  await touch(page.locator('[data-construction-confirm]')); const built = await saved(); assert.equal(built.settlement.buildings.length, 1); assert.equal(built.resources.wood, initial.resources.wood - 12); assert.equal(built.resources.scrap, initial.resources.scrap - 4);
-  await touch(page.locator('[data-facility-close]')); await touch(nav('home')); await page.waitForTimeout(900); await resetView();
+  await touch(page.locator('[data-construction-confirm]')); let built = await saved(); assert.equal(built.settlement.buildings.length, 1); assert.equal(built.resources.wood, initial.resources.wood - 12); assert.equal(built.resources.scrap, initial.resources.scrap - 4);
+  await fits(`selected facility ${width}`); await touch(page.locator('[data-facility-close]')); await touch(nav('home')); await page.waitForTimeout(900); await resetView();
   await pan(`${width} drag starting on a facility`, { x: 32, y: 25 }, { origin: await slotPoint(0, true) });
   assert.equal(await page.locator('#facility-sheet').isVisible(), false, 'dragging a facility does not accidentally open its controls'); assert.equal(await page.locator('#modal-root').isVisible(), false); await noWork(built, 'facility drag'); await resetView();
-  const facility = await slotPoint(0, true); await worldAt(facility); await page.touchscreen.tap(facility.x, facility.y); await page.locator('#facility-sheet').waitFor(); await touch(page.locator('[data-facility-close]')); await touch(nav('home')); await page.waitForTimeout(800);
+  const facility = await slotPoint(0, true); await worldAt(facility); await page.touchscreen.tap(facility.x, facility.y); await page.locator('#facility-sheet').waitFor(); await fits(`selected facility after pan ${width}`); await touch(page.locator('[data-facility-close]')); await touch(nav('home')); await page.waitForTimeout(800);
+  const idleBubble = await facilityActionPoint(1); assert.equal(idleBubble.action, 'facility-start'); await worldAt(idleBubble); await page.touchscreen.tap(idleBubble.x, idleBubble.y);
+  built = await saved(); assert.notEqual(built.settlement.buildings[0].readyAt, null, 'an idle map bubble starts production directly'); assert.equal(await page.locator('#facility-sheet').isVisible(), false, 'a direct production tap does not require the facility sheet');
+  assert.deepEqual(built.resources, { ...initial.resources, wood: initial.resources.wood - 12, scrap: initial.resources.scrap - 4 }, 'the free waterworks recipe does not consume unrelated resources');
 
   await emptyFarmFixture(); await touch(nav('farm')); await touch(page.locator('[data-quick="plant"]')); await touch(page.locator('[data-select-seed="potato"]')); await page.waitForTimeout(1100); await fits(`farm tool ${width}`);
   const beforeFarm = await saved(), plot = await plotPoint(2), empty = await emptyPoint({ x: 0, y: 0 }, 2);
@@ -162,9 +176,13 @@ try {
   const gathered = await saved(), finished = await geometry(); assert.ok(phases.includes('working') && phases.includes('returning')); assert.ok(Math.abs(finished.dx - held.dx) < 2 && Math.abs(finished.dy - held.dy) < 2, 'finishing the chore does not snap a user-controlled view back');
   assert.equal(gathered.stats.gathers, beforeGather.stats.gathers + 1); assert.equal(gathered.resources.wood, beforeGather.resources.wood + 10); assert.equal(gathered.resources.scrap, beforeGather.resources.scrap + 5); assert.equal(gathered.resources.seeds, beforeGather.resources.seeds + 3); assert.equal(gathered.energy, beforeGather.energy - 10); await page.waitForTimeout(450); assert.deepEqual((await saved()).resources, gathered.resources, 'a moved camera does not duplicate the reward');
   timings.push({ name: `complete gathering while camera held ${width}`, elapsedMs: Date.now() - gatherStart }); await shot(`finished-work-held-view-${width}`); await resetView();
+  await touch(nav('home')); await setWorldPaused(false);
+  await page.waitForFunction(() => { const state = JSON.parse(localStorage.getItem('road-haven-save-v1')); return state.totalMinutes >= state.settlement.buildings[0].readyAt; }, null, { timeout: 55000 });
+  await pauseWorld(); await resetView(); const readyBubble = await facilityActionPoint(1); assert.equal(readyBubble.action, 'facility-collect'); const beforeCollect = await saved(); await worldAt(readyBubble); await page.touchscreen.tap(readyBubble.x, readyBubble.y);
+  const collected = await saved(); assert.equal(collected.resources.water, beforeCollect.resources.water + 4, 'the ready map bubble collects the naturally completed water batch'); assert.equal(collected.settlement.buildings[0].readyAt, null); assert.equal(await page.locator('#facility-sheet').isVisible(), false, 'direct collection keeps the village map available');
   await touch(nav('home')); await page.waitForTimeout(900); await fits(`home after chore ${width}`); await shot(`home-controls-${width}`);
   if (width === 390) { await page.setViewportSize({ width: 844, height: 390 }); await page.waitForTimeout(900); await fits('landscape'); await pan('landscape', { x: 45, y: 20 }); await handMode(true); await fits('landscape hand tool'); await shot('landscape'); }
-  cases.push(`${width}px: four-direction and zoomed pan, persistence and reset, cancellation and subsequent pinch, construction drag versus tap, facility drag versus tap, empty-ground farming versus continuous plot painting, explicit hand tool, full gathering during fixed manual camera.`);
+  cases.push(`${width}px: expandable camera controls, four-direction and zoomed pan, persistence and reset, cancellation and subsequent pinch, construction drag versus tap, facility drag versus tap, direct map production start and naturally completed batch collection, empty-ground farming versus continuous plot painting, explicit hand tool, full gathering during fixed manual camera.`);
   await context.close();
  }
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);

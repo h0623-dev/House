@@ -20,13 +20,24 @@ const plots = () => page.locator('#world').evaluate(canvas => JSON.parse(canvas.
 const nav = section => page.locator(`[data-nav="${section}"]`);
 async function shot(name) { await page.waitForTimeout(250); const path = `artifacts/v${version}-farm-expansion-${name}.png`; await page.screenshot({ path, fullPage: true }); screenshots.push(path); }
 async function touch(locator) {
- if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await locator.isVisible() && await locator.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(nav('farm'));
  await locator.scrollIntoViewIfNeeded(); const box = await locator.boundingBox(); assert.ok(box, 'the control is rendered');
  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
  assert.equal(await locator.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, 'the physical finger reaches the intended control');
  await page.touchscreen.tap(point.x, point.y);
 }
-async function pauseWorld() { const pause = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await pause.count()) await touch(pause); }
+async function pauseWorld() {
+ if (!await page.locator('[data-open="menu"]').count()) { const pause = page.getByRole('button', { name: '시간 일시정지', exact: true }); if (await pause.count()) await touch(pause); return; }
+ // Pause through the visible menu, retaining real animation timers.
+ await touch(page.locator('[data-open="menu"]'));
+ await touch(page.locator('#modal-root [data-open="settings"]'));
+ await touch(page.locator('#modal-root [data-pause]'));
+ assert.match(await page.locator('#modal-root [data-pause]').innerText(), /계속하기/);
+ // Persist the visible paused state so exact-cost checks do not read an
+ // earlier autosave from before the menu was opened.
+ await touch(page.locator('#modal-root [data-save]'));
+ await touch(page.locator('#modal-root [data-close]').first());
+}
 async function closeModal() { if (await page.locator('#modal-root').isVisible()) await touch(page.locator('#modal-root [data-close]').first()); }
 async function waitBusy() { await page.waitForFunction(() => document.querySelector('#app').hasAttribute('aria-busy'), null, { timeout: 1500 }); }
 async function waitIdle(label, start = Date.now(), timeout = 40000) {
@@ -43,6 +54,8 @@ async function freshContext(width, height, url = baseUrl) {
  return saved();
 }
 async function loadFixture(state, label) {
+ // Declared fixtures contain no absence interval; offline catch-up is tested separately.
+ state = { ...state, lastSaved: Date.now() };
  fixtures.push({ label, deckLevel: state.deckLevel, plotCount: state.plots.length, totalMinutes: state.totalMinutes });
  await page.evaluate(state => localStorage.setItem('farm-expansion-qa-fixture', JSON.stringify(state)), state); await page.reload();
  await page.locator('#resident-name').getByText(state.name, { exact: true }).waitFor(); await pauseWorld();
@@ -68,7 +81,11 @@ async function assertContinuity(before, after, label, originalPlots = before.plo
  assert.equal(after.deckLevel, before.deckLevel, `${label}: adding a planter does not silently upgrade the truck`);
  assert.deepEqual(after.stats, before.stats, `${label}: expansion does not fabricate farming/quest counters`);
 }
-async function openExpansion() { await touch(page.locator('.farm-expand-tool[data-open="farm-expand"]')); await page.locator('[data-action="expandFarm"]').waitFor(); }
+async function openExpansion() {
+ await touch(nav('farm'));
+ await touch(page.locator('.farm-expand-tool[data-open="farm-expand"]'));
+ await page.locator('[data-action="expandFarm"]').waitFor();
+}
 async function buyPlot(label, wood, scrap) {
  const before = await saved(), button = page.locator('[data-action="expandFarm"]');
  assert.equal(await button.isDisabled(), false); const start = Date.now(), box = await button.boundingBox();
@@ -82,7 +99,7 @@ async function buyPlot(label, wood, scrap) {
  const after = await saved();
  assert.equal(after.plots.length, before.plots.length + 1, `${label}: exactly one new planter is built`);
  assert.equal(after.resources.wood, before.resources.wood - wood); assert.equal(after.resources.scrap, before.resources.scrap - scrap);
- assert.equal(after.energy, before.energy - 8); assert.equal(after.totalMinutes, before.totalMinutes + 25);
+ assert.equal(after.energy, before.energy - 8); assert.equal(after.totalMinutes, before.totalMinutes, 'paused farm construction never jumps the village clock at completion');
  for (const resource of ['food', 'water', 'seeds']) assert.equal(after.resources[resource], before.resources[resource]);
  assert.deepEqual(after.plots.at(-1), { id: before.plots.length + 1, plantedAt: null, watered: false });
  await assertContinuity(before, after, label); await page.waitForTimeout(500); assert.deepEqual((await saved()).resources, after.resources, 'construction never charges a second time');
@@ -91,7 +108,42 @@ async function buyPlot(label, wood, scrap) {
 }
 async function worldAt(point, label) { assert.equal(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point), true, `${label}: a finger touches visible painted map`); }
 async function plotPoint(id) { return page.locator('#world').evaluate((canvas, id) => { const plot = JSON.parse(canvas.dataset.farmPlots).find(plot => plot.id === id), rect = canvas.getBoundingClientRect(); if (!plot) throw Error(`Plot ${id} was not rendered`); return { x: rect.left + plot.x, y: rect.top + plot.y }; }, id); }
-async function touchPlot(id) { const point = await plotPoint(id); await worldAt(point, `plot ${id}`); await page.touchscreen.tap(point.x, point.y); }
+async function panToPlot(id) {
+ // Keep the map at the readable game scale. A real two-finger translation
+ // reveals distant beds without painting crops or using internal scene methods.
+ for (let attempt = 0; attempt < 16; attempt++) {
+  const point = await plotPoint(id);
+  if (await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.id === 'world', point)) return point;
+  const stream = await page.locator('#world').evaluate((canvas, point) => {
+   const rect = canvas.getBoundingClientRect();
+   const target = { x: rect.left + rect.width * .48, y: rect.top + rect.height * .46 };
+   let delta = { x: Math.max(-rect.width * .30, Math.min(rect.width * .30, target.x - point.x)), y: Math.max(-rect.height * .20, Math.min(rect.height * .20, target.y - point.y)) };
+   // The landscape farm tray sits on the left. Pick a visible patch of map
+   // for both fingers rather than dragging across buttons on that tray.
+   for (let shrink = 0; shrink < 4; shrink++) {
+    for (const fy of [.40, .30, .50, .60]) for (const fx of [.50, .65, .80, .35]) {
+     const center = { x: rect.left + rect.width * fx, y: rect.top + rect.height * fy };
+     const fingers = [{ x: center.x - 20, y: center.y, id: 1 }, { x: center.x + 20, y: center.y, id: 2 }];
+     const end = fingers.map(finger => ({ ...finger, x: finger.x + delta.x, y: finger.y + delta.y }));
+     if ([...fingers, ...end].every(p => document.elementFromPoint(p.x, p.y) === canvas)) return { fingers, end };
+    }
+    delta = { x: delta.x / 2, y: delta.y / 2 };
+   }
+   return null;
+  }, point);
+  assert.ok(stream, 'an unobstructed map area is available for a two-finger pan');
+  const { fingers, end } = stream;
+  for (const finger of fingers) await worldAt(finger, 'two-finger pan start');
+  for (const finger of end) await worldAt(finger, 'two-finger pan end');
+  const session = await context.newCDPSession(page);
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: end });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await session.detach(); await page.waitForTimeout(100);
+ }
+ assert.fail(`plot ${id} cannot be reached by panning the visible map`);
+}
+async function touchPlot(id) { const point = await panToPlot(id); await worldAt(point, `plot ${id}`); await page.touchscreen.tap(point.x, point.y); }
 async function farmView() { await touch(nav('farm')); await page.waitForTimeout(1100); }
 async function drag(points) {
  for (const point of points) await worldAt(point, 'drag');
@@ -101,14 +153,21 @@ async function drag(points) {
  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await session.detach();
 }
 async function cameraCheck() {
- const before = await saved(), control = page.locator('[data-map-move]'); await touch(control);
- const point = await plotPoint(9), initial = await geometry(); await drag([point, { x: point.x - 20, y: point.y - 15 }]); await page.waitForTimeout(650);
+ const before = await saved(); const point = await panToPlot(9);
+ await touch(page.locator('[data-camera-toggle]'));
+ const control = page.locator('[data-map-move]'); await touch(control);
+ const initial = await geometry(); await drag([point, { x: point.x - 20, y: point.y - 15 }]); await page.waitForTimeout(650);
  const moved = await geometry(); assert.ok(Math.abs(moved.dx - initial.dx + 20) < 3 && Math.abs(moved.dy - initial.dy + 15) < 3, 'the full farm follows a real hand-mode drag');
  assert.deepEqual(await saved(), before, 'moving the new plots spends no resources');
  await touch(page.locator('[data-map-zoom="1"]')); await page.waitForTimeout(500); assert.ok((await geometry()).mapZoom > initial.mapZoom, 'the expanded farm still zooms');
  await touch(page.locator('[data-map-reset]')); await page.waitForTimeout(900); assert.equal((await geometry()).mapZoom, 1); assert.equal(await control.getAttribute('aria-pressed'), 'false');
+ await touch(page.locator('[data-camera-toggle]'));
 }
-async function chooseCarrot() { await touch(page.locator('[data-quick="plant"]')); await touch(page.locator('[data-select-seed="carrot"]')); await page.waitForTimeout(1000); }
+async function chooseCarrot() {
+ await touch(page.locator('[data-quick="plant"]'));
+ if (!await page.locator('#modal-root [data-select-seed]').first().isVisible()) await touch(page.locator('#planting-toolbar [data-seed-change]'));
+ await touch(page.locator('[data-select-seed="carrot"]')); await page.waitForTimeout(1000);
+}
 async function selectSpecific(action, id) {
  await touch(page.locator('[data-open="farm"]').first());
  await touch(page.locator(`[data-plot-card="${id}"] [data-action="${action}"]`));
@@ -118,16 +177,22 @@ async function assertFarmDrawn(count) {
  const rendered = await plots(); assert.equal(rendered.length, count, 'every purchased plot has a rendered target');
  assert.equal(new Set(rendered.map(plot => plot.id)).size, count, 'rendered plot ids are unique');
  assert.equal(new Set(rendered.map(plot => `${plot.x},${plot.y}`)).size, count, 'new plots have distinct map positions');
- for (const id of [9, count]) { const point = await plotPoint(id); await worldAt(point, `expanded plot ${id}`); }
+ for (const id of Array.from({ length: count }, (_, index) => index + 1)) {
+  const point = await panToPlot(id); await worldAt(point, `expanded plot ${id}`);
+  const plot = (await plots()).find(plot => plot.id === id);
+  assert.ok(Number.isFinite(plot.x) && Number.isFinite(plot.y), `expanded plot ${id} has a translated map target`);
+ }
 }
 async function assertControlsFit(label) {
  const { width, height } = page.viewportSize();
  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, `${label}: the phone page itself never scrolls`);
+ await touch(page.locator('[data-camera-toggle]'));
  for (const selector of ['.farm-expand-tool', '[data-map-move]', '[data-map-zoom="1"]', '[data-map-reset]']) {
   const control = page.locator(selector), box = await control.boundingBox();
   assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.y >= 0 && box.x + box.width <= width + 1 && box.y + box.height <= height + 1, `${label}: ${selector} is finger sized and on screen`);
   assert.equal(await control.evaluate((button, box) => document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('button') === button, box), true, `${label}: ${selector} is unobstructed`);
  }
+ await touch(page.locator('[data-camera-toggle]'));
 }
 try {
  let legacyState;
@@ -167,13 +232,13 @@ try {
  state = await saved(); assert.equal(state.stats.harvests, beforeHarvest.stats.harvests + 2); assert.equal(state.plots[8].plantedAt, null); assert.equal(state.plots[17].plantedAt, null);
  // The third lifetime harvest also earns the existing first-harvest reward.
  assert.equal(state.resources.food, beforeHarvest.resources.food + 8 + 4); assert.equal(state.seedInventory.carrot, beforeHarvest.seedInventory.carrot + 4 + 5); assert.equal(state.energy, beforeHarvest.energy - 8); await stopTool();
- await chooseCarrot(); const beforeStroke = await saved(), strokeStart = Date.now(); await drag([await plotPoint(17), await plotPoint(18)]); await waitBusy(); await waitIdle('One real drag plants adjacent extended plots17/18', strokeStart, 50000);
+ await chooseCarrot(); const beforeStroke = await saved(), strokeStart = Date.now(); await panToPlot(18); await drag([await plotPoint(17), await plotPoint(18)]); await waitBusy(); await waitIdle('One real drag plants adjacent extended plots17/18', strokeStart, 50000);
  state = await saved(); assert.equal(state.stats.plantings, beforeStroke.stats.plantings + 2); assert.equal(state.seedInventory.carrot, beforeStroke.seedInventory.carrot - 2); assert.equal(state.energy, beforeStroke.energy - 8); assert.equal(state.plots[16].cropId, 'carrot'); assert.equal(state.plots[17].cropId, 'carrot'); await stopTool();
  for (const key of ['settlement', 'facilityHistory', 'growthQuests']) assert.deepEqual(state[key], full[key], `${key} survives farming on the new plots`);
  await page.reload(); await page.locator('#resident-name').getByText(late.name, { exact: true }).waitFor(); await pauseWorld(); assert.deepEqual((await saved()).plots, state.plots, 'the eighteenth plot and its planted crop survive reload');
  await farmView(); await assertFarmDrawn(18); await shot('extended-crops-portrait');
- await page.setViewportSize({ width: 360, height: 740 }); await page.waitForTimeout(1000); await touch(page.locator('[data-map-reset]')); await page.waitForTimeout(700); await assertFarmDrawn(18); await assertControlsFit('360px farm'); await shot('eighteen-plots-small-phone');
- await page.setViewportSize({ width: 844, height: 390 }); await page.waitForTimeout(1000); await touch(page.locator('[data-map-reset]')); await page.waitForTimeout(700); await assertFarmDrawn(18); await assertControlsFit('844px landscape farm'); await shot('eighteen-plots-landscape');
+ await page.setViewportSize({ width: 360, height: 740 }); await page.waitForTimeout(1000); await touch(page.locator('[data-camera-toggle]')); await touch(page.locator('[data-map-reset]')); await touch(page.locator('[data-camera-toggle]')); await page.waitForTimeout(700); await assertFarmDrawn(18); await assertControlsFit('360px farm'); await shot('eighteen-plots-small-phone');
+ await page.setViewportSize({ width: 844, height: 390 }); await page.waitForTimeout(1000); await touch(page.locator('[data-camera-toggle]')); await touch(page.locator('[data-map-reset]')); await touch(page.locator('[data-camera-toggle]')); await page.waitForTimeout(700); await assertFarmDrawn(18); await assertControlsFit('844px landscape farm'); await shot('eighteen-plots-landscape');
  cases.push('Lv6: genuine paid plot18 at66/33, all18 distinct rendered targets; real continuous planting/watering/harvest of plots9/18, one-finger drag plants17/18; growth/facilities/reload/pan/zoom and 390/360/landscape checks.');
  assert.deepEqual(errors, []); assert.deepEqual(failedAssets, []);
  await writeFile(`artifacts/farm-expansion-v${version}-verification.json`, JSON.stringify({ version, status: 'passed', baseUrl, legacyBaseUrl, assertionsExecuted, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), input: 'Real mobile touchscreen taps and CDP touch streams; no direct game calls', clock: 'Real animation time; declared later-deck/resources/mature-crop saved fixtures', deviceLimit: 'Chromium mobile emulation only; no physical Android claim', fixtures, cases, timings, screenshots, errors, failedAssets }, null, 2) + '\n');

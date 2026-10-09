@@ -27,7 +27,7 @@ const quick = action => page.locator(`[data-quick="${action}"]`);
 const nav = section => page.locator(`[data-nav="${section}"]`);
 const toolbar = () => page.locator('#planting-toolbar');
 async function touch(button) {
- if (!await button.isVisible() && await button.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(page.locator('[data-farm-toggle]'));
+ if (!await button.isVisible() && await button.evaluate(element => Boolean(element.closest('#farm-tray')))) await touch(nav('farm'));
  await button.scrollIntoViewIfNeeded();
  const box = await button.boundingBox();
  assert.ok(box, 'a touch control must be rendered');
@@ -36,14 +36,23 @@ async function touch(button) {
  await page.touchscreen.tap(point.x, point.y);
 }
 async function pauseWorld() {
- const pause = page.getByRole('button', { name: '시간 일시정지', exact: true });
- if (await pause.count()) await touch(pause);
+ // Pause through the visible menu, retaining real animation timers.
+ await touch(page.locator('[data-open="menu"]'));
+ await touch(page.locator('#modal-root [data-open="settings"]'));
+ await touch(page.locator('#modal-root [data-pause]'));
+ assert.match(await page.locator('#modal-root [data-pause]').innerText(), /계속하기/);
+ // Persist the visible paused state so exact-cost checks do not read an
+ // earlier autosave from before the menu was opened.
+ await touch(page.locator('#modal-root [data-save]'));
+ await touch(page.locator('#modal-root [data-close]').first());
 }
 async function shot(name) {
  const path = `artifacts/v${appVersion}-farm-tools-${name}.png`;
  await page.screenshot({ path, fullPage: true }); screenshots.push(path);
 }
 async function fixture(state) {
+ // Declared fixtures contain no absence interval; offline catch-up is tested separately.
+ state = { ...state, lastSaved: Date.now() };
  await page.evaluate(state => localStorage.setItem('farm-tools-fixture', JSON.stringify(state)), state);
  await page.reload();
  await page.locator('#resident-name').getByText(state.name, { exact: true }).waitFor();
@@ -128,10 +137,12 @@ async function assertFits(width, height) {
   const box = await quick(action).boundingBox();
   assert.ok(box && box.width >= 44 && box.height >= 44 && box.y >= 0 && box.y + box.height <= height + 1, `${action} keeps a finger-sized target`);
  }
- for (const selector of ['[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-open="settlement-goals"]']) {
+ await touch(page.locator('[data-camera-toggle]'));
+ for (const selector of ['[data-map-zoom="1"]', '[data-map-zoom="-1"]', '[data-map-reset]', '[data-next-goal]']) {
   const control = page.locator(selector), box = await control.boundingBox(); assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${selector} stays visible beside the open farming tools`);
   const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }; assert.equal(await control.evaluate((button, point) => document.elementFromPoint(point.x, point.y)?.closest('button') === button, point), true, `${selector} is not covered by another farming HUD control`);
  }
+ await touch(page.locator('[data-camera-toggle]'));
  for (const selector of ['[data-plant-all]', '[data-plant-cancel]']) {
   const box = await toolbar().locator(selector).boundingBox();
   assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${selector} stays reachable`);
@@ -183,9 +194,10 @@ try {
 
   const dry = lateFixture(fresh, 'dry', width === 360 ? 8 : 3);
   await fixture(dry); start = Date.now(); await touch(quick('water')); await waitBusy();
-  await mode('water'); await assertFits(width, height);
+  await mode('water');
   await touch(quick('water')); // Repeat the global control during work.
   await page.waitForTimeout(300); assert.equal((await save()).resources.water, dry.resources.water, 'global watering still waits for visible work');
+  await assertFits(width, height);
   await shot(`global-water-${width}`);
   await waitIdle(`global-water-all-${width}`, start);
   let state = await save(), expected = width === 360 ? 8 : 3;

@@ -2,6 +2,7 @@ import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { getSettlement, validateSettlement, validateFacilityHistory, type Settlement, type FacilityHistory } from './settlement';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
+import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 export { CROPS, CROP_IDS, type CropId } from './crops';
 
 export type Resource = 'wood' | 'scrap' | 'food' | 'water' | 'seeds';
@@ -36,6 +37,8 @@ export interface GameState {
   facilityHistory?: FacilityHistory;
   /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
   growthQuests?: GrowthQuestProgress;
+  /** Paid requests are counted explicitly; older saves receive no automatic rewards. */
+  villageOrders?: VillageOrderProgress;
   plots: Plot[];
   deckLevel: number;
   truckHealth: number;
@@ -89,6 +92,7 @@ export function createGame(gender: Gender = 'female', name?: string): GameState 
     seedInventory: { carrot: 8, potato: 3, tomato: 3, corn: 3, strawberry: 3, pumpkin: 3 },
     settlement: { buildings: [], nextBuildingId: 1, stats: { productions: 0, collections: 0 } },
     growthQuests: { claimed: [] },
+    villageOrders: { completed: 0 },
     plots: [
       { id: 1, plantedAt: 240, watered: true, cropId: 'carrot' },
       { id: 2, plantedAt: 420, watered: false, cropId: 'carrot' },
@@ -113,6 +117,7 @@ function copy(state: GameState): GameState {
     ...(state.settlement ? { settlement: getSettlement(state) } : {}),
     ...(state.facilityHistory ? { facilityHistory: { builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
+    ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     plots: state.plots.map(plot => plot.plantedAt === null ? { ...plot } : { ...plot, cropId: getPlotCropId(plot) }),
     quests: [...state.quests], log: [...state.log], stats: { ...state.stats },
     expedition: state.expedition ? { ...state.expedition } : null,
@@ -198,10 +203,35 @@ function grantQuests(state: GameState) {
   state.level = Math.floor(state.xp / 120) + 1;
 }
 
-/** One real second is two in-game minutes. No offline time is applied on load. */
+/** One real second is two in-game minutes. Loading alone never advances time. */
 export function tick(state: GameState, seconds = 1): GameState {
   if (state.expedition || !Number.isFinite(seconds) || seconds <= 0) return state;
   return advanceTime(state, seconds * GAME_MINUTES_PER_SECOND);
+}
+
+/** A short absence can finish the slowest watered crop, without simulating unbounded days. */
+export const MAX_OFFLINE_SECONDS = 210;
+export interface OfflineProgressResult { state: GameState; secondsApplied: number }
+
+/**
+ * Called once after loading or resuming. Advances the existing village clock only;
+ * crops and production still require collection. The consumed baseline prevents a
+ * second call from replaying the same absence, including time while in an expedition.
+ */
+export function applyOfflineProgress(state: GameState, now = Date.now()): OfflineProgressResult {
+  if (!Number.isSafeInteger(now) || now < 0 || now > 100_000_000_000_000
+    || !Number.isSafeInteger(state.lastSaved) || state.lastSaved < 0
+    || state.lastSaved > 100_000_000_000_000 || now < state.lastSaved) {
+    return { state, secondsApplied: 0 };
+  }
+  const seconds = state.lastSaved === 0 || state.expedition ? 0
+    : Math.min(MAX_OFFLINE_SECONDS, Math.floor((now - state.lastSaved) / 1000));
+  // Leave headroom for validated saves at the supported clock boundary.
+  const clockHeadroom = Math.max(0, Math.ceil((1_440_000_000 - state.totalMinutes) / GAME_MINUTES_PER_SECOND) - 1);
+  const secondsApplied = Math.min(seconds, clockHeadroom);
+  const next = secondsApplied > 0 ? tick(state, secondsApplied) : copy(state);
+  next.lastSaved = now;
+  return { state: next, secondsApplied };
 }
 
 /** Daily provisions and zombie damage are applied once for every midnight crossed. */
@@ -291,7 +321,11 @@ export function cancelHunt(state: GameState): ActionResult {
   }, state.expedition.id);
 }
 
-export function performAction(state: GameState, action: Action, plotId?: number, cropId: CropId = 'carrot'): ActionResult {
+export interface ActionOptions {
+  /** Animated clients already tick real elapsed time before committing the action. */
+  advanceClock?: boolean;
+}
+export function performAction(state: GameState, action: Action, plotId?: number, cropId: CropId = 'carrot', options: ActionOptions = {}): ActionResult {
   let next = copy(state);
   const fail = (message: string) => ({ state, ok: false, message });
   if (state.expedition) return fail('사냥을 마친 뒤 트럭에서 다시 활동할 수 있어요.');
@@ -441,7 +475,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
 
   next.energy = clamp(next.energy - energyCosts[action]);
   next.xp += xp;
-  next = advanceTime(next, duration);
+  if (options.advanceClock !== false) next = advanceTime(next, duration);
   addLog(next, message);
   grantQuests(next);
   return { state: next, ok: true, message };
@@ -492,6 +526,7 @@ function validateSave(value: unknown): value is GameState {
   const candidate = value as unknown as GameState;
   if (Object.hasOwn(value, 'facilityHistory') && !validateFacilityHistory(value.facilityHistory, candidate)) return false;
   if (Object.hasOwn(value, 'growthQuests') && !validateGrowthQuests(value.growthQuests, candidate)) return false;
+  if (Object.hasOwn(value, 'villageOrders') && !validateVillageOrders(value.villageOrders)) return false;
   if (candidate.quests.some(id => !questList(candidate).find(quest => quest.id === id)?.complete)) return false;
   return true;
 }
