@@ -1,9 +1,9 @@
 {
-  "version": "0.12.0",
-  "versionCode": 12,
+  "version": "0.13.0",
+  "versionCode": 13,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.12.0-debug.apk",
-  "sha256": "7aab601e7a978504e41b807816db31b513529da5556eb3883c9cec029f00c9ec",
-  "notes": "빈 공간을 한 손가락으로 끌어 화면 이동. 화면 이동 모드에서 밭 위 드래그도 작업 없이 이동. 건설 중 화면 이동과 채집 중 수동 시점 유지. 기존 v0.8 이상 앱은 APK 재설치 없이 자동 패치로 적용됩니다.",
-  "publishedAt": "2026-10-08T13:50:49.673Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.13.0-debug.apk",
+  "sha256": "55a4cda0547f20856e5a36de411c996f51778f2baff351ae9675d3527d8005e4",
+  "notes": "데크 단계에 따라 밭을 최대 18칸까지 확장할 수 있습니다. 생산·씨앗 성장·전투 시간 안내를 초 단위로 통일하고, 생산 남은 시간을 실제 기다리는 초로 표시합니다. 기존 v0.8 이상 앱은 APK 재설치 없이 자동 패치로 적용됩니다.",
+  "publishedAt": "2026-10-09T01:12:36.607Z"
 }
