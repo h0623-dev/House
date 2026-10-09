@@ -1,9 +1,9 @@
 {
-  "version": "0.16.0",
-  "versionCode": 16,
+  "version": "0.17.0",
+  "versionCode": 17,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.16.0-debug.apk",
-  "sha256": "e40aabf8acd6e875a771d1ace08bc7d0940bde462df1e5efb5fe53f1994cacb6",
-  "notes": "강아지 보리와 고양이 나비가 아군으로 싸워요. 개별 체력·스킬·전투 경험치와 트럭 휴식을 추가하고, 기존 마을과 공통 3배 속도를 유지합니다.",
-  "publishedAt": "2026-10-09T05:23:54.969Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.17.0-debug.apk",
+  "sha256": "958f51433caa24d452749fb0c4ded872840ff7fd1fe27adf7b4b1eb8823dbaa1",
+  "notes": "6종 동료와 최대 3명 편성, 시설 Lv.5·빠른 생산, 데크 Lv.8·밭 24칸, 맵을 보여 주는 건설과 현장 작업을 추가했습니다.",
+  "publishedAt": "2026-10-09T07:29:39.315Z"
 }

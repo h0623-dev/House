@@ -22,3 +22,12 @@ v0.15 게시에서는 GitHub Pages의 파일 용량을 줄이기 위해 최신 `
 2026-10-09에 고정 주소의 ZIP 전체를 받아 기존 게시 파일과 크기·SHA-256이 일치하는지 확인했습니다. 이 주소는 과거 콘텐츠 보관과 검증용입니다. 자동 업데이트 매니페스트와 자동 롤백 주소로 사용하지 않습니다. 최신 앱 업데이트는 [game-update.json](../game-update.json)의 서명된 v0.16 콘텐츠를 사용하며 네이티브 8–16을 지원합니다.
 
 [콘텐츠 업데이트 안내](https://github.com/h0623-dev/House/blob/main/docs/CONTENT-UPDATES.md)
+
+## v0.17 보관
+
+v0.12·v0.13 콘텐츠 ZIP과 체크섬은 아래 기존 공개 커밋의 고정 주소에서 그대로 보관합니다. 전체 파일을 HTTPS로 받아 이전 게시 파일의 바이트 수·SHA-256과 일치하는지 2026-10-09에 확인했습니다. APK 전체와 최근 v0.14–v0.16 콘텐츠는 현재 브랜치에 유지하며 Git 이력을 삭제하거나 다시 쓰지 않습니다. 앱은 현재 `game-update.json`의 호환되는 v0.17 콘텐츠를 사용합니다. 이 과거 보관 주소를 자동 롤백 주소로 설정하지 않습니다.
+
+| 콘텐츠 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| [v0.12 ZIP](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.12.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.12.0-content.zip.sha256) | 46,339,317 | `3884fa48e6c66fc8b8f58f0f3d8d19da54be900955e456dcef2a383d517935b3` |
+| [v0.13 ZIP](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.13.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/32f8686b87c4923b5709b498841f1d4c90f17b9f/content/road-haven-0.13.0-content.zip.sha256) | 46,341,444 | `c37a9e283c4148a3f4fbc069ab9e8489f3a7b4a6bc955ee5c02752df472aa25e` |
