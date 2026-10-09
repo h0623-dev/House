@@ -1,9 +1,9 @@
 {
-  "version": "0.20.0",
-  "versionCode": 20,
+  "version": "0.21.0",
+  "versionCode": 21,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.20.0-debug.apk",
-  "sha256": "a522c28d38d439ca63add08731f4140070cfc1a6bbc362aa9b95d8e46de65e3d",
-  "notes": "트럭의 빈 바닥을 눌러 이동하고, 반려동물이 걷고 멈추는 동작을 자연스럽게 개선했습니다. 기존 2배 속도·저장·앱과 웹 앱의 자동 패치를 유지합니다.",
-  "publishedAt": "2026-10-09T12:31:04.787Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.21.0-debug.apk",
+  "sha256": "7a8c5ff90bc91879047dc8058b7c631a690f3a8ed15ca741f1c24fd3a59cc4e3",
+  "notes": "집을 데크 안에 안전하게 배치하고 무료로 옮기며 유료 2·3층을 확장할 수 있어요. 배치 충돌 확인과 새의 움직임을 추가하고 기존 저장·2배 속도·자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-09T19:57:25.003Z"
 }

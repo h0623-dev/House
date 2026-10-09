@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "buildId": "6c8d1d39ab876a394e09657c452da60b3bdbe0fd897e0371e882cf93fdb432eb",
-  "version": "0.20.0",
-  "contentVersion": 20,
+  "buildId": "2c0d2db70d736ad782f5c09278c7d42f3e6fb6293ec816f5f14b4138ef3de78e",
+  "version": "0.21.0",
+  "contentVersion": 21,
   "base": "/House/",
   "files": [
     {
@@ -56,14 +56,14 @@
       "sha256": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"
     },
     {
-      "path": "assets/index-CWqW4lop.js",
-      "bytes": 325403,
-      "sha256": "37183d3eb48da3e4cdd6cb58871a212e3cbe638684cc336995d8821c3c839953"
+      "path": "assets/index-DDm15X4e.js",
+      "bytes": 369568,
+      "sha256": "a2e412cc74a32566478a824c62055171c0c9938061bbc4136e752e2988817e4b"
     },
     {
-      "path": "assets/index-CfkaeVvu.css",
-      "bytes": 154678,
-      "sha256": "cd6ebc9a5c9283dc4b7764dbbe427527a2ec39f060cfcbbaa9b722138f91042a"
+      "path": "assets/index-KshDCGUx.css",
+      "bytes": 157403,
+      "sha256": "45e5675aae58b1ac6f3ac9ca6e622bfd4876677a9c469f47fe8cd74d4c27b589"
     },
     {
       "path": "assets/items-anime-BFjuG2x0.png",
@@ -138,7 +138,7 @@
     {
       "path": "index.html",
       "bytes": 1280,
-      "sha256": "0af0850b4f0d7e02b7115677f7133b51cc3bd0068c79c2424ad32b9874cf2a30"
+      "sha256": "6c17a89c692acae36ab3a222770a0bbf0f4f6ed71da01feabb99969db1f26923"
     },
     {
       "path": "manifest.webmanifest",
