@@ -247,9 +247,10 @@ function previewHomeMove(slot:number){
 }
 function confirmHomeMove(){
  if(!homePlacement||homePlacement.slot===null||actionBusy||battleView)return;
- if(!scene.canPlaceHome(scene.getActiveFloor(),homePlacement.slot)){toast('캐릭터나 동물이 지나가는 자리예요. 잠시 뒤 다시 확정해 주세요.');return;}
+ if(!scene.canPlaceHome(scene.getActiveFloor(),homePlacement.slot)){toast('주인공과 겹치지 않는 자리를 선택해 주세요.');return;}
  const result=moveHome(state,{floor:scene.getActiveFloor(),slot:homePlacement.slot});
  if(!result.ok){toast(result.message);return;}
+ if(!scene.relocatePetsForPlacement(result.state)){toast('동물이 머물 안전한 빈 공간을 먼저 확보해 주세요.');return;}
  state=result.state;cancelConstruction();persist();render();ping();toast(result.message);
 }
 function purchaseTruckFloor(){
@@ -280,9 +281,10 @@ function previewConstruction(slot:number){
 }
 function confirmConstruction(){
  if(!placement||placement.slot===null||actionBusy||battleView)return;
- if(!scene.canPlaceFacility(placement.slot)){toast('캐릭터나 동물이 지나가는 자리예요. 잠시 뒤 다시 확정해 주세요.');return;}
+ if(!scene.canPlaceFacility(placement.slot)){toast('주인공과 겹치지 않는 자리를 선택해 주세요.');return;}
  const plan=placement,result=plan.movingId!==undefined?moveFacility(state,plan.movingId,plan.slot!):buildFacility(state,plan.type,plan.slot!);
  if(!result.ok){toast(result.message);return;}
+ if(!scene.relocatePetsForPlacement(result.state)){toast('동물이 머물 안전한 빈 공간을 먼저 확보해 주세요.');return;}
  state=result.state;cancelConstruction();persist();render();ping();toast(result.message);
  const building=plan.movingId!==undefined?getSettlement(state).buildings.find(b=>b.id===plan.movingId):getSettlement(state).buildings.find(b=>b.slot===plan.slot);
  if(building){selectFacility(building.id);if(plan.movingId===undefined)void showFacilityWork(building.id,'build');}
@@ -1033,8 +1035,9 @@ document.addEventListener('click',e=>{
  if(t.dataset.replaceType&&BUILDING_TYPES.includes(t.dataset.replaceType as BuildingType)){confirmFacilityReplacement(Number(t.dataset.replaceFacility),t.dataset.replaceType as BuildingType);return;}
  if(t.dataset.replaceConfirm&&BUILDING_TYPES.includes(t.dataset.replaceBuildingType as BuildingType)){
   if(actionBusy)return;const id=Number(t.dataset.replaceConfirm),building=getSettlement(state).buildings.find(item=>item.id===id);
-  if(!building||!scene.canPlaceFacility(building.slot)){toast('캐릭터나 동물이 지나가는 자리예요. 잠시 뒤 다시 확정해 주세요.');return;}
+  if(!building||!scene.canPlaceFacility(building.slot)){toast('주인공과 겹치지 않는 자리를 선택해 주세요.');return;}
   const result=replaceFacility(state,id,t.dataset.replaceBuildingType as BuildingType);
+  if(result.ok&&!scene.relocatePetsForPlacement(result.state)){toast('동물이 머물 안전한 빈 공간을 먼저 확보해 주세요.');return;}
   if(result.ok){state=result.state;closeModal();persist();render();selectFacility(id);ping();}toast(result.message);return;
  }
  if(t.dataset.selectSeed&&CROP_IDS.includes(t.dataset.selectSeed as CropId)){selectSeed(t.dataset.selectSeed as CropId);return;}

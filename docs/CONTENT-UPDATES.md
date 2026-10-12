@@ -20,6 +20,8 @@
 
 ## 배포
 
+0.23.0은 손그림 로딩 화면과 건설 시 동물 자동 자리 이동을 콘텐츠 버전23, Android 네이티브 호환 범위8–23으로 배포합니다. 기존 저장·동료 상태·생산 시각과 2배 속도를 유지합니다.
+
 0.22.0은 마을 화면·생산 운영판·성장 준비 행동·다음 투자와 수령 후 재생산을 콘텐츠 버전22, Android 네이티브 호환 범위8–22로 배포합니다. 생산 운영판도 닫기 전까지 준비된 패치의 적용을 보류합니다. 기존 생산 시각과 보상을 유지합니다.
 
 0.21.0은 집 재배치·유료 2·3층 플랫폼·충돌 회피·배경 새를 콘텐츠 버전21, Android 네이티브 호환 범위8–21로 배포했습니다. 집·시설 배치 미리 보기와 층 증축 확인 창, 걷기·계단·작업 중에는 준비된 패치의 적용을 보류합니다. 시설 ID·레벨·진행 중인 생산은 위치와 별도로 저장하며, 추가 층과 집 배치는 최상위 `truckLayout`에 보관합니다. 기존 스키마가 유효한 v8·v20 소스에서 이 추가 정보가 저장 왕복을 통과한 범위는 [상태 호환 검사](research/v021-playtest-results.md)에 기록합니다.
@@ -47,7 +49,7 @@
 ```bash
 npm run build
 node scripts/create-content-release.mjs dist \
-  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.22.0-content.zip
+  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.23.0-content.zip
 ```
 
 도구는 `artifacts/game-update.json`, 콘텐츠 ZIP, SHA-256 파일을 만듭니다. ZIP에는 검증된 웹 빌드만 들어가며 새 서명이 앱에 고정된 공개 키와 맞는지 확인합니다. ZIP을 `gh-pages/content/`에 올린 뒤 마지막에 같은 브랜치의 루트 `game-update.json`을 게시합니다. 미리 테스트하는 미래 버전 정보는 공개하지 않습니다.

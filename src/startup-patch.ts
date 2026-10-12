@@ -1,4 +1,8 @@
 import './startup-patch.css';
+import worldAtlasUrl from './assets/world-atlas-anime.png';
+import roadUrl from './assets/world-road-anime.png';
+import dogAtlasUrl from './assets/creatures-anime.png';
+import catAtlasUrl from './assets/companions-cat-anime.png';
 import { initializeLiveUpdates,checkLiveUpdate,activateLiveUpdate,isLiveUpdateSupported,type LiveUpdateState } from './live-update';
 import { createStartupPatchFlow,type StartupPatchOutcome,type StartupPatchView } from './startup-patch-flow';
 
@@ -6,6 +10,29 @@ interface StartupPatchOptions {
  onState:(state:LiveUpdateState)=>void;
  beforeApply:()=>boolean|Promise<boolean>;
  onPendingChange:(pending:boolean)=>void;
+}
+
+/** The loading illustration uses the same painted village and companions as play. */
+function startupVillageArt(){
+ return `<svg class="startup-patch-tableau" viewBox="0 0 460 410" fill="none" aria-hidden="true" focusable="false">
+  <defs>
+   <radialGradient id="startup-patch-glow"><stop stop-color="#fff5c8" stop-opacity=".9"/><stop offset="1" stop-color="#fff5c8" stop-opacity="0"/></radialGradient>
+   <radialGradient id="startup-patch-shadow"><stop stop-color="#344b2d" stop-opacity=".3"/><stop offset="1" stop-color="#344b2d" stop-opacity="0"/></radialGradient>
+   <clipPath id="startup-patch-truck-crop"><path d="M10 188 159 78 181 76 219 116 313 180 343 226 377 240 421 270 449 313 454 344 477 367 500 410 500 478 459 506 447 549 403 574 343 570 276 537 223 463 167 432 108 403 47 377 14 325Z"/></clipPath>
+   <clipPath id="startup-patch-cottage-crop"><path d="M552 62H637V111H724L794 259 817 286 803 307 824 340V513L739 558H603L524 509 488 455V291L451 280V242L476 216 538 178 552 159Z"/></clipPath>
+   <clipPath id="startup-patch-tree-crop"><path d="M836 60H1202V567H887L812 465 809 237Z"/></clipPath>
+  </defs>
+  <ellipse cx="231" cy="193" rx="214" ry="174" fill="url(#startup-patch-glow)"/>
+  <g class="startup-patch-fireflies" fill="#f4d381"><circle cx="62" cy="102" r="3"/><circle cx="379" cy="54" r="2.5"/><circle cx="409" cy="236" r="3"/></g>
+  <ellipse cx="235" cy="374" rx="220" ry="31" fill="url(#startup-patch-shadow)"/>
+  <svg x="279" y="31" width="139" height="179" viewBox="809 60 393 507"><image href="${worldAtlasUrl}" width="1536" height="1024" clip-path="url(#startup-patch-tree-crop)"/></svg>
+  <svg x="63" y="86" width="328" height="311" viewBox="0 62 510 520"><image href="${worldAtlasUrl}" width="1536" height="1024" clip-path="url(#startup-patch-truck-crop)"/></svg>
+  <svg x="110" y="20" width="148" height="197" viewBox="451 62 374 498"><image href="${worldAtlasUrl}" width="1536" height="1024" clip-path="url(#startup-patch-cottage-crop)"/></svg>
+  <svg x="250" y="140" width="40" height="55" viewBox="1207 181 146 201"><image href="${worldAtlasUrl}" width="1536" height="1024"/></svg>
+  <svg x="48" y="278" width="61" height="75" viewBox="42 73 309 377"><image href="${dogAtlasUrl}" width="1536" height="1024"/></svg>
+  <svg x="204" y="318" width="64" height="64" viewBox="63 86 537 535"><image href="${catAtlasUrl}" width="1254" height="1254"/></svg>
+  <g class="startup-patch-breeze" stroke="#69826d" stroke-width="2.5" stroke-linecap="round"><path d="M339 13q6-6 12 0m0 0q6-6 12 0"/><path d="M379 35q4-4 8 0m0 0q4-4 8 0"/></g>
+ </svg>`;
 }
 
 /** Check, download and apply compatible content before the player's first input. */
@@ -16,7 +43,7 @@ export function runStartupPatch(options:StartupPatchOptions):Promise<StartupPatc
   if(!panel){
    panel=document.createElement('section');panel.className='startup-patch';panel.dataset.startupPatch='';
    panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','startup-patch-title');
-   panel.innerHTML=`<div class="startup-patch-card"><p class="startup-patch-brand">ROAD HAVEN</p><div class="startup-patch-art" aria-hidden="true"><svg viewBox="0 0 240 130" fill="none"><ellipse cx="120" cy="109" rx="94" ry="10" fill="#CDD9BB"/><path d="M22 85h196" stroke="#AEB994" stroke-width="3" stroke-linecap="round"/><path d="M47 72h125v25H47z" fill="#C99A64" stroke="#72634C" stroke-width="3" stroke-linejoin="round"/><path d="M172 69h24l15 17v11h-39z" fill="#BCD1BA" stroke="#72634C" stroke-width="3" stroke-linejoin="round"/><path d="M178 76h14l9 10h-23z" fill="#E5EEDB"/><path d="M68 44h40v29H68z" fill="#F2D8AC" stroke="#72634C" stroke-width="3"/><path d="m60 46 28-23 29 23z" fill="#9EB8A4" stroke="#72634C" stroke-width="3" stroke-linejoin="round"/><path d="M82 56h12v17H82z" fill="#B18A64"/><path d="M122 61h33v12h-33z" fill="#A9815B"/><path d="M131 61V45m0 9c-14 1-14-13-14-13 13 0 14 13 14 13m0-4s0-13 13-13c0 0 0 13-13 13m15 11V47m0 8s0-10 10-10c0 0 0 10-10 10" stroke="#7B9B71" stroke-width="4" stroke-linecap="round"/><circle cx="71" cy="99" r="12" fill="#686B60"/><circle cx="71" cy="99" r="5" fill="#E7D5AD"/><circle cx="181" cy="99" r="12" fill="#686B60"/><circle cx="181" cy="99" r="5" fill="#E7D5AD"/><path d="m28 41 3-7 3 7 7 3-7 3-3 7-3-7-7-3zM190 25l2-5 2 5 5 2-5 2-2 5-2-5-5-2z" fill="#E4C58F"/></svg></div><h1 id="startup-patch-title">우리 트럭을 준비하고 있어요</h1><p class="startup-patch-message" data-patch-message aria-live="polite"></p><div class="startup-patch-progress" data-patch-progress role="progressbar" aria-label="게임 업데이트 진행" aria-valuemin="0" aria-valuemax="100"><i></i></div><p class="startup-patch-detail" data-patch-detail>게임 실행 시 새 콘텐츠가 자동으로 적용돼요.</p><button class="startup-patch-continue" data-patch-continue hidden>현재 버전으로 시작</button><small class="startup-patch-offline" data-patch-offline hidden>연결이 느려도 저장한 마을에서 계속할 수 있어요.</small></div>`;
+   panel.innerHTML=`<div class="startup-patch-backdrop" aria-hidden="true" style="background-image:url('${roadUrl}')"></div><div class="startup-patch-card"><header class="startup-patch-heading"><p class="startup-patch-brand">ROAD HAVEN</p><p class="startup-patch-logo">로드헤이븐</p><p class="startup-patch-subtitle"><span></span>트럭 위의 우리집<span></span></p></header><div class="startup-patch-art" aria-hidden="true">${startupVillageArt()}</div><div class="startup-patch-status"><h1 id="startup-patch-title">우리 트럭을 준비하고 있어요</h1><p class="startup-patch-message" data-patch-message aria-live="polite"></p><div class="startup-patch-progress" data-patch-progress role="progressbar" aria-label="게임 업데이트 진행" aria-valuemin="0" aria-valuemax="100"><i></i></div><p class="startup-patch-detail" data-patch-detail>게임 실행 시 새 콘텐츠가 자동으로 적용돼요.</p><button class="startup-patch-continue" data-patch-continue hidden>현재 버전으로 시작</button><small class="startup-patch-offline" data-patch-offline hidden>연결이 느려도 저장한 마을에서 계속할 수 있어요.</small></div><p class="startup-patch-caption">오늘도, 우리만의 작은 마을을 만들어요.</p></div>`;
    document.body.append(panel);
    panel.querySelector('[data-patch-continue]')!.addEventListener('click',()=>flow.continueCurrent());
   }

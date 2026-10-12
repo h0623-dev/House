@@ -7,6 +7,7 @@ import { drawCompanion, companionPawContacts, sampleCompanionGait, type Companio
 import { drawTruckFloor, drawTruckStairway } from './truck-floor-art';
 import { drawSkyBirds, skyNightAmount } from './sky-birds';
 import { createPetPatrol, stepPetPatrol, getPetGroundRadius, type PetPatrolState } from './scene-patrol';
+import { planPlacementPetRelocations } from './scene-placement';
 import { getFloorBounds, getFloorSlots, getFloorStairs, getHomeLocation, getHomeSlots, getHousePosition, getHouseFootprint,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, type TruckFloor } from './truck-layout';
 import { getSelectedTeam, getUnitRoster, type UnitId } from './units';
@@ -76,6 +77,7 @@ export class Scene {
   private walkEventState = '';
   private petMotion = new Map<UnitId,PetPatrolState>();
   private petYields = new Map<UnitId,{route:NavigationPath;reserved:NavigationLocation[];reservedRadius:number}>();
+  private placementRelocationSequence = 0;
   private zone: 'home' | 'grove' = 'home';
   private selectedPlotId: number | null = null;
   private farmFocus = false;
@@ -410,7 +412,34 @@ export class Scene {
   private placementOccupied(floor:TruckFloor,bounds:{left:number;top:number;right:number;bottom:number}) {
     const polygon=[[bounds.left,bounds.top],[bounds.right,bounds.top],[bounds.right,bounds.bottom],[bounds.left,bounds.bottom]]
       .map(p=>projectDeckPoint(p as Point,floor));
-    return this.physicalActors().some(a=>a.location.surface==='deck'&&(a.location.floor??1)===floor&&circleOverlapsPolygon(a.location.point,a.radius,polygon));
+    const hero=this.currentHeroLocation();
+    return hero.surface==='deck'&&(hero.floor??1)===floor&&circleOverlapsPolygon(hero.point,HERO_BODY_RADIUS,polygon);
+  }
+  /** Call after a successful domain placement and before publishing its new state. */
+  relocatePetsForPlacement(nextState:GameState):boolean {
+    if(!this.state)return false;
+    const actors=this.physicalActors(),worldFor=(radius:number,occupants:NavigationActor[])=>createNavigationWorld(nextState.deckLevel,nextState.plots.length,
+      getSettlement(nextState).buildings.map(building=>building.slot),
+      {floors:Array.from({length:getTruckFloorCount(nextState)},(_,i)=>(i+1)as TruckFloor),activeFloor:this.activeFloor,
+        home:getHomeLocation(nextState),radius,actors:occupants});
+    const previous=this.navigationWorld().obstacles,
+      obstacleKey=(obstacle:NavigationWorld['obstacles'][number])=>JSON.stringify([obstacle.surface,obstacle.floor,obstacle.kind,obstacle.bounds]),
+      previousKeys=new Set(previous.map(obstacleKey)),
+      added=worldFor(HERO_BODY_RADIUS,[]).obstacles.filter(obstacle=>(obstacle.kind==='house'||obstacle.kind==='facility')&&!previousKeys.has(obstacleKey(obstacle))),
+      relocations=planPlacementPetRelocations(added,actors,worldFor);
+    if(!relocations)return false;
+    for(const relocation of relocations){
+      const id=relocation.id as UnitId,motion=this.petMotion.get(id)!;
+      motion.location={...relocation.to,point:[...relocation.to.point]};
+      motion.route=null;motion.elapsed=0;motion.speed=0;motion.blend=0;motion.turnRemaining=0;
+      motion.blockedReason=null;motion.retryRemaining=0;motion.pauseRemaining=.35;
+      motion.facingBlend=motion.facing;motion.turnFrom=motion.facing;motion.nextFacing=motion.facing;motion.turnHeading=motion.heading;
+      const world=worldFor(motion.radius,[]);
+      motion.worldKey=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
+      motion.desiredFloor=this.currentHeroLocation().floor??1;this.petYields.delete(id);
+    }
+    this.canvas.dataset.placementPetRelocation=JSON.stringify({sequence:++this.placementRelocationSequence,moved:relocations});
+    return true;
   }
   private petScale(id:UnitId) { return id==='dog'?.78:id==='boar'?.7:.73; }
   private physicalActors():NavigationActor[] {
