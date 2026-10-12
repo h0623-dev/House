@@ -79,3 +79,12 @@ v0.21 콘텐츠 ZIP과 v0.6·v0.7 APK 및 각 체크섬을 아래 이전 공개 
 | [v0.21 콘텐츠 ZIP](https://raw.githubusercontent.com/h0623-dev/House/4d7ee65653786a6f69e80fc640aabfcba691a3f1/content/road-haven-0.21.0-content.zip) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/4d7ee65653786a6f69e80fc640aabfcba691a3f1/content/road-haven-0.21.0-content.zip.sha256) | 52,720,387 | `a8db9e3a3dd86c7108709914f44a34753dea9161294ff6abc4d959aab7bd52b5` |
 | [v0.6 APK](https://raw.githubusercontent.com/h0623-dev/House/4d7ee65653786a6f69e80fc640aabfcba691a3f1/downloads/road-haven-0.6.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/4d7ee65653786a6f69e80fc640aabfcba691a3f1/downloads/road-haven-0.6.0-debug.apk.sha256) | 48,086,898 | `2030fd0e20939bfb8da0bf0262f91146cde045acce64896bc096bfd4ecd9bfec` |
 | [v0.7 APK](https://raw.githubusercontent.com/h0623-dev/House/4d7ee65653786a6f69e80fc640aabfcba691a3f1/downloads/road-haven-0.7.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/4d7ee65653786a6f69e80fc640aabfcba691a3f1/downloads/road-haven-0.7.0-debug.apk.sha256) | 48,090,022 | `f4b4116b504cb439df0fcaba3d9cbfa1314e1f6d264dce20c52881d23db0d07a` |
+
+## v0.23 보관
+
+v0.8·v0.9 APK 및 각 체크섬을 아래 이전 공개 커밋의 고정 주소에 보관합니다. 정상 HTTPS로 전체 파일을 받아 기존 게시 파일의 바이트 수와 SHA-256이 일치하는지 확인했습니다. Git 이력을 유지하며 과거 APK를 포함한 21개 릴리즈에 계속 접근할 수 있습니다. 현재 앱은 서명된 최신 game-update.json을 사용하며 아래 보관 주소를 자동 롤백 주소로 사용하지 않습니다.
+
+| 보관 파일 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| [v0.8 APK](https://raw.githubusercontent.com/h0623-dev/House/4b5ee347ae501df1bc2c744cb261d829abfdb6f2/downloads/road-haven-0.8.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/4b5ee347ae501df1bc2c744cb261d829abfdb6f2/downloads/road-haven-0.8.0-debug.apk.sha256) | 50,711,318 | `99afde7364c33e84c02dffc2df102f6ab816197432e8dee5d95790906df2419b` |
+| [v0.9 APK](https://raw.githubusercontent.com/h0623-dev/House/4b5ee347ae501df1bc2c744cb261d829abfdb6f2/downloads/road-haven-0.9.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/4b5ee347ae501df1bc2c744cb261d829abfdb6f2/downloads/road-haven-0.9.0-debug.apk.sha256) | 50,724,709 | `5cf3195a4005e129a7165e2f318391a1920052c9e8338c5276b72e8805a8ef31` |

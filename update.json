@@ -1,9 +1,9 @@
 {
-  "version": "0.22.0",
-  "versionCode": 22,
+  "version": "0.23.0",
+  "versionCode": 23,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.22.0-debug.apk",
-  "sha256": "1ff494f78b10075f13584c11a9ea8dd7d4c8e1779b1a807a4954cbb204e50863",
-  "notes": "트럭 마을의 건설·생산·성장을 한눈에 보고, 생활 공간을 중심으로 지도를 확인하며 생산품을 받은 뒤 다음 생산을 시작할 수 있어요. 기존 진행과 2배 속도·자동 패치를 유지합니다.",
-  "publishedAt": "2026-10-12T03:53:12.593Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.23.0-debug.apk",
+  "sha256": "f843984db9b110dc8f20adce4a9aa0c1b6e8fe097a9e3bf0688b49e894261c0a",
+  "notes": "트럭 마을의 따뜻한 일러스트 로딩 화면과 함께 시작하세요. 건물을 설치할 때 자리에 있는 반려동물은 안전한 빈 공간으로 이동하여 바로 건설할 수 있어요. 기존 저장과 2배 속도·자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-12T05:33:39.134Z"
 }
