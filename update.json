@@ -1,9 +1,9 @@
 {
-  "version": "0.21.0",
-  "versionCode": 21,
+  "version": "0.22.0",
+  "versionCode": 22,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.21.0-debug.apk",
-  "sha256": "7a8c5ff90bc91879047dc8058b7c631a690f3a8ed15ca741f1c24fd3a59cc4e3",
-  "notes": "집을 데크 안에 안전하게 배치하고 무료로 옮기며 유료 2·3층을 확장할 수 있어요. 배치 충돌 확인과 새의 움직임을 추가하고 기존 저장·2배 속도·자동 패치를 유지합니다.",
-  "publishedAt": "2026-10-09T19:57:25.003Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.22.0-debug.apk",
+  "sha256": "1ff494f78b10075f13584c11a9ea8dd7d4c8e1779b1a807a4954cbb204e50863",
+  "notes": "트럭 마을의 건설·생산·성장을 한눈에 보고, 생활 공간을 중심으로 지도를 확인하며 생산품을 받은 뒤 다음 생산을 시작할 수 있어요. 기존 진행과 2배 속도·자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-12T03:53:12.593Z"
 }
