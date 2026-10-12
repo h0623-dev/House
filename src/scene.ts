@@ -16,6 +16,7 @@ import { BUILDINGS, getSettlement, getUnlockedSlots, isFacilitySlotAvailable, is
 import { drawFacility, facilityArtReady } from './settlement-art';
 import { type MotionRoute } from './scene-motion';
 import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
+import { fitVillageCamera, getVillageContentBounds, VILLAGE_FACILITY_SIZE } from './village-camera';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
   sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, distanceToSegment, getPatrolTargets, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
   type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld } from './scene-navigation';
@@ -41,7 +42,7 @@ const CROP_SEED_COLOR: Record<CropId, string> = { carrot: '#d29b57', potato: '#b
 // The original eight beds keep their identity and position as the garden grows.
 // New beds occupy the deck's front garden; facilities stay behind the central path.
 const SETTLEMENT_SLOTS = SETTLEMENT_POSITIONS;
-const FACILITY_SIZE: Record<BuildingType, Point> = { workshop: [126, 119], kitchen: [120, 112], waterworks: [116, 118], greenhouse: [126, 105], watchtower: [111, 146], petHouse: [106, 90] };
+const FACILITY_SIZE = VILLAGE_FACILITY_SIZE;
 const PET_GROUND_SIZE: Record<UnitId,number>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31};
 
 /** A live isometric home built from our original painted anime environment art. */
@@ -100,6 +101,7 @@ export class Scene {
   private planningLevel: number | null = null;
   private expansionPreview: number | null = null;
   private cameraFocusRequested = false;
+  private villageOverview = false;
   private safeViewport = { top: 0, bottom: 0, left: 0, right: 0, width: 1, height: 1 };
   private queuedPlotIds: number[] = [];
   private plantingCropId: CropId = 'carrot';
@@ -115,45 +117,50 @@ export class Scene {
     this.frame = requestAnimationFrame(this.animate);
     if (timestamp - this.lastFrame < (this.reducedMotion && !this.action && !this.freeWalk ? 250 : 32)) return;
     const elapsed = this.lastFrame ? Math.max(0, (timestamp - this.lastFrame) / 1000) : 0;
-    const delta = Math.min(elapsed, .1);
     this.lastFrame = timestamp;
-    this.time += delta * GAME_SPEED_MULTIPLIER;
-    if (this.freeWalk) {
-      const walking = this.freeWalk,nextElapsed=Math.min(walking.navigation.motion.duration,walking.elapsed+delta),sample=sampleNavigation(walking.navigation,nextElapsed);
-      const blocker=this.stepBlocker(this.heroLocation,sample.location);
-      this.blockedReason=blocker?`actor:${blocker.id}`:null;
-      if(blocker){
-        walking.blockedFor+=elapsed;walking.retryFor+=elapsed;
-        if(walking.blockedFor>=.3&&walking.retryFor>=.3){
-          walking.retryFor=0;
-          this.tryPetYield(blocker,[sample.location,walking.navigation.target]);
-          const detour=planNavigation(this.navigationWorld(),this.heroLocation,walking.navigation.target);
-          if(detour){walking.navigation=detour;walking.elapsed=0;walking.gaitOffset=this.gaitDistance;walking.reroutes++;}
-        }
-      }else{walking.blockedFor=0;walking.retryFor=0;walking.elapsed=nextElapsed;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);}
-      if (walking.elapsed >= walking.navigation.motion.duration) { this.freeWalk = null; this.publishWalking(); }
-    }
-    if (this.action) {
-      const action=this.action,nextElapsed=Math.min(action.duration,action.elapsed+elapsed),nextLocation=nextElapsed<action.walk?sampleNavigation(action.navigation,nextElapsed).location:
-        nextElapsed>action.walk+action.work?sampleNavigation(action.navigation,nextElapsed-action.walk-action.work,true).location:action.navigation.target;
-      const blocker=this.stepBlocker(this.currentHeroLocation(),nextLocation);
-      this.blockedReason=blocker?`actor:${blocker.id}`:null;
-      if(blocker){
-        action.stalled+=elapsed;
-        if(action.stalled-action.yieldAt>=.3){action.yieldAt=action.stalled;this.tryPetYield(blocker,[nextLocation,nextElapsed>action.walk+action.work?action.navigation.returnLocation:action.navigation.target]);}
-      }else{action.stalled=0;action.yieldAt=0;action.elapsed=nextElapsed;this.followFloor(nextLocation.floor??1);}
-      if(action.stalled>=CHORE_STALL_TIMEOUT){
-        const retained=this.currentHeroLocation();this.heroLocation={...retained,point:[...retained.point]};this.action=null;this.zone='home';
-        action.reject(new Error('동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
-      }else{
-        if (action.kind === 'chop' && action.elapsed >= action.walk + action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
-        if (action.elapsed >= action.duration) {
-          this.heroLocation = { ...action.navigation.returnLocation, point: [...action.navigation.returnLocation.point] };
-          this.action = null; this.zone = 'home'; action.resolve();
+    // Hero jobs and pets share the real frame time. Small joint steps retain
+    // swept collision checks without letting slow rendering freeze a blocker.
+    const steps = Math.max(1, Math.ceil(elapsed / .1));
+    const delta = elapsed / steps;
+    for (let step = 0; step < steps; step++) {
+      this.time += delta * GAME_SPEED_MULTIPLIER;
+      if (this.freeWalk) {
+        const walking = this.freeWalk,nextElapsed=Math.min(walking.navigation.motion.duration,walking.elapsed+delta),sample=sampleNavigation(walking.navigation,nextElapsed);
+        const blocker=this.stepBlocker(this.heroLocation,sample.location);
+        this.blockedReason=blocker?`actor:${blocker.id}`:null;
+        if(blocker){
+          walking.blockedFor+=delta;walking.retryFor+=delta;
+          if(walking.blockedFor>=.3&&walking.retryFor>=.3){
+            walking.retryFor=0;
+            this.tryPetYield(blocker,[sample.location,walking.navigation.target]);
+            const detour=planNavigation(this.navigationWorld(),this.heroLocation,walking.navigation.target);
+            if(detour){walking.navigation=detour;walking.elapsed=0;walking.gaitOffset=this.gaitDistance;walking.reroutes++;}
+          }
+        }else{walking.blockedFor=0;walking.retryFor=0;walking.elapsed=nextElapsed;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);}
+        if (walking.elapsed >= walking.navigation.motion.duration) { this.freeWalk = null; this.publishWalking(); }
+      }
+      if (this.action) {
+        const action=this.action,nextElapsed=Math.min(action.duration,action.elapsed+delta),nextLocation=nextElapsed<action.walk?sampleNavigation(action.navigation,nextElapsed).location:
+          nextElapsed>action.walk+action.work?sampleNavigation(action.navigation,nextElapsed-action.walk-action.work,true).location:action.navigation.target;
+        const blocker=this.stepBlocker(this.currentHeroLocation(),nextLocation);
+        this.blockedReason=blocker?`actor:${blocker.id}`:null;
+        if(blocker){
+          action.stalled+=delta;
+          if(action.stalled-action.yieldAt>=.3){action.yieldAt=action.stalled;this.tryPetYield(blocker,[nextLocation,nextElapsed>action.walk+action.work?action.navigation.returnLocation:action.navigation.target]);}
+        }else{action.stalled=0;action.yieldAt=0;action.elapsed=nextElapsed;this.followFloor(nextLocation.floor??1);}
+        if(action.stalled>=CHORE_STALL_TIMEOUT){
+          const retained=this.currentHeroLocation();this.heroLocation={...retained,point:[...retained.point]};this.action=null;this.zone='home';
+          action.reject(new Error('동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
+        }else{
+          if (action.kind === 'chop' && action.elapsed >= action.walk + action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
+          if (action.elapsed >= action.duration) {
+            this.heroLocation = { ...action.navigation.returnLocation, point: [...action.navigation.returnLocation.point] };
+            this.action = null; this.zone = 'home'; action.resolve();
+          }
         }
       }
+      this.advancePets(delta);
     }
-    this.advancePets(delta);
     this.render();
   };
   private visibility = () => {
@@ -334,7 +341,7 @@ export class Scene {
     const level = mode === 'expansion' ? Math.min(8, Math.max(1, nextLevel ?? (this.state?.deckLevel ?? 1) + 1)) : null;
     if (mode === this.planningMode && level === this.planningLevel) return;
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
-    this.planningMode = mode; this.planningLevel = level;
+    this.planningMode = mode; this.planningLevel = level; this.villageOverview = false;
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null;
     this.cameraFocusRequested = true;
     if (mode) this.zone = 'home';
@@ -350,7 +357,7 @@ export class Scene {
     if (!this.state || !getSettlement(this.state).buildings.some(building => building.id === id)) return;
     this.setActiveFloor(getSlotFloor(getSettlement(this.state).buildings.find(building=>building.id===id)!.slot));
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
-    this.selectedFacilityId = id; this.zone = 'home';
+    this.selectedFacilityId = id; this.zone = 'home'; this.villageOverview = false;
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
@@ -450,9 +457,14 @@ export class Scene {
     this.publishWalking();
   }
   resetMapView() {
-    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null;
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.villageOverview = false;
+    this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
+  }
+  /** Explicit overview fits the complete selected deck and cab; no actor moves. */
+  showVillageOverview() {
+    this.resetMapView(); this.villageOverview = true; this.cameraFocusRequested = true; this.render();
   }
   setSuspended(value: boolean) {
     this.suspended = value;
@@ -460,7 +472,7 @@ export class Scene {
     else this.visibility();
   }
   setZone(zone: 'home' | 'grove', recenter = false) {
-    if (!this.action && zone !== this.zone) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zone = zone; }
+    if (!this.action && zone !== this.zone) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zone = zone; this.villageOverview = false; }
     if (recenter) this.resetMapView();
   }
   /** Resolves only after the visible walk, work and return have finished. */
@@ -932,7 +944,7 @@ export class Scene {
   private updateCamera() {
     const { level, left, end, back, front } = this.deckBounds();
     const homeX = 480 - (level - 1) * 12, homeY = 350 + (level - 1) * 6-(this.activeFloor-1)*176;
-    const showFarm = this.activeFloor===1&&(this.farmFocus || this.farmMode !== null);
+    const showFarm = !this.villageOverview&&this.activeFloor===1&&(this.farmFocus || this.farmMode !== null);
     const farmCount = this.state?.plots.length ?? 3;
     const visibleFarmCount = Math.min(farmCount + 1, this.state ? getFarmCapacity(this.state) : 3, FARM_POSITIONS.length);
     const farmPoints = FARM_POSITIONS.slice(0, visibleFarmCount).map(([u, v]) => this.p(u + 35, v + 36, 112));
@@ -981,17 +993,23 @@ export class Scene {
       // Expanded villages are explored by panning. Keep the resident's garden in
       // the home view rather than pulling the camera toward a distant truck cab.
       const gardenHomeX = Math.min(center[0], farmCenter[0] + (level > 1 ? 72 : 0));
-      const targetX = this.constructionMode ? center[0] : selectedPoint?.[0] ?? gardenHomeX;
-      const targetY = this.constructionMode ? center[1] : selectedPoint ? selectedPoint[1] - 52 : center[1];
-      const desiredZoom = facility ? 1.35 : 1;
+      const targetX = this.villageOverview || this.constructionMode ? center[0] : selectedPoint?.[0] ?? gardenHomeX;
+      const targetY = this.villageOverview || this.constructionMode ? center[1] : selectedPoint ? selectedPoint[1] - 52 : center[1];
+      const desiredZoom = this.villageOverview ? 1 : facility ? 1.35 : 1;
       target = { x: targetX, y: targetY, zoom: desiredZoom };
     }
-    // A whole-deck fit made an eighteen-bed village shrink to finger-inaccessible
-    // miniatures. At phone widths the home view now keeps a readable village scale;
-    // the same drag/pinch camera exposes the rest of the expanded deck.
-    if (this.zone === 'home' && !showFarm) {
-      viewWidth = Math.min(viewWidth, Math.max(700, this.width / 1.05));
-      viewHeight = Math.min(viewHeight, viewWidth * availableHeight / this.width);
+    // Normal home composition follows the inhabited village, including the real
+    // roof and production bubbles, rather than centring a vast empty deck/cab.
+    // An explicit overview and an expansion still show the full built platform.
+    if (this.state && this.zone === 'home' && !showFarm && !this.action && !this.villageOverview) {
+      let bounds = getVillageContentBounds(this.state, this.activeFloor);
+      const selected = this.selectedFacilityId === null ? undefined : getSettlement(this.state).buildings.find(b=>b.id===this.selectedFacilityId);
+      if (selected) {
+        const [u,v]=SETTLEMENT_SLOTS[getSlotLocalIndex(selected.slot)],[x,y]=this.rawP(u,v,95+(this.activeFloor-1)*176),[w,h]=FACILITY_SIZE[selected.type];
+        bounds={left:x-w/2-72,top:y-h-52,right:x+w/2+72,bottom:y+72};
+      }
+      const village=fitVillageCamera(bounds,availableWidth,availableHeight);
+      viewWidth=village.width;viewHeight=village.height;target={x:village.x,y:village.y,zoom:village.zoom};
     }
     const planning = this.planningBounds();
     if (planning) {
@@ -1066,7 +1084,7 @@ export class Scene {
       this.ctx.fillStyle = sky; this.ctx.fillRect(-1000, -600, 3000, 2000);
     }
     // A quiet road separates the playable wooden village from its backdrop.
-    this.ctx.fillStyle = '#e8ead247'; this.ctx.fillRect(-1000, -600, 3000, 2000);
+    this.ctx.fillStyle = '#e8ead267'; this.ctx.fillRect(left, top, right-left, bottom-top);
     const night=skyNightAmount(this.state?.minutes??660);
     if(night>0){this.ctx.fillStyle=`rgba(19,31,57,${night*.58})`;this.ctx.fillRect(left,top,right-left,bottom-top);}
     const canvasBounds=this.canvas.getBoundingClientRect();
@@ -1133,12 +1151,14 @@ export class Scene {
     this.renderFloor=this.activeFloor;
     this.box(left, back, 78, end - left, deckFront - back, 15, '#e4c28c', '#bc9669', '#caab78', '#655037');
     const deck: [Point, Point, Point, Point] = [this.p(left + 1, back + 1, 94), this.p(end, back + 1, 94), this.p(end, deckFront, 94), this.p(left + 1, deckFront, 94)];
-    this.poly(deck, '#d8ab64', '', 0); paintWorldQuad(this.ctx, 'wood', deck, -.025); this.poly(deck, '', '#715135', 1.6);
+    this.poly(deck, '#d8ab64', '', 0); paintWorldQuad(this.ctx, 'wood', deck, -.025);
+    // Keep the original painted material, with softer grain under small buildings.
+    this.poly(deck, '#edd3a547', '', 0); this.poly(deck, '', '#715135', 1.6);
     for (let v = back + 24; v < deckFront; v += 24) {
-      this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#72533155', .9);
-      this.line([this.p(left + 1, v + 1, 94), this.p(end, v + 1, 94)], '#ffe1a34d', .7);
+      this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#72533138', .8);
+      this.line([this.p(left + 1, v + 1, 94), this.p(end, v + 1, 94)], '#ffe1a32e', .6);
     }
-    for (let v = 141; v < deckFront; v += 36) this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#80613c', 1.5);
+    for (let v = 141; v < deckFront; v += 36) this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#80613c72', 1);
     drawTruckFloor(this.ctx,{...floorArt,pass:'back'});
     this.expansionDeck();
     this.bunting(); this.settlement(); this.house();if(this.activeFloor===1)this.farm();
@@ -1176,8 +1196,11 @@ export class Scene {
     this.ctx.restore();
     const point = this.p((next.left + next.end) / 2, (next.back + current.back) / 2, 103);
     const pixel = 1 / this.scale;
-    this.round(point[0] - 58 * pixel, point[1] - 12 * pixel, 116 * pixel, 24 * pixel, 10 * pixel, '#e7f4cded', '#91af74');
-    this.label(`확장 후 데크 Lv.${this.expansionPreview}`, point[0], point[1] + 4 * pixel, 10 * pixel, '#577244', 800);
+    const addedSlots=Math.min(16,this.expansionPreview*2)-Math.min(16,(this.state?.deckLevel??1)*2);
+    const addedFarm=getFarmCapacity({deckLevel:this.expansionPreview})-getFarmCapacity({deckLevel:this.state?.deckLevel??1});
+    this.round(point[0] - 70 * pixel, point[1] - 20 * pixel, 140 * pixel, 41 * pixel, 10 * pixel, '#edf5d6f5', '#91af74');
+    this.label(`새 데크 · Lv.${this.expansionPreview}`, point[0], point[1] - 4 * pixel, 11 * pixel, '#48683c', 800);
+    this.label(`시설 +${addedSlots}자리 · 밭 최대 +${addedFarm}`, point[0], point[1] + 12 * pixel, 9 * pixel, '#667c50', 600);
   }
 
   private wheel(u: number, v: number) {
@@ -1215,6 +1238,7 @@ export class Scene {
   private settlement() {
     const state = this.state, buildings = state ? getSettlement(state).buildings : [];
     const selectedType = this.constructionMode;
+    const nextBuildSlot = state ? getFloorSlots(state,this.activeFloor).find(slot=>isFacilitySlotAvailable(state,slot)) : 0;
     for (let local = 0; local < SETTLEMENT_SLOTS.length; local++) {
       const slot=(this.activeFloor-1)*16+local,open=this.state?getFloorSlots(this.state,this.activeFloor).includes(slot):local<2;
       const previewSlot = this.expansionPreview !== null && local < this.expansionPreview * 2;
@@ -1232,8 +1256,15 @@ export class Scene {
       this.ctx.restore();
       if (!building) {
         const badgeSize = 12 / this.scale;
-        this.label(open ? '+' : '⌑', point[0], point[1] - 2, badgeSize, open ? '#69895c' : '#74856e', 500);
-        if (selectedType || this.planningMode) this.label(open ? `${local + 1}번 자리` : `데크 Lv.${Math.floor(local / 2) + 1}`, point[0], point[1] + 12 / this.scale, 10 / this.scale, open ? '#705d3b' : '#60735b', 600);
+        if(!selectedType&&!this.planningMode&&slot===nextBuildSlot){
+          const pixel=1/this.scale;
+          this.round(point[0]-22*pixel,point[1]-22*pixel,44*pixel,44*pixel,12*pixel,'#faf6dcef','#a2b985');
+          this.label('+',point[0],point[1]-2*pixel,25*pixel,'#63864f',700);
+          this.label('건설',point[0],point[1]+15*pixel,9*pixel,'#557348',700);
+        }else{
+          this.label(open ? '+' : '⌑', point[0], point[1] - 2, badgeSize, open ? '#69895c' : '#74856e', 500);
+          if (selectedType || this.planningMode) this.label(open ? `${local + 1}번 자리` : `데크 Lv.${Math.floor(local / 2) + 1}`, point[0], point[1] + 12 / this.scale, 10 / this.scale, open ? '#705d3b' : '#60735b', 600);
+        }
       }
       this.hits.push({ kind: 'build-slot', x: point[0], y: point[1], radius: selectedType || this.planningMode ? 57 : 22 / this.scale, plotId: slot });
       if (selected && selectedType && valid) {

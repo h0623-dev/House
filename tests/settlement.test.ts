@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, createGame, loadGame, performAction, SAVE_KEY, saveGame, tick, type GameState, type Resource, type SaveStorage } from '../src/game.ts';
-import { BUILDINGS, BUILDING_TYPES, buildFacility, collectProduction, getBuiltTypes, getUpgradedFacilityRecord, getFacilityHistory, getHighestFacilityLevel, validateFacilityHistory, getProductionCost, getProductionMinutes, getSettlement, getSettlementGoals, getUnlockedSlots, getUpgradeCost, moveFacility, replaceFacility, startProduction, upgradeFacility, validateSettlement, type BuildingType } from '../src/settlement.ts';
+import { BUILDINGS, BUILDING_TYPES, buildFacility, buildTruckFloor, collectProduction, collectAndRestartProduction, getBuiltTypes, getFloorSlots, getUpgradedFacilityRecord, getFacilityHistory, getHighestFacilityLevel, validateFacilityHistory, getProductionCost, getProductionMinutes, getSettlement, getSettlementGoals, getUnlockedSlots, getUpgradeCost, isFacilitySlotAvailable, moveFacility, replaceFacility, startProduction, upgradeFacility, validateSettlement, type BuildingType } from '../src/settlement.ts';
 import { GAME_MINUTES_PER_SECOND } from '../src/game-time.ts';
 
 function memoryStorage(): SaveStorage {
@@ -557,4 +557,110 @@ test('sixteen paid slots and fifth-level facilities round trip while lifetime ma
   const contradiction = structuredClone(state);
   contradiction.facilityHistory!.highestFacilityLevel = 4;
   assert.equal(saveGame(contradiction, memoryStorage()), false, 'a recorded maximum cannot be below a current facility');
+});
+
+test('explicit collect-and-restart pays one new batch and rejects duplicate collection before its real deadline', () => {
+  const running = startProduction(withBuilding(), 1).state;
+  const state = advanceTime(running, getProductionMinutes(running.settlement!.buildings[0]));
+  const before = JSON.stringify(state), result = collectAndRestartProduction(state, 1);
+  assert.equal(result.ok, true); assert.equal(result.restarted, true);
+  assert.equal(result.state.resources.water, state.resources.water + 4);
+  assert.equal(result.state.settlement!.stats!.collections, state.settlement!.stats!.collections + 1);
+  assert.equal(result.state.settlement!.stats!.productions, state.settlement!.stats!.productions + 1);
+  const batch = result.state.settlement!.buildings[0];
+  assert.equal(batch.startedAt, state.totalMinutes);
+  assert.equal(batch.readyAt, state.totalMinutes + getProductionMinutes(batch));
+  assert.equal(JSON.stringify(state), before);
+  const duplicate = collectAndRestartProduction(result.state, 1);
+  assert.equal(duplicate.ok, false); assert.equal(duplicate.restarted, false);
+  assert.equal(duplicate.state, result.state);
+});
+
+test('restarting a leveled legacy batch preserves its original clock until ready and consumes the next recipe exactly once', () => {
+  let state = withBuildingLevel('kitchen', 3);
+  state = startProduction(state, 1).state;
+  state.settlement!.buildings[0].readyAt = state.settlement!.buildings[0].startedAt! + BUILDINGS.kitchen.minutes;
+  const oldClock = { ...state.settlement!.buildings[0] }, before = JSON.stringify(state);
+  const early = collectAndRestartProduction(state, 1);
+  assert.equal(early.ok, false); assert.equal(early.state, state);
+  assert.deepEqual(state.settlement!.buildings[0], oldClock);
+  assert.equal(JSON.stringify(state), before);
+  state = advanceTime(state, BUILDINGS.kitchen.minutes);
+  const result = collectAndRestartProduction(state, 1);
+  assert.equal(result.ok, true); assert.equal(result.restarted, true);
+  assert.equal(result.state.resources.food, state.resources.food + 15);
+  assert.equal(result.state.resources.water, state.resources.water - 6);
+  assert.equal(result.state.settlement!.buildings[0].readyAt, state.totalMinutes + getProductionMinutes(oldClock));
+  assert.deepEqual(result.state.seedInventory, state.seedInventory);
+  assert.deepEqual(result.state.growthQuests, state.growthQuests);
+  assert.deepEqual(result.state.companions, state.companions);
+});
+
+test('insufficient next inputs keep earned output without charging materials or inventing another production', () => {
+  let state = withBuilding('petHouse');
+  state.resources.food = 1;
+  state = startProduction(state, 1).state;
+  state = advanceTime(state, BUILDINGS.petHouse.minutes);
+  const before = JSON.stringify(state), result = collectAndRestartProduction(state, 1);
+  assert.equal(result.ok, true); assert.equal(result.restarted, false);
+  assert.deepEqual(result.missing, { food: 1 });
+  assert.equal(result.state.resources.wood, state.resources.wood + 6);
+  assert.equal(result.state.resources.food, 0);
+  assert.equal(result.state.settlement!.stats!.collections, state.settlement!.stats!.collections + 1);
+  assert.equal(result.state.settlement!.stats!.productions, state.settlement!.stats!.productions);
+  assert.equal(result.state.settlement!.buildings[0].startedAt, null);
+  assert.equal(result.state.settlement!.buildings[0].readyAt, null);
+  assert.equal(JSON.stringify(state), before);
+  const duplicate = collectAndRestartProduction(result.state, 1);
+  assert.equal(duplicate.ok, false); assert.equal(duplicate.state, result.state);
+});
+
+test('a full production counter cannot prevent a valid collection and a full output store cannot replay one', () => {
+  let state = startProduction(withBuilding(), 1).state;
+  state = advanceTime(state, BUILDINGS.waterworks.minutes);
+  state.settlement!.stats!.productions = 100_000_000;
+  const result = collectAndRestartProduction(state, 1);
+  assert.equal(result.ok, true); assert.equal(result.restarted, false);
+  assert.equal(result.state.resources.water, state.resources.water + 4);
+  assert.equal(result.state.settlement!.buildings[0].readyAt, null);
+  const full = { ...state, resources: { ...state.resources, water: 100_000_000 } };
+  const refused = collectAndRestartProduction(full, 1);
+  assert.equal(refused.ok, false); assert.equal(refused.restarted, false); assert.equal(refused.state, full);
+});
+
+test('ordinary collection continues to leave the facility idle without opting into another paid batch', () => {
+  let state = startProduction(withBuilding('kitchen'), 1).state;
+  state = advanceTime(state, BUILDINGS.kitchen.minutes);
+  const result = collectProduction(state, 1);
+  assert.equal(result.ok, true);
+  assert.equal(result.state.resources.water, state.resources.water);
+  assert.equal(result.state.settlement!.buildings[0].readyAt, null);
+  assert.equal(result.state.settlement!.stats!.productions, state.settlement!.stats!.productions);
+});
+
+test('collect-and-restart supports upper sidecar IDs without moving paid floors or losing any other saved record', () => {
+  let state = buildTruckFloor(fundedGame(4)).state;
+  const slots = [...getFloorSlots(state, 1), ...getFloorSlots(state, 2)];
+  for (let index = 0; index < 9; index++) {
+    const slot = slots.find(candidate => isFacilitySlotAvailable(state, candidate));
+    assert.notEqual(slot, undefined);
+    const result = buildFacility(state, 'waterworks', slot!);
+    assert.equal(result.ok, true, result.message); state = result.state;
+  }
+  const upper = getSettlement(state).buildings.find(building => building.id === 17)!;
+  assert.ok(upper);
+  state = startProduction(state, upper.id).state;
+  state = advanceTime(state, BUILDINGS.waterworks.minutes);
+  const before = JSON.stringify(state), result = collectAndRestartProduction(state, upper.id);
+  assert.equal(result.ok, true); assert.equal(result.restarted, true);
+  assert.equal(getSettlement(result.state).buildings.find(building => building.id === 17)!.slot, upper.slot);
+  assert.equal(result.state.truckLayout!.floors, state.truckLayout!.floors);
+  assert.deepEqual(result.state.truckLayout!.placements, state.truckLayout!.placements);
+  assert.deepEqual(result.state.truckLayout!.home, state.truckLayout!.home);
+  assert.deepEqual(result.state.seedInventory, state.seedInventory);
+  assert.deepEqual(result.state.growthQuests, state.growthQuests);
+  assert.deepEqual(result.state.companions, state.companions);
+  assert.equal(JSON.stringify(state), before);
+  const storage = memoryStorage(); assert.equal(saveGame(result.state, storage), true);
+  assert.deepEqual(getSettlement(loadGame(storage)!), getSettlement(result.state));
 });

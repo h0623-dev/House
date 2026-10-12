@@ -214,6 +214,24 @@ async function cameraReset() {
  if(await page.locator('[data-camera-toggle]').getAttribute('aria-expanded')!=='true')await touch(page.locator('[data-camera-toggle]'));
  await touch(page.locator('[data-map-reset]'));await page.waitForTimeout(1000);await touch(page.locator('[data-camera-toggle]'));
 }
+async function revealPortraitRoad(label) {
+ // The living village is the default view. Use the player's overview control
+ // to expose road terrain, keeping the original target clearance and timing.
+ const before=await movement(),g=await geometry(),saveBefore=await saved(),actionBefore=await action(),inputs=[];
+ const cameraWasOpen=await page.locator('[data-camera-toggle]').getAttribute('aria-expanded')==='true';
+ if(!cameraWasOpen)inputs.push({selector:'[data-camera-toggle]',...await touch(page.locator('[data-camera-toggle]'))});
+ inputs.push({selector:'[data-map-overview]',...await touch(page.locator('[data-map-overview]'))});
+ if(!cameraWasOpen)inputs.push({selector:'[data-camera-toggle]',...await touch(page.locator('[data-camera-toggle]'))});
+ const cameraSettling=await cameraSettled(),after=await movement(),afterGeometry=await geometry(),saveAfter=await saved(),actionAfter=await action();
+ assert.equal(before.moving,false,'portrait road overview begins from stationary physical feet');
+ assert.equal(after.moving,false,'portrait road overview does not start walking');
+ assert.deepEqual(after.body,before.body,'portrait road overview retains the full physical body');
+ assert.deepEqual(after.target,before.target,'portrait road overview keeps the walk destination');
+ assert.equal(actionBefore.kind,null);assert.equal(actionAfter.kind,null,'portrait road overview does not perform resource work');
+ assert.deepEqual(saveAfter,saveBefore,'portrait road overview changes no saved field, including the save timestamp');
+ assert.equal(afterGeometry.zone,'home','the actual overview button exposes the road from the home view');
+ cameraPreparations.push({label,input:'Actual visible camera button, whole-village overview and original fold state',inputs,before,after,g,afterGeometry,actionBefore,actionAfter,saveBefore,saveAfter,cameraSettling});
+}
 async function revealLandscapeRoad() {
  // The landscape home camera fits the deck; the visible grove navigation
  // exposes road terrain without changing the hero's feet or saved progress.
@@ -396,6 +414,7 @@ try {
  for(const[width,height]of(landscapeDiagnostic?[[844,390]]:diagnosticOnly?[[360,740]]:[[360,740],[390,844],[844,390]])){
   await begin(width,height);if(diagnosticOnly&&!landscapeDiagnostic)await idleWalkTurnPets(width);await walk(`empty-deck-${width}`,'deck');await retarget(`retarget-current-feet-${width}`);await shot(`reached-deck-${width}`);
   if(width>height){await gesture('landscape-pan-to-visible-road',false,false,{dx:0,dy:-125});await revealLandscapeRoad();}
+  else await revealPortraitRoad(`portrait-overview-before-stairs-${width}`);
   const down=await walk(`deck-to-road-${width}`,'road');assert.ok(down.frames.some(f=>f.movement.climbing==='down'),'the road journey visibly descends the stairs');
   const up=await walk(`road-to-deck-${width}`,'deck');assert.ok(up.frames.some(f=>f.movement.climbing==='up'),'the deck journey visibly ascends the stairs');await ladderRetarget(`retarget-midway-on-ladder-${width}`);
   await gesture(`drag-does-not-walk-${width}`);await cameraReset();await gesture(`cancelled-drag-does-not-walk-${width}`,false,true);await cameraReset();await gesture(`pinch-does-not-walk-${width}`,true);await cameraReset();await handModeTap(`hand-mode-tap-does-not-walk-${width}`);
@@ -404,17 +423,18 @@ try {
   console.log(`PASS focused viewport ${width}×${height}: natural walks, ladder retarget and camera gestures.`);
   if(width===390){
    // Start another journey and open the visible menu while feet are moving.
+   await revealPortraitRoad('portrait-overview-before-menu-stop-390');
    const destination=await chooseGround('road');await tapWorld(destination.screen);await page.waitForFunction(()=>JSON.parse(document.querySelector('#world').dataset.freeMovement).moving);const beforeMenu=await movement();await menu();const stopped=await movement();assert.equal(stopped.moving,false);assert.equal(stopped.enabled,false);await page.waitForTimeout(300);assert.ok(distance((await movement()).position,stopped.position)<.1,'a menu freezes the current feet rather than moving them home');modalStops.push({beforeMenu,stopped,after:await movement()});await closeModal();
    await walk('manual-position-before-farm','deck');await touch(page.locator('[data-nav="farm"]'));
    const harvested=await observeChore('farm-from-manual-position',()=>actualHit('farm'),'harvest');assert.equal(harvested.saveAfter.stats.harvests,harvested.saveBefore.stats.harvests+1);assert.equal(harvested.saveAfter.resources.food,harvested.saveBefore.resources.food+4);await home();
-   await walk('manual-position-before-chop','road');await touch(page.locator('[data-nav="farm"]'));const chopped=await observeChore('chop-from-manual-road-position',()=>touch(page.locator('[data-quick="chop"]')),'chop');assert.equal(chopped.saveAfter.stats.chops,chopped.saveBefore.stats.chops+1);assert.equal(chopped.saveAfter.resources.wood,chopped.saveBefore.resources.wood+18);await home();
+   await revealPortraitRoad('portrait-overview-before-manual-chop-390');await walk('manual-position-before-chop','road');await touch(page.locator('[data-nav="farm"]'));const chopped=await observeChore('chop-from-manual-road-position',()=>touch(page.locator('[data-quick="chop"]')),'chop');assert.equal(chopped.saveAfter.stats.chops,chopped.saveBefore.stats.chops+1);assert.equal(chopped.saveAfter.resources.wood,chopped.saveBefore.resources.wood+18);await home();
    await walk('manual-position-before-building','deck');const beforeBuild=await saved();await touch(page.locator('[data-nav="build"]'));await touch(page.locator('[data-build-type="waterworks"]'));await page.waitForTimeout(650);
    await actualHit('build-slot');assert.equal(await page.locator('[data-construction-confirm]').isDisabled(),false);assert.equal((await movement()).moving,false);await touch(page.locator('[data-construction-cancel]'));assert.deepEqual((await saved()).resources,beforeBuild.resources);await home();
    await touch(page.locator('[data-nav="build"]'));await touch(page.locator('[data-build-type="waterworks"]'));await page.waitForTimeout(650);await selectClearConstruction();await observeChore('construction-from-manual-position',()=>confirmClearConstruction(),'build');
    const built=await saved();assert.equal(built.resources.wood,beforeBuild.resources.wood-12);assert.equal(built.resources.scrap,beforeBuild.resources.scrap-4);assert.equal(built.settlement.buildings.length,1);await touch(page.locator('[data-facility-close]'));await actualHit('facility');assert.equal(await page.locator('#facility-sheet[data-facility="1"]').isVisible(),true);assert.equal((await movement()).moving,false);await touch(page.locator('[data-facility-close]'));await actualHit('facility-start');assert.equal((await saved()).settlement.stats.productions,1);assert.equal((await movement()).moving,false);assert.equal(await page.locator('#facility-sheet').isVisible(),false,'the actual in-game production bubble starts production without reopening the sheet');await home();
    await walk('deliberate-occupied-footprint-detour','deck',{crossObstacle:true});
    await actualHit('pet');assert.equal(await page.locator('#modal-root').isVisible(),true);assert.match(await page.locator('#modal-root').innerText(),/보리/);assert.equal((await movement()).moving,false);await closeModal();
-   const huntDestination=await chooseGround('road');await tapWorld(huntDestination.screen);await page.waitForFunction(()=>JSON.parse(document.querySelector('#world').dataset.freeMovement).moving);await touch(page.locator('[data-nav="hunt"]'));const huntStop=await movement();assert.equal(huntStop.moving,false);assert.equal(huntStop.enabled,false);await touch(page.locator('[data-start-hunt]'));await page.locator('.battle-screen').waitFor();assert.equal((await movement()).moving,false);await touch(page.locator('[data-battle="retreat"]'));await touch(page.locator('[data-battle="confirm-retreat"]'));await page.locator('[data-battle="finish"]').waitFor();await touch(page.locator('[data-battle="finish"]'));await page.locator('.battle-screen').waitFor({state:'detached'});assert.ok(distance((await movement()).position,huntStop.position)<.1,'battle entry and return retain the cancelled physical feet');modalStops.push({scenario:'battle',stopped:huntStop,after:await movement()});await home();
+   await revealPortraitRoad('portrait-overview-before-battle-stop-390');const huntDestination=await chooseGround('road');await tapWorld(huntDestination.screen);await page.waitForFunction(()=>JSON.parse(document.querySelector('#world').dataset.freeMovement).moving);await touch(page.locator('[data-nav="hunt"]'));const huntStop=await movement();assert.equal(huntStop.moving,false);assert.equal(huntStop.enabled,false);await touch(page.locator('[data-start-hunt]'));await page.locator('.battle-screen').waitFor();assert.equal((await movement()).moving,false);await touch(page.locator('[data-battle="retreat"]'));await touch(page.locator('[data-battle="confirm-retreat"]'));await page.locator('[data-battle="finish"]').waitFor();await touch(page.locator('[data-battle="finish"]'));await page.locator('.battle-screen').waitFor({state:'detached'});assert.ok(distance((await movement()).position,huntStop.position)<.1,'battle entry and return retain the cancelled physical feet');modalStops.push({scenario:'battle',stopped:huntStop,after:await movement()});await home();
    await idleWalkTurnPets(width);await shot('natural-pets-and-free-home');
    const beforeOffline=await saved();const supported=await page.evaluate(()=>Boolean(navigator.serviceWorker));assert.equal(supported,true);
    await page.waitForFunction(()=>navigator.serviceWorker.getRegistration().then(r=>r?.active?.state==='activated'),null,{timeout:30000});await context.setOffline(true);await page.reload({waitUntil:'domcontentloaded'});await page.locator('#resident-name').getByText(beforeOffline.name,{exact:true}).waitFor();await pauseWorld();

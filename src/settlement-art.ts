@@ -1,5 +1,6 @@
 import atlasUrl from './assets/settlement-buildings.png';
 import type { BuildingType } from './settlement';
+import { drawFacilityUpgradeDetails, facilityUpgradeDetailsSvg } from './facility-upgrade-art';
 
 /** Original facilities, measured independently so adjacent sprites never leak. */
 export const FACILITY_ART_URL = atlasUrl;
@@ -22,6 +23,7 @@ export function drawFacility(c:CanvasRenderingContext2D,type:BuildingType,x:numb
  const f=FACILITY_FRAMES[type],scale=Math.min(width/f.width,height/f.height),w=f.width*scale,h=f.height*scale;
  c.save();c.globalAlpha*=alpha;c.imageSmoothingEnabled=true;
  c.drawImage(art,f.x,f.y,f.width,f.height,x-w/2,y-h,w,h);
+ drawFacilityUpgradeDetails(c,type,level,x-w/2,y-h,w,h);
  if(level>=4){
   const flagX=x+w*.23,flagY=y-h*.89,size=Math.max(8,w*.17);
   c.strokeStyle='#7c6541';c.lineWidth=Math.max(1,w*.025);c.beginPath();c.moveTo(flagX,flagY+size*1.9);c.lineTo(flagX,flagY);c.stroke();
@@ -35,5 +37,6 @@ export function facilityIcon(type:BuildingType,level=1):string{
  const f=FACILITY_FRAMES[type];
  const flagX=f.x+f.width*.68,flagY=f.y+f.height*.04,size=f.width*.14;
  const flag=level>=4?`<path d="M${flagX} ${flagY+size*1.9}V${flagY}" stroke="#7c6541" stroke-width="${size*.1}"/><path d="M${flagX} ${flagY}l${size*1.5} ${size*.1}l${-size*.3} ${size*.5}l${size*.3} ${size*.5}l${-size*1.5} ${-size*.1}z" fill="${level>=5?'#4b8392':'#6f9158'}" stroke="#f3df9e" stroke-width="${size*.08}"/><text x="${flagX+size*.6}" y="${flagY+size*.57}" text-anchor="middle" dominant-baseline="middle" font-family="sans-serif" font-size="${size*.8}" font-weight="700" fill="#fff4cf">${level}</text>`:'';
- return `<svg class="facility-art" data-facility-art-level="${level}" viewBox="${f.x} ${f.y} ${f.width} ${f.height}" aria-hidden="true" focusable="false"><image href="${atlasUrl}" width="1536" height="1024"/>${flag}</svg>`;
+ const details=level>=2?`<g transform="translate(${f.x} ${f.y}) scale(${f.width/100} ${f.height/100})">${facilityUpgradeDetailsSvg(type,level)}</g>`:'';
+ return `<svg class="facility-art" data-facility-art-level="${level}" viewBox="${f.x} ${f.y} ${f.width} ${f.height}" aria-hidden="true" focusable="false"><image href="${atlasUrl}" width="1536" height="1024"/>${details}${flag}</svg>`;
 }

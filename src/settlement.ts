@@ -399,6 +399,31 @@ export function collectProduction(state: GameState, id: number): SettlementResul
   next.settlement!.stats!.collections += 1;
   return success(next, `${definition.name}에서 ${labels[definition.yieldResource]} +${amount}을 받았어요. 다음 생산을 시작할 수 있어요!`);
 }
+export interface ProductionRestartResult extends SettlementResult {
+  /** A new batch starts only after the player explicitly chooses this action. */
+  restarted: boolean;
+  /** Missing input amounts after keeping the successfully collected output. */
+  missing?: Partial<Record<Resource, number>>;
+}
+/** Collect one earned batch, then pay for one new batch; never replay elapsed production. */
+export function collectAndRestartProduction(state: GameState, id: number): ProductionRestartResult {
+  const collected = collectProduction(state, id);
+  if (!collected.ok) return { ...collected, restarted: false };
+  const building = getSettlement(collected.state).buildings.find(item => item.id === id)!;
+  const missing: Partial<Record<Resource, number>> = {};
+  for (const [resource, amount] of Object.entries(getProductionCost(building))) {
+    const shortage = amount! - collected.state.resources[resource as Resource];
+    if (shortage > 0) missing[resource as Resource] = shortage;
+  }
+  const restarted = startProduction(collected.state, id);
+  if (!restarted.ok) {
+    const message = `${collected.message} 다음 생산을 시작하지 못했어요. ${restarted.message}`;
+    return { ...success(collected.state, message), restarted: false,
+      ...(Object.keys(missing).length ? { missing } : {}) };
+  }
+  return { ...restarted, restarted: true,
+    message: `${BUILDINGS[building.type].name} 물자를 받고 다음 생산을 시작했어요. ${formatProductionDuration(building)} 뒤 다시 받을 수 있어요.` };
+}
 export interface SettlementGoal { id: string; title: string; description: string; current: number; target: number; complete: boolean }
 export function getSettlementGoals(state: GameState): SettlementGoal[] {
   const settlement = getSettlement(state), buildings = settlement.buildings;

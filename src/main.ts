@@ -9,11 +9,13 @@ import './village.css';
 import { createGame, performAction, tick, applyOfflineProgress, saveGame, loadGame, expansionCost, farmExpansionCost, getFarmCapacity, questList, getCropProgress, resourceLabels, MAX_DECK_LEVEL, beginHunt, finishHunt, cancelHunt, setCompanionTeam, type Action, type Gender, type Resource, type CropId, CROPS, CROP_IDS, getSeedInventory, getSeedCount, getPlotCropId } from './game';
 import { getVillageOrder, fulfillVillageOrder } from './village-orders';
 import { Scene } from './scene';
-import { BUILDINGS, BUILDING_TYPES, getSettlement, getUnlockedSlots, getAllUnlockedSlots, getUpgradeCost, buildFacility, moveFacility, replaceFacility, upgradeFacility, startProduction, collectProduction, getBuiltTypes, buildTruckFloor, moveHome, isFacilitySlotAvailable, isHomeSlotAvailable, type BuildingType } from './settlement';
+import { BUILDINGS, BUILDING_TYPES, getSettlement, getUnlockedSlots, getAllUnlockedSlots, getUpgradeCost, buildFacility, moveFacility, replaceFacility, upgradeFacility, startProduction, collectProduction, collectAndRestartProduction, getBuiltTypes, buildTruckFloor, moveHome, isFacilitySlotAvailable, isHomeSlotAvailable, type BuildingType } from './settlement';
 import { getTruckFloorCount, getTruckFloorCost, getFloorSlots, getHomeLocation, getHomeSlots, getSlotFloor, getSlotLocalIndex, type TruckFloor } from './truck-layout';
 import { buildingCatalog, facilitySheet, facilityUpgradePreview, productionState } from './settlement-ui';
 import { GROWTH_CHAPTERS, getGrowthQuests, getActiveGrowthQuest, claimGrowthQuest } from './growth-quests';
 import { renderGrowthQuestBoard, updateGrowthQuestBoard } from './growth-quests-ui';
+import { getVillageHub, type VillageTarget, type VillageAdvice } from './village-guide';
+import { renderVillageHub, updateVillageHub, renderVillageManagement, updateVillageManagement } from './village-hub';
 import { facilityIcon } from './settlement-art';
 import { BattleView } from './battle-view';
 import { STAGE_NAMES, type BattleResult } from './battle';
@@ -25,6 +27,7 @@ import './companions.css';
 import './planning.css';
 import './truck-floors.css';
 import './pwa.css';
+import './village-hub.css';
 import { isAppleMobileDevice, isHomeScreenGame, showInstallHelp, hasInstallPrompt, installHomeScreenGame, homeScreenInstructions } from './pwa-install';
 import { BATTLE_ART_URLS } from './battle-art';
 import { cropIcon } from './crop-art';
@@ -86,7 +89,7 @@ const escape=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const navItems=[['home','마을','home'],['hammer','건설','build'],['seeds','농사','farm'],['map','탐험','hunt'],['bag','창고','bag']];
 const quickItems=[['harvest','food','수확'],['water','water','물 주기'],['plant','seeds','씨앗 심기'],['chop','axe','벌목'],['gather','map','탐색'],['rest','bed','휴식']] as const;
 app.innerHTML=`
- <div class="shell game-shell">
+ <div class="shell game-shell village-shell">
   <header class="topbar game-topbar">
    <button class="profile-button" data-open="character" aria-label="캐릭터 변경" id="profile"></button>
    <div class="survivor-name"><strong id="resident-name"></strong><span><b id="player-level">Lv.1</b><i>·</i> DAY <b id="day">01</b></span></div>
@@ -108,8 +111,9 @@ app.innerHTML=`
     <button class="update-badge" id="update-badge" hidden data-update-notice aria-live="polite"><span>${icon('download')}</span><div><strong></strong><small></small></div></button>
     <button class="game-tool village-order-tool" data-open="orders" aria-label="마을 의뢰"><span>${icon('bag')}<b data-order-ready hidden>!</b></span><small>마을 의뢰</small></button>
     <button class="game-tool camera-tool" data-camera-toggle aria-expanded="false" aria-label="지도 조작 펼치기"><span>${icon('move')}</span><small>지도</small></button>
-    <div class="map-controls" role="group" aria-label="지도 확대와 축소"><button data-map-zoom="1" aria-label="지도 확대"><span>+</span><small>확대</small></button><button data-map-reset aria-label="지도 기본 크기로 보기"><strong data-map-percent>100%</strong><small>기본 보기</small></button><button data-map-zoom="-1" aria-label="지도 축소"><span>−</span><small>축소</small></button><button data-farm-toggle aria-label="농사 도구 펼치기"><span>${icon('seeds')}</span><small>농사 도구</small></button></div>
+    <div class="map-controls" role="group" aria-label="지도 확대와 축소"><button data-map-zoom="1" aria-label="지도 확대"><span>+</span><small>확대</small></button><button data-map-reset aria-label="지도 기본 크기로 보기"><strong data-map-percent>100%</strong><small>기본 보기</small></button><button data-map-zoom="-1" aria-label="지도 축소"><span>−</span><small>축소</small></button><button data-map-overview aria-label="트럭 마을 전체 보기"><span>${icon('map')}</span><small>전체 보기</small></button><button data-farm-toggle aria-label="농사 도구 펼치기"><span>${icon('seeds')}</span><small>농사 도구</small></button></div>
     <button class="settlement-objective" id="settlement-objective" data-next-goal aria-label="현재 성장 목표 진행"><span>${icon('flag')}</span><div><small id="objective-chapter">도로 위 우리 마을</small><strong id="objective-title">첫 목표를 확인해 보세요</strong><p id="objective-detail">작은 목표를 따라 우리 마을을 키워요</p><div class="objective-progress" aria-hidden="true"><i></i></div></div><b class="objective-cta" data-objective-cta>하러 가기</b></button>
+    <div class="village-hub" id="village-hub">${renderVillageHub(getVillageHub(state))}</div>
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
     <div class="chore-status" hidden role="status" aria-live="polite"></div>
@@ -202,13 +206,16 @@ function setFarmTray(open:boolean){
  toggle.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-label',open?'농사 도구 접기':'농사 도구 펼치기');
  toggle.querySelector('small')!.textContent=open?'도구 접기':'농사 도구';
 }
-function closeFacility(){document.querySelector('#toast')!.classList.remove('facility-toast');selectedFacilityId=null;scene.setSelectedFacility(null);document.querySelector<HTMLElement>('#facility-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('facility-selected');updateWalkingAvailability();}
+function closeFacility(){document.querySelector('#toast')!.classList.remove('facility-toast');selectedFacilityId=null;scene.setSelectedFacility(null);document.querySelector<HTMLElement>('#facility-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('facility-selected','facility-repeat-ready');updateWalkingAvailability();}
 function cancelConstruction(){placement=null;homePlacement=null;scene.setConstructionMode(null);scene.setHouseMoveMode(false);scene.setPlanningViewport(null);document.querySelector<HTMLElement>('#construction-bar')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('construction-mode');updateWalkingAvailability();}
 function slotLabel(slot:number){return `${getSlotFloor(slot)}층 · ${getSlotLocalIndex(slot)+1}번 자리`;}
 function freeFacilitySlots(){return ([1,2,3] as TruckFloor[]).flatMap(floor=>getFloorSlots(state,floor)).filter(slot=>isFacilitySlotAvailable(state,slot));}
 function renderFloorControls(){
  const count=getTruckFloorCount(state),active=scene.getActiveFloor(),group=document.querySelector<HTMLElement>('.truck-floor-controls')!;
  group.hidden=selectedZone==='grove';
+ group.dataset.floorCount=String(count);
+ group.classList.toggle('show-locked-floors',Boolean(placement||homePlacement||currentModal==='floors'));
+ document.querySelector('.scene-card')!.classList.toggle('multi-floor-village',count>1);
  group.querySelectorAll<HTMLButtonElement>('[data-truck-floor]').forEach(button=>{
   const floor=Number(button.dataset.truckFloor) as TruckFloor,locked=floor>count;
   button.classList.toggle('locked',locked);button.setAttribute('aria-pressed',String(floor===active));
@@ -293,6 +300,36 @@ function operateFacility(kind:'start'|'collect'|'upgrade',id:number){
  const result=kind==='start'?startProduction(state,id):kind==='collect'?collectProduction(state,id):upgradeFacility(state,id);
  if(result.ok){state=result.state;persist();render();ping();if(kind==='upgrade')void showFacilityWork(id,'upgrade');}else if(kind==='start'){currentModal='facility-supplies';modalShell('KEEP OUR VILLAGE MOVING','생산에 쓸 물자를 모아요',`<p class="activity-block-reason" role="status">${escape(result.message)}</p><button class="button full-width" data-action="gather">${icon('map')} 부족한 생활 물자 찾기</button><button class="button button-light full-width activity-secondary" data-close>${icon('arrow')} 시설로 돌아가기</button>`);}toast(result.message);
 }
+function receiveAndRestartFacility(id:number){
+ if(battleView||placement||homePlacement||contentActivationPending)return;
+ const result=collectAndRestartProduction(state,id);
+ if(result.ok){state=result.state;persist();render();ping();}
+ toast(result.message);
+}
+function villageAdvice(key:string):VillageAdvice|undefined{
+ const hub=getVillageHub(state);
+ return key==='primary'?hub.primary:key==='investment'?hub.investment:key.startsWith('activity:')?hub.activities.find(item=>item.id===key.slice(9)):undefined;
+}
+function goToVillageTarget(target:VillageTarget){
+ if(actionBusy||battleView||contentActivationPending){toast('지금 작업을 마친 뒤 이어서 할 수 있어요.');return;}
+ if(target.kind==='quest'){
+  const quest=getGrowthQuests(state).find(item=>item.id===target.questId);
+  if(quest?.status==='ready')claimGrowthReward(quest.id);else goToGrowthQuest(target.questId);
+  return;
+ }
+ if(target.kind==='facility'){selectFacility(target.id);if(target.operation==='upgrade')openFacilityUpgrade(target.id);return;}
+ if(target.kind==='build'){showQuestBuild(target.buildingType);return;}
+ if(target.kind==='farm'){
+  if(target.mode==='plant'){
+   openSeedInventory();
+   if(target.cropId){document.querySelector(`[data-select-seed="${target.cropId}"]`)?.classList.add('quest-target');toast(`${CROPS[target.cropId].seedName}을 골라 빈 밭에 이어 심어요.`);}
+  }else startFarmMode(target.mode,undefined,true);
+  return;
+ }
+ if(target.kind==='gather'||target.kind==='chop'||target.kind==='rest'){closeModal();cancelConstruction();closeFacility();stopFarmMode();void action(target.kind);return;}
+ if(target.kind==='companions'){openModal('pet');return;}
+ openModal(target.kind);
+}
 function openFacilityUpgrade(id:number){
  const building=getSettlement(state).buildings.find(b=>b.id===id);if(!building)return;
  const definition=BUILDINGS[building.type];
@@ -351,6 +388,8 @@ function showQuestBuild(type?:BuildingType){
 function goToGrowthQuest(id:string){
  if(actionBusy||battleView||contentActivationPending)return;
  const quest=getGrowthQuests(state).find(q=>q.id===id);if(!quest||quest.status!=='active'){toast('현재 진행 중인 목표에서 하러 가기를 눌러 주세요.');return;}
+ const preparation=getVillageHub(state).primary;
+ if(quest.id===getActiveGrowthQuest(state)?.id&&preparation.target.kind!=='quest'){goToVillageTarget(preparation.target);return;}
  const destination=quest.destination,facilities=getSettlement(state).buildings;
  recenterMap();closeModal();cancelConstruction();closeFacility();stopFarmMode();
  if(destination.kind==='gather'){void action('gather');return;}
@@ -384,15 +423,17 @@ function goToGrowthQuest(id:string){
 function renderSettlement(){
  document.querySelector('#toast')!.classList.toggle('facility-toast',selectedFacilityId!==null);
  const settlement=getSettlement(state),goal=getActiveGrowthQuest(state),ready=settlement.buildings.filter(b=>productionState(state,b).ready).length;
- const chapter=GROWTH_CHAPTERS.find(c=>c.id===goal?.chapter),objective=document.querySelector<HTMLElement>('#settlement-objective')!,rewardReady=goal?.status==='ready';
+ const hub=getVillageHub(state),chapter=GROWTH_CHAPTERS.find(c=>c.id===goal?.chapter),objective=document.querySelector<HTMLElement>('#settlement-objective')!,rewardReady=goal?.status==='ready';
  objective.classList.toggle('reward-ready',rewardReady);objective.dataset.questState=goal?.status??'complete';objective.dataset.activeQuest=goal?.id??'';
  document.querySelector('#objective-chapter')!.textContent=chapter?`${String(chapter.id).padStart(2,'0')}장 · ${chapter.title}`:'여덟 장의 이야기를 완성했어요';
- document.querySelector('#objective-title')!.textContent=goal?(rewardReady?`보상 받기 · ${goal.title}`:goal.title):'도로 위 마을의 모든 이야기를 완성했어요';
- document.querySelector('#objective-detail')!.textContent=goal?(rewardReady?'완료 · 보상을 받고 다음 목표로':`${Math.min(goal.current,goal.target)} / ${goal.target}`):'마을 의뢰와 시설 생산을 이어가요';
- document.querySelector('[data-objective-cta]')!.textContent=goal?(rewardReady?'보상 받기':'하러 가기'):'기록';
- objective.setAttribute('aria-label',goal?`${goal.title} · ${rewardReady?'보상 받기':`${Math.min(goal.current,goal.target)} / ${goal.target} · 하러 가기`}`:'완성한 성장 목표 보기');
+ document.querySelector('#objective-title')!.textContent=hub.primary.title;
+ document.querySelector('#objective-detail')!.textContent=hub.primary.detail;
+ document.querySelector('[data-objective-cta]')!.textContent=hub.primary.cta;
+ objective.setAttribute('aria-label',`${hub.primary.title} · ${hub.primary.detail} · ${hub.primary.cta}`);
  objective.querySelector<HTMLElement>('.objective-progress>i')!.style.width=`${goal?Math.min(100,goal.current/goal.target*100):100}%`;
  document.querySelector<HTMLElement>('[data-growth-ready]')!.hidden=!rewardReady;
+ updateVillageHub(document.querySelector<HTMLElement>('#village-hub')!,hub);
+ const management=document.querySelector<HTMLElement>('#village-management');if(management&&currentModal==='village')updateVillageManagement(management,state,hub);
  renderGrowthBoard();
  const buildTab=document.querySelector<HTMLButtonElement>('[data-nav="build"]')!;buildTab.dataset.ready=String(ready);buildTab.setAttribute('aria-label',ready?`건설 · 수령할 생산품 ${ready}곳`:'건설');
  if(placement){
@@ -408,6 +449,7 @@ function renderSettlement(){
   if(bar.dataset.preview!==key){bar.dataset.preview=key;bar.innerHTML=`<span class="construction-art">${icon('home')}</span><div class="construction-info"><strong>우리집 재배치</strong><small>${homePlacement.slot===null?`${scene.getActiveFloor()}층 집 자리를 눌러요`:`${scene.getActiveFloor()}층 · ${homePlacement.slot+1}번 집 자리`}</small><span class="construction-cost">무료 · 표시된 안전한 자리에만 배치해요</span></div><button class="placement-confirm" data-home-move-confirm ${homePlacement.slot===null?'disabled':''}>${icon('check')}<small>이동 확정</small></button><button class="placement-cancel" data-construction-cancel>${icon('close')}<small>취소</small></button>`;}
  }
  const selected=settlement.buildings.find(b=>b.id===selectedFacilityId);
+ document.querySelector('.scene-card')!.classList.toggle('facility-repeat-ready',Boolean(selected&&productionState(state,selected).ready));
  if(!selected){if(selectedFacilityId!==null)closeFacility();return;}
  const panel=document.querySelector<HTMLElement>('#facility-sheet')!,definition=BUILDINGS[selected.type],production=productionState(state,selected);
  panel.hidden=false;document.querySelector('.scene-card')!.classList.add('facility-selected');
@@ -418,6 +460,7 @@ function renderSettlement(){
  panel.querySelector('[data-production-reward]')!.innerHTML=`${icon(definition.yieldResource)} +${definition.yieldAmount*selected.level}`;
  const start=panel.querySelector<HTMLButtonElement>('[data-facility-start]')!,collect=panel.querySelector<HTMLButtonElement>('[data-facility-collect]')!;
  start.hidden=production.ready;collect.hidden=!production.ready;start.disabled=production.running;start.querySelector('span')!.textContent=production.running?'생산 중…':'생산 시작';
+ const repeat=panel.querySelector<HTMLButtonElement>('[data-facility-collect-repeat]');if(repeat)repeat.hidden=!production.ready;
  const cost=getUpgradeCost(selected),upgrade=panel.querySelector<HTMLButtonElement>('[data-facility-upgrade]')!;upgrade.title=selected.level>=definition.maxLevel?'최대 레벨이에요':`목재 ${cost.wood} · 고철 ${cost.scrap}`;
 }
 function updateNav(){
@@ -726,7 +769,7 @@ function startBattle(){
   battleView=new BattleView({gender:state.gender,name:state.name,level:state.level,health:state.health,companions:getCompanions(state),units:getUnitRoster(state),teamIds:state.expedition!.unitParticipantIds??getReadyTeam(state),bonuses:state.expedition!.unitBattleBonuses,stage:selectedStage,onFinish:(result:BattleResult)=>{
    const finished=finishHunt(state,result,expeditionId);state=finished.state;
    if(!finished.ok&&state.expedition?.id===expeditionId)state=cancelHunt(state).state;
-   battleView?.destroy();battleView=null;app.inert=false;document.body.classList.remove('in-battle');scene.setSuspended(false);setZone('home');persist();render();toast(finished.message);finishDeferredUpdate();
+   battleView?.destroy();battleView=null;app.inert=false;document.body.classList.remove('in-battle');scene.setSuspended(false);setZone('home');persist();render();toast(finished.message+(finished.ok&&result.outcome==='victory'?` · 다음 성장: ${getVillageHub(state).investment.title}`:''));finishDeferredUpdate();
   }});
  }catch{
   state=cancelHunt(state).state;battleView?.destroy();battleView=null;app.inert=false;document.body.classList.remove('in-battle');scene.setSuspended(false);persist();render();toast('전투 화면을 열지 못해 트럭으로 돌아왔어요.');
@@ -783,15 +826,21 @@ function renderBag(){
  for(const r of resources){const count=body.querySelector<HTMLElement>(`[data-inventory-count="${r}"]`)!;if(count.textContent!==String(state.resources[r]))count.textContent=String(state.resources[r]);}
  for(const id of CROP_IDS){const count=body.querySelector<HTMLElement>(`[data-bag-seed-count="${id}"]`)!;if(count.textContent!==String(getSeedCount(state,id)))count.textContent=String(getSeedCount(state,id));}
 }
+function villageInvestmentContent(){
+ const investment=getVillageHub(state).investment;
+ return `<button class="order-next-investment village-plan-card" data-village-advice="investment" aria-label="${escape(investment.title)} · ${escape(investment.cta)}"><span>${icon(investment.icon)}</span><div><small>이 보상으로 이어갈 마을 투자</small><strong data-order-investment-title>${escape(investment.title)}</strong><span data-order-investment-detail>${escape(investment.detail)}</span></div>${icon('chevron')}</button>`;
+}
 function villageOrderContent(){
  const order=getVillageOrder(state);
- return `<article class="village-order-card" data-village-order="${order.id}"><div class="order-heading"><span>${icon('truck')}</span><div><small>이웃 트럭의 의뢰 · ${order.sequence}번째</small><h3>${escape(order.name)}</h3></div></div><p>${escape(order.description)}</p><h4>보낼 물자</h4><div class="order-costs">${Object.entries(order.costs).map(([r,n])=>`<div class="${state.resources[r as Resource]>=n!?'enough':''}">${icon(r)}<span>${resourceLabels[r as Resource]}</span><strong data-order-resource="${r}">${state.resources[r as Resource]} / ${n}</strong></div>`).join('')}</div><h4>받는 보상</h4><div class="order-rewards">${Object.entries(order.rewards.resources).map(([r,n])=>`<span>${icon(r)} ${resourceLabels[r as Resource]} <b>+${n}</b></span>`).join('')}<span>${icon('star')} 경험치 <b>+${order.rewards.xp}</b></span></div><button class="button full-width" data-order-deliver="${order.id}" ${!order.ready||actionBusy?'disabled':''}>${icon('truck')} ${actionBusy?'지금 작업을 마치면 납품해요':order.ready?'물자 보내고 보상 받기':'물자를 더 모아 주세요'}</button><button class="button button-light full-width" data-order-source>${icon('map')} 물자 모으러 가기</button><p class="order-source-hint">${escape(order.sourceHint)}</p></article><p class="fine-print">납품할 때 표시된 물자를 사용해요. 보상을 받으면 다음 의뢰가 도착해요.</p>`;
+ return `<article class="village-order-card" data-village-order="${order.id}"><div class="order-heading"><span>${icon('truck')}</span><div><small>이웃 트럭의 의뢰 · ${order.sequence}번째</small><h3>${escape(order.name)}</h3></div></div><p>${escape(order.description)}</p><h4>보낼 물자</h4><div class="order-costs">${Object.entries(order.costs).map(([r,n])=>`<div class="${state.resources[r as Resource]>=n!?'enough':''}">${icon(r)}<span>${resourceLabels[r as Resource]}</span><strong data-order-resource="${r}">${state.resources[r as Resource]} / ${n}</strong></div>`).join('')}</div><h4>받는 보상</h4><div class="order-rewards">${Object.entries(order.rewards.resources).map(([r,n])=>`<span>${icon(r)} ${resourceLabels[r as Resource]} <b>+${n}</b></span>`).join('')}<span>${icon('star')} 경험치 <b>+${order.rewards.xp}</b></span></div><button class="button full-width" data-order-deliver="${order.id}" ${!order.ready||actionBusy?'disabled':''}>${icon('truck')} ${actionBusy?'지금 작업을 마치면 납품해요':order.ready?'물자 보내고 보상 받기':'물자를 더 모아 주세요'}</button><button class="button button-light full-width" data-order-source>${icon('map')} 물자 모으러 가기</button><p class="order-source-hint">${escape(order.sourceHint)}</p></article><p class="fine-print">납품할 때 표시된 물자를 사용해요. 보상을 받으면 다음 의뢰가 도착해요.</p>${villageInvestmentContent()}`;
 }
 function renderVillageOrder(){
  const order=getVillageOrder(state);document.querySelector<HTMLElement>('[data-order-ready]')!.hidden=!order.ready;
  const body=document.querySelector<HTMLElement>('#village-order-content');if(!body||currentModal!=='orders')return;
  if(body.dataset.order!==order.id){body.dataset.order=order.id;body.innerHTML=villageOrderContent();}
  for(const r of Object.keys(order.costs))body.querySelector(`[data-order-resource="${r}"]`)!.textContent=`${state.resources[r as Resource]} / ${order.costs[r as Resource]}`;
+ const nextInvestment=getVillageHub(state).investment;
+ body.querySelector('[data-order-investment-title]')!.textContent=nextInvestment.title;body.querySelector('[data-order-investment-detail]')!.textContent=nextInvestment.detail;
  const deliver=body.querySelector<HTMLButtonElement>('[data-order-deliver]')!;deliver.disabled=!order.ready||actionBusy;
  deliver.innerHTML=icon('truck')+(actionBusy?'지금 작업을 마치면 납품해요':order.ready?'물자 보내고 보상 받기':'물자를 더 모아 주세요');
 }
@@ -801,19 +850,23 @@ function deliverVillageOrder(id:string){
  orderAdvanceGuardUntil=performance.now()+600;state=result.state;persist();render();ping();toast(result.message);
 }
 function goToOrderSource(){
- const order=getVillageOrder(state),type:BuildingType=order.costs.food?'kitchen':'waterworks';
- const building=getSettlement(state).buildings.find(b=>b.type===type);
+ const order=getVillageOrder(state);
+ const missing=(Object.keys(order.costs) as Resource[]).find(resource=>state.resources[resource]<(order.costs[resource]??0));
+ if(!missing){toast('물자가 준비됐어요. 납품하고 마을의 다음 투자를 이어가요.');return;}
+ const building=getSettlement(state).buildings.filter(b=>BUILDINGS[b.type].yieldResource===missing).sort((a,b)=>Number(productionState(state,b).ready)-Number(productionState(state,a).ready))[0];
  closeModal();if(building){selectFacility(building.id);return;}
- if(order.costs.food){setZone('home',true);selectPlot(preferredPlot()?.id??null);toast('자란 작물을 눌러 수확하고, 빈 밭에는 씨앗을 심어요.');}
- else if(order.costs.wood){setZone('grove');renderControls();toast('나무를 눌러 의뢰에 필요한 목재를 모아요.');}
- else {openModal('build');toast('빗물 정수소를 건설하면 물을 계속 생산할 수 있어요.');}
+ if(missing==='food'){setZone('home',true);selectPlot(preferredPlot()?.id??null);toast('자란 작물을 눌러 수확하고, 빈 밭에는 씨앗을 심어요.');}
+ else if(missing==='wood'){setZone('grove');renderControls();toast('나무를 눌러 의뢰에 필요한 목재를 모아요.');}
+ else if(missing==='scrap'||missing==='seeds'){void action('gather');}
+ else {showQuestBuild('waterworks');toast('빗물 정수소를 건설하면 물을 계속 생산할 수 있어요.');}
 }
 function showPlanningSheet(mode:'catalog'|'expansion',expectedModal=mode==='catalog'?'build':'expand'){
  const className=mode==='catalog'?'planning-catalog':'planning-expansion',root=document.querySelector<HTMLElement>('#modal-root')!;
  root.classList.add(className);document.querySelector('.scene-card')!.classList.add(className);
- requestAnimationFrame(()=>{if(currentModal===expectedModal)scene.setPlanningViewport(expectedModal==='floors'?'catalog':mode,expectedModal!=='floors'&&state.deckLevel<MAX_DECK_LEVEL?state.deckLevel+1:undefined);});
+ requestAnimationFrame(()=>{if(currentModal===expectedModal)scene.setPlanningViewport(expectedModal==='floors'?'catalog':mode,expectedModal!=='floors'&&expectedModal!=='village'&&state.deckLevel<MAX_DECK_LEVEL?state.deckLevel+1:undefined);});
 }
 function openModal(kind:string){if(kind==='seeds'){openSeedInventory();return;}if(battleView)return;closeModal();document.querySelector('#toast')!.classList.remove('visible');clearTimeout(toastTimer);cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();currentModal=kind;updateNav();
+ if(kind==='village'){setZone('home');setFarmTray(false);modalShell('OUR GROWING TRUCK VILLAGE','마을 생산과 다음 성장',`<div id="village-management">${renderVillageManagement(state,getVillageHub(state))}</div>`,true);showPlanningSheet('catalog','village');}
  if(kind==='menu')modalShell('OUR LITTLE VILLAGE','마을 메뉴',`<div class="village-menu-grid">${[['flag','성장 목표','settlement-goals'],['expand','트럭 확장','expand'],['plot-empty','밭 확장','farm-expand'],['axe','벌목장','grove'],['bag','마을 의뢰','orders'],['settings','설정','settings'],['paw','동물 동료','pet'],['character','생존자','character'],['map','도움말','guide']].map(([i,t,id])=>`<button data-open="${id}">${icon(i)}<span>${t}</span></button>`).join('')}</div>`);
  if(kind==='orders')modalShell('NEIGHBORS ON THE ROAD','마을 의뢰',`<div id="village-order-content" data-order="${getVillageOrder(state).id}">${villageOrderContent()}</div>`);
  if(kind==='build'){setZone('home');setFarmTray(false);closeFacility();modalShell('BUILD OUR TRUCK VILLAGE','트럭 위 마을 건설',buildingCatalog(state),true);showPlanningSheet('catalog');}
@@ -921,8 +974,26 @@ function navigateButton(t:HTMLElement){
  if(t.hasAttribute('data-show-farm')){recenterMap();stopFarmMode();closeModal();setZone('home',true);if(!actionBusy)scene.setActiveFloor(1);selectPlot(preferredPlot()?.id??null);return true;}
  return false;
 }
+const pressedVillageTargets=new WeakMap<HTMLElement,{key:string;target:VillageTarget}>();
+document.addEventListener('pointerdown',event=>{
+ const button=(event.target as Element).closest<HTMLElement>('[data-village-advice],[data-next-goal]');
+ if(!button||!button.closest('#app'))return;
+ const key=button.dataset.villageAdvice??'primary',advice=villageAdvice(key);
+ if(advice)pressedVillageTargets.set(button,{key,target:advice.target});
+},{capture:true});
+document.addEventListener('pointercancel',event=>{
+ const button=(event.target as Element).closest<HTMLElement>('[data-village-advice],[data-next-goal]');if(button)pressedVillageTargets.delete(button);
+},{capture:true});
 document.addEventListener('click',e=>{
  const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||battleView||contentActivationPending)return;
+ if(t.dataset.villageAdvice){
+  const pressed=pressedVillageTargets.get(t);pressedVillageTargets.delete(t);
+  const key=pressed?.key??t.dataset.villageAdvice,advice=villageAdvice(key);
+  if(t.getAttribute('aria-disabled')==='true'||!advice){toast('이 활동은 완료됐어요. 지금 할 수 있는 일을 다시 확인해 주세요.');return;}
+  goToVillageTarget(pressed?.target??advice.target);return;
+ }
+ if(t.dataset.facilitySelect){selectFacility(Number(t.dataset.facilitySelect));return;}
+ if(t.dataset.facilityCollectRepeat){receiveAndRestartFacility(Number(t.dataset.facilityCollectRepeat));return;}
  if(t.hasAttribute('data-install-update')){void requestAutomaticInstall();return;}
  if(t.hasAttribute('data-update-notice')){if(automaticUpdate.status==='ready'||automaticUpdate.status==='permission')void requestAutomaticInstall();else if(runningFarm&&actionBusy)afterCurrentFarm(()=>openModal('settings'));else if(!actionBusy)openModal('settings');else toast('작업을 마치면 설정에서 업데이트를 확인해요.');return;}
  if(t.hasAttribute('data-live-update-check')){void checkLiveUpdate().then(onLiveUpdate);return;}
@@ -941,6 +1012,7 @@ document.addEventListener('click',e=>{
  if(t.hasAttribute('data-order-source')){goToOrderSource();return;}
  if(t.hasAttribute('data-map-move')){const enabled=!scene.getMapMoveMode();scene.setMapMoveMode(enabled);toast(enabled?'화면을 끌어 이동해요. 밭 위에서 끌어도 작업하지 않아요. 다시 누르면 해제돼요.':'화면 이동 모드를 껐어요. 밭을 눌러 선택한 작업을 이어가세요.');return;}
  if(t.hasAttribute('data-map-reset')){recenterMap();return;}
+ if(t.hasAttribute('data-map-overview')){scene.setMapMoveMode(false);scene.showVillageOverview();return;}
  if(t.dataset.mapZoom){scene.setMapZoom(scene.getMapZoom()*(Number(t.dataset.mapZoom)>0?1.25:.8));return;}
  if(t.hasAttribute('data-farm-toggle')){
   const toggle=()=>{cancelConstruction();closeFacility();if(farmTrayOpen){afterFarm=null;stopFarmMode();setFarmTray(false);}else setFarmTray(true);};
@@ -952,7 +1024,7 @@ document.addEventListener('click',e=>{
  if(t.dataset.facilityUpgrade){openFacilityUpgrade(Number(t.dataset.facilityUpgrade));return;}
  if(t.dataset.upgradeConfirm){const id=Number(t.dataset.upgradeConfirm);operateFacility('upgrade',id);closeModal();selectFacility(id);return;}
  if(t.dataset.facilityMove){const facility=getSettlement(state).buildings.find(b=>b.id===Number(t.dataset.facilityMove));if(facility)beginConstruction(facility.type,facility.id);return;}
- if(t.hasAttribute('data-next-goal')){const goal=getActiveGrowthQuest(state);if(goal?.status==='ready')claimGrowthReward(goal.id);else if(actionBusy)openGrowthBoard();else if(goal)goToGrowthQuest(goal.id);else openGrowthBoard();return;}
+ if(t.hasAttribute('data-next-goal')){const pressed=pressedVillageTargets.get(t);pressedVillageTargets.delete(t);if(actionBusy)openGrowthBoard();else goToVillageTarget(pressed?.target??getVillageHub(state).primary.target);return;}
  if(t.dataset.questChapter){openGrowthBoard(Number(t.dataset.questChapter));return;}
  if(t.dataset.questClaim){claimGrowthReward(t.dataset.questClaim);return;}
  if(t.dataset.questGoto){if(performance.now()>=questAdvanceGuardUntil)goToGrowthQuest(t.dataset.questGoto);return;}
