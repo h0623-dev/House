@@ -1,6 +1,7 @@
 import type { ActionResult, GameState, Resource } from './game';
 import { cloneCompanions } from './companions';
 import { cloneUnitProgressFields } from './units';
+import { cloneLayoutDirectionFields } from './layout-direction';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { cloneTruckLayoutFields, getAllUnlockedSlots, getFloorSlots, getHomeLocation, getHomeSlots, getHouseFootprint,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCost, getTruckFloorCount, getTruckLayout, getFloorStairs, SETTLEMENT_POSITIONS,
@@ -213,6 +214,7 @@ function copy(state: GameState): GameState {
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory,
       builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...cloneTruckLayoutFields(state),
+    ...cloneLayoutDirectionFields(state),
     expedition: state.expedition ? { ...state.expedition, ...(state.expedition.participantIds ? { participantIds: [...state.expedition.participantIds] } : {}) } : null,
     settlement: getLegacySettlement(state),
   };

@@ -2,7 +2,7 @@ import type { GameState } from './game';
 import { getFarmCapacity } from './game';
 import { getSettlement, isFacilitySlotAvailable, type BuildingType } from './settlement';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorSlots, getHomeLocation, getHousePosition,
-  getSlotFloor, getSlotLocalIndex, projectTruckPoint, type TruckFloor } from './truck-layout';
+  getSlotFloor, getSlotLocalIndex, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
 
 export type VillageBounds = { left:number; top:number; right:number; bottom:number };
 export const VILLAGE_FACILITY_SIZE: Record<BuildingType, [number,number]> = {
@@ -40,7 +40,7 @@ export function getVillageContentBounds(state:GameState,floor:TruckFloor):Villag
     const[x,y]=projectTruckPoint(SETTLEMENT_POSITIONS[getSlotLocalIndex(slot)],floor);
     bounds.push({left:x-73,top:y-138,right:x+73,bottom:y+38});
   }
-  return bounds.length?mergeVillageBounds(bounds):{left:260,top:120-(floor-1)*176,right:700,bottom:460-(floor-1)*176};
+  return bounds.length?mergeVillageBounds(bounds):{left:260,top:120-(floor-1)*FLOOR_HEIGHT,right:700,bottom:460-(floor-1)*FLOOR_HEIGHT};
 }
 /** Fit roofs, production controls and beds inside the actual unobscured map. */
 export function fitVillageCamera(bounds:VillageBounds,availableWidth:number,availableHeight:number){

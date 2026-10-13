@@ -14,7 +14,7 @@ export interface TruckFloorArtOptions {
   /** Raw physical projection, without a selected-floor offset. */
   project:(u:number,v:number,z:number)=>FloorArtPoint;
   bounds:FloorArtBounds;
-  /** Absolute wood-surface heights: normally 94,270,446. */
+  /** Absolute wood-surface heights supplied by the shared physical layout. */
   floors:readonly FloorArtLevel[];
   selectedFloor:TruckFloorId;
   stairways?:readonly FloorArtStairway[];
@@ -53,23 +53,6 @@ function fascia(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,z:number,opaci
   line(c,p(b.left,b.front,z),p(b.end,b.front,z),'#d4b26e',2);
   line(c,p(b.end,b.back,z),p(b.end,b.front,z),'#c9a567',1.4);
   c.restore();
-}
-function post(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,u:number,v:number,bottom:number,top:number):void{
-  const p=o.project,w=4;
-  const front:[FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint]=[p(u-w,v+w,top),p(u+w,v+w,top),p(u+w,v+w,bottom),p(u-w,v+w,bottom)];
-  const side:[FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint]=[p(u+w,v-w,top),p(u+w,v+w,top),p(u+w,v+w,bottom),p(u+w,v-w,bottom)];
-  polygon(c,front,'#537666','#62513b',.7);paintWorldQuad(c,'metal',front,.05);
-  polygon(c,side,'#3d5d52','#574835',.7);paintWorldQuad(c,'metal',side,.19);
-  polygon(c,[p(u-w,v-w,top),p(u+w,v-w,top),p(u+w,v+w,top),p(u-w,v+w,top)],'#d8b878','#79613d',.7);
-  for(const floor of o.floors){
-    if(floor.z<bottom||floor.z>top)continue;
-    line(c,p(u-w,v+w,floor.z-7),p(u+w,v+w,floor.z-7),'#d4b470',2.6);
-    const bolt=p(u,v+w,floor.z-13);c.beginPath();c.arc(...bolt,1.25,0,Math.PI*2);c.fillStyle='#d8b77a';c.fill();
-  }
-}
-function brace(c:CanvasRenderingContext2D,a:FloorArtPoint,b:FloorArtPoint):void{
-  line(c,a,b,'#405b4d',4);line(c,[a[0]-1,a[1]-.4],[b[0]-1,b[1]-.4],'#8d9b70',1.2);
-  for(const p of [a,b]){c.beginPath();c.arc(...p,2,0,Math.PI*2);c.fillStyle='#c4a368';c.fill();}
 }
 function stairLanding(c:CanvasRenderingContext2D,center:FloorArtPoint):void{
   // The cross-axis follows projected truck u; this is the same 91-UV-wide
@@ -153,31 +136,15 @@ function floorPlate(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,floor:Floo
   c.fillText(`${floor.id}층 생활 데크`,0,2);c.restore();
 }
 
-/** Draw one readable active map, with the other physical floors shown as rims. */
+/** Draw only the active floor. Other floors remain physical navigation data. */
 export function drawTruckFloor(c:CanvasRenderingContext2D,o:TruckFloorArtOptions):TruckFloorArtGeometry{
   const floor=o.floors.find(f=>f.id===o.selectedFloor)??o.floors[0]??{id:1 as const,z:94};
   const geometry:TruckFloorArtGeometry={floor:floor.id,z:floor.z,surface:quad(o,floor.z,1),
-    otherFloors:o.floors.filter(f=>f.id!==floor.id).map(f=>({floor:f.id,z:f.z,rim:quad(o,f.z)})),stairways:o.stairways??[]};
+    otherFloors:[],stairways:(o.stairways??[]).filter(stairs=>stairs.from===floor.id||stairs.to===floor.id)};
   const b=o.bounds,p=o.project;c.save();
   if(o.pass==='structure'){
-    if(o.floors.length>1){
-      const low=Math.min(...o.floors.map(f=>f.z))-13,high=Math.max(...o.floors.map(f=>f.z))+4;
-      c.save();c.globalAlpha*=.68;
-      for(const[u,v]of[[b.left+8,b.back+8],[b.end-8,b.back+8],[b.left+8,b.front-8],[b.end-8,b.front-8]])post(c,o,u,v,low,high);
-      for(const f of o.floors.slice(1)){
-        brace(c,p(b.left+8,b.front-8,f.z-24),p(b.left+82,b.front-8,f.z-134));
-        brace(c,p(b.end-8,b.front-8,f.z-24),p(b.end-82,b.front-8,f.z-134));
-      }c.restore();
-      for(const other of geometry.otherFloors){
-        const above=other.z>floor.z;c.save();c.globalAlpha *= above ? .16 : .3;
-        polygon(c,other.rim,'','#729074',1.4);fascia(c,o,other.z);c.restore();
-      }
-    }
-    for(const stairs of o.stairways??[]){
-      if(stairs.from===floor.id)continue;
-      c.save();c.globalAlpha *= (stairs.from===floor.id||stairs.to===floor.id) ? .95 : .3;
-      wideStairs(c,stairs);c.restore();
-    }
+    // Tall posts, ghost rims and complete flights used to cover the work area.
+    // The selected floor's fascia/rails and clipped local stairwell suffice.
   }else if(o.pass==='surface'){
     fascia(c,o,floor.z);const surface=quad(o,floor.z,1);
     polygon(c,surface,'#d8ad6e');paintWorldQuad(c,'wood',surface,-.025);polygon(c,surface,'','#73543a',1.4);
@@ -187,8 +154,7 @@ export function drawTruckFloor(c:CanvasRenderingContext2D,o:TruckFloorArtOptions
     }
     if(o.night){c.save();c.globalAlpha*=clamp(o.night)*.1;polygon(c,surface,'#263e45');c.restore();}
   }else if(o.pass==='back'){
-    for(const stairs of o.stairways??[])if(stairs.to===floor.id)stairWell(c,o,floor,stairs);
-    for(const stairs of o.stairways??[])if(stairs.from===floor.id)wideStairs(c,stairs);
+    for(const stairs of geometry.stairways)stairWell(c,o,floor,stairs);
     rail(c,o,'back',floor.z,false);rail(c,o,'left',floor.z,false);
   }else{
     rail(c,o,'front',floor.z,true);rail(c,o,'right',floor.z,true);floorPlate(c,o,floor);

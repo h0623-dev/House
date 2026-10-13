@@ -3,6 +3,7 @@ import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { realDuration } from './game-speed';
 import { getLegacySettlement, validateSettlement, validateFacilityHistory, validateTruckLayout, type Settlement, type FacilityHistory } from './settlement';
 import { cloneTruckLayoutFields, type TruckLayout } from './truck-layout';
+import { cloneLayoutDirectionFields, validateLayoutDirections, type LayoutDirections } from './layout-direction';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 import { COMPANION_IDS, MAX_COMPANION_XP, getCompanions, isCompanionId, validateCompanionHealth, validateCompanions, type CompanionHealth, type CompanionId, type CompanionRoster } from './companions';
@@ -53,6 +54,8 @@ export interface GameState {
   settlement?: Settlement;
   /** Top-level so older APK bundles preserve new floors and actual placement. */
   truckLayout?: TruckLayout;
+  /** Deck-aligned facing directions; older saves keep their existing appearance. */
+  layoutDirections?: LayoutDirections;
   /** Lifetime construction records stay separate from legacy settlement schemas. */
   facilityHistory?: FacilityHistory;
   /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
@@ -145,6 +148,7 @@ function copy(state: GameState): GameState {
     ...state, resources: { ...state.resources }, seedInventory: getSeedInventory(state),
     ...(state.settlement ? { settlement: getLegacySettlement(state) } : {}),
     ...cloneTruckLayoutFields(state),
+    ...cloneLayoutDirectionFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
@@ -670,6 +674,7 @@ function validateSave(value: unknown): value is GameState {
   if (!value.quests.every(id => ['first-harvest', 'road-scout', 'bigger-home'].includes(id))) return false;
   if (!Array.isArray(value.log) || value.log.length > 30 || !value.log.every(entry => isText(entry, 400))) return false;
   const candidate = value as unknown as GameState;
+  if (Object.hasOwn(value, 'layoutDirections') && !validateLayoutDirections(value.layoutDirections, candidate)) return false;
   if (Object.hasOwn(value, 'facilityHistory') && !validateFacilityHistory(value.facilityHistory, candidate)) return false;
   if (Object.hasOwn(value, 'growthQuests') && !validateGrowthQuests(value.growthQuests, candidate)) return false;
   if (Object.hasOwn(value, 'villageOrders') && !validateVillageOrders(value.villageOrders)) return false;

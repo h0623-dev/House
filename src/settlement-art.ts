@@ -1,6 +1,8 @@
 import atlasUrl from './assets/settlement-buildings.png';
 import type { BuildingType } from './settlement';
 import { drawFacilityUpgradeDetails, facilityUpgradeDetailsSvg } from './facility-upgrade-art';
+import { alignArtContext, type AlignedArtTransform } from './layout-art-projection';
+import type { LayoutDirection } from './layout-direction';
 
 /** Original facilities, measured independently so adjacent sprites never leak. */
 export const FACILITY_ART_URL = atlasUrl;
@@ -16,22 +18,30 @@ const art = new Image();
 art.decoding='async';
 art.src=atlasUrl;
 export function facilityArtReady(){return art.complete&&art.naturalWidth>0;}
+/** Measured front platform edges in the original atlas, before fitting. */
+export const FACILITY_BASE_SLOPES: Record<BuildingType,[number,number]> = {
+ workshop:[98/257,-93/204], kitchen:[68/219,-76/210], waterworks:[89/214,-85/216],
+ greenhouse:[93/232,-96/226], watchtower:[82/220,-92/195], petHouse:[103/205,-96/221],
+};
 
 /** Fit each facility into its box, anchored at the bottom centre. */
-export function drawFacility(c:CanvasRenderingContext2D,type:BuildingType,x:number,y:number,width:number,height:number,alpha=1,level=1):boolean{
+export function drawFacility(c:CanvasRenderingContext2D,type:BuildingType,x:number,y:number,width:number,height:number,alpha=1,level=1,direction:LayoutDirection=0,onPaint?:(matrix:AlignedArtTransform)=>void):boolean{
  if(!facilityArtReady())return false;
  const f=FACILITY_FRAMES[type],scale=Math.min(width/f.width,height/f.height),w=f.width*scale,h=f.height*scale;
  c.save();c.globalAlpha*=alpha;c.imageSmoothingEnabled=true;
- c.drawImage(art,f.x,f.y,f.width,f.height,x-w/2,y-h,w,h);
- drawFacilityUpgradeDetails(c,type,level,x-w/2,y-h,w,h);
+ const [positive,negative]=FACILITY_BASE_SLOPES[type],matrix=alignArtContext(c,x,y,w,h,positive,negative,direction);
+ c.drawImage(art,f.x,f.y,f.width,f.height,-w/2,-h,w,h);
+ drawFacilityUpgradeDetails(c,type,level,-w/2,-h,w,h);
  if(level>=4){
-  const flagX=x+w*.23,flagY=y-h*.89,size=Math.max(8,w*.17);
+  const flagX=w*.23,flagY=-h*.89,size=Math.max(8,w*.17);
   c.strokeStyle='#7c6541';c.lineWidth=Math.max(1,w*.025);c.beginPath();c.moveTo(flagX,flagY+size*1.9);c.lineTo(flagX,flagY);c.stroke();
   c.fillStyle=level>=5?'#4b8392':'#6f9158';c.strokeStyle='#f3df9e';c.lineWidth=Math.max(1,w*.018);
   c.beginPath();c.moveTo(flagX,flagY);c.lineTo(flagX+size*1.45,flagY+size*.1);c.lineTo(flagX+size*1.16,flagY+size*.65);c.lineTo(flagX+size*1.45,flagY+size*1.1);c.lineTo(flagX,flagY+size);c.closePath();c.fill();c.stroke();
-  c.fillStyle='#fff4cf';c.font=`700 ${Math.max(7,size*.75)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(String(level),flagX+size*.56,flagY+size*.53);
+  // The level number remains readable in the opposite-facing pennant.
+  c.save();c.translate(flagX+size*.56,flagY+size*.53);if(direction===1)c.scale(-1,1);
+  c.fillStyle='#fff4cf';c.font=`700 ${Math.max(7,size*.75)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(String(level),0,0);c.restore();
  }
- c.restore();return true;
+ c.restore();onPaint?.(matrix);return true;
 }
 export function facilityIcon(type:BuildingType,level=1):string{
  const f=FACILITY_FRAMES[type];

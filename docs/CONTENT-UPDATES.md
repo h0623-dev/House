@@ -20,6 +20,8 @@
 
 ## 배포
 
+0.24.0은 데크 축에 맞춘 집·시설·밭 정렬, 무료 방향 변경 저장, 층간 높이 50% 증가(176→264), 선택한 층만 표시하는 화면을 콘텐츠 버전24, Android 네이티브 호환 범위8–24로 배포합니다. 방향은 최상위 선택 필드 `layoutDirections`에 집 방향과 시설·밭의 고정 ID별 방향으로 보관합니다. 기록이 없는 기존 저장은 원래 방향으로 읽으며, 잘못된 새 방향 기록은 저장 검증을 거부합니다. 위치·충돌 범위·작물·물 주기·생산 완료 시각·동료 상태와 공통 2배 속도는 유지합니다. 기존 앱 시작 자동 콘텐츠 패치와 iPhone·웹 패치 절차도 이어갑니다.
+
 0.23.0은 손그림 로딩 화면과 건설 시 동물 자동 자리 이동을 콘텐츠 버전23, Android 네이티브 호환 범위8–23으로 배포합니다. 기존 저장·동료 상태·생산 시각과 2배 속도를 유지합니다.
 
 0.22.0은 마을 화면·생산 운영판·성장 준비 행동·다음 투자와 수령 후 재생산을 콘텐츠 버전22, Android 네이티브 호환 범위8–22로 배포합니다. 생산 운영판도 닫기 전까지 준비된 패치의 적용을 보류합니다. 기존 생산 시각과 보상을 유지합니다.
@@ -49,7 +51,7 @@
 ```bash
 npm run build
 node scripts/create-content-release.mjs dist \
-  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.23.0-content.zip
+  https://raw.githubusercontent.com/h0623-dev/House/gh-pages/content/road-haven-0.24.0-content.zip
 ```
 
 도구는 `artifacts/game-update.json`, 콘텐츠 ZIP, SHA-256 파일을 만듭니다. ZIP에는 검증된 웹 빌드만 들어가며 새 서명이 앱에 고정된 공개 키와 맞는지 확인합니다. ZIP을 `gh-pages/content/`에 올린 뒤 마지막에 같은 브랜치의 루트 `game-update.json`을 게시합니다. 미리 테스트하는 미래 버전 정보는 공개하지 않습니다.

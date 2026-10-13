@@ -2,7 +2,11 @@
 
 2187년 대한민국, 좀비로 가득한 도로에서 거대한 트럭을 집으로 가꾸는 모바일 생존·생활 게임입니다. 기존 게임의 자산이나 코드를 사용하지 않은 독자적인 모바일 플레이 버전입니다.
 
-## 0.23.0에서 할 수 있는 일
+## 0.24.0에서 할 수 있는 일
+
+집과 시설의 바닥 그림을 트럭 데크의 두 축에 맞추고, 밭고랑도 같은 축을 따르도록 정렬했습니다. 집·시설·밭을 선택한 뒤 ‘방향 바꾸기’를 누르면 집과 시설은 두 방향으로, 밭고랑은 직각으로 바꿀 수 있습니다. 방향 변경은 무료이며 저장 후 다시 실행해도 유지됩니다. 건물의 자리와 충돌 범위, 밭의 작물·물 주기, 진행 중인 생산 시각은 그대로입니다.
+
+층간 높이는 176에서 264로 50% 늘렸습니다. 1·2·3층 버튼으로 선택한 층만 표시하므로, 1층에서 작업할 때 2·3층 건물과 바닥이 화면을 가리지 않습니다. 다른 층의 건물과 생산은 저장한 상태로 이어가고, 캐릭터와 동물은 실제 연결 계단으로 이동합니다.
 
 게임 시작 화면을 기존 트럭 마을의 손그림 자산으로 꾸몄습니다. 실제 콘텐츠 확인·다운로드·적용 진행을 표시하고, 느린 연결에서 현재 버전으로 시작하는 기능과 동작 줄이기 설정을 이어 갑니다.
 
@@ -26,7 +30,7 @@
 - 씨앗 6종 인벤토리와 연속 심기·물 주기·수확, 확대·축소·화면 이동
 - 미래 대한민국의 좀비 도로와 거대한 트럭 마을, 같은 손그림 화풍의 남녀 생존자·동물
 - 기존 마을·밭·동료·생산 작업·성장 보상 기록을 이어가는 기기 저장
-- 네이티브 엔진 8–23에서 게임 실행 시 서명된 콘텐츠 자동 패치, 새 설치용 APK 제공
+- 네이티브 엔진 8–24에서 게임 실행 시 서명된 콘텐츠 자동 패치, 새 설치용 APK 제공
 
 비교 게임의 공식 소개·홍보 화면·공략·공개 개발자료에서 확인한 차이와 설계 근거는 [v0.17 여섯 시스템 비교](docs/V0.17-SYSTEMS-COMPARISON.md)에 기록했습니다. 영상과 비공개 개발 문서는 확인하지 못했습니다.
 
@@ -50,7 +54,7 @@
 
 ## iPhone에서 플레이
 
-[게임 열기](https://h0623-dev.github.io/House/?v=0.23.0)를 iPhone의 Safari에서 엽니다. **공유 → 홈 화면에 추가** 후 생긴 로드헤이븐 아이콘으로 실행하세요. 설정의 ‘홈 화면에 추가하는 방법’에서도 안내를 볼 수 있습니다.
+[게임 열기](https://h0623-dev.github.io/House/?v=0.24.0)를 iPhone의 Safari에서 엽니다. **공유 → 홈 화면에 추가** 후 생긴 로드헤이븐 아이콘으로 실행하세요. 설정의 ‘홈 화면에 추가하는 방법’에서도 안내를 볼 수 있습니다.
 
 온라인으로 실행하거나 게임으로 돌아오면 새 패치를 자동 확인합니다. 필요한 파일을 모두 준비하고 진행 상황을 저장한 뒤 적용하므로, 일반적인 게임 업데이트마다 다시 설치할 필요가 없습니다. 농사·전투 중에는 활동을 마치고 트럭 홈으로 돌아온 뒤 적용합니다. 다운로드에 실패하면 기존 버전으로 계속 플레이하며 다시 연결되면 재시도합니다.
 
@@ -58,7 +62,7 @@
 
 ## Android에서 플레이
 
-새 설치 및 구형 앱 전환용 APK: `artifacts/road-haven-0.23.0-debug.apk` (Android 버전 코드 23).
+새 설치 및 구형 앱 전환용 APK: `artifacts/road-haven-0.24.0-debug.apk` (Android 버전 코드 24).
 
 **v0.8 이상 앱은 이번 게임 업데이트를 받을 때 APK를 다시 설치할 필요가 없습니다.** 게임 실행 시 호환 콘텐츠를 자동으로 확인·적용합니다. v0.7 이전 앱에는 자동 콘텐츠 엔진이 없으므로 새 APK를 최초 한 번 설치해야 합니다. 같은 앱 ID·서명을 사용하므로 기존 앱을 삭제하지 않고 업데이트하면 마을을 유지합니다.
 
@@ -105,7 +109,7 @@ npm run android:debug
 
 Android 엔진이나 네이티브 기능 변경은 APK 업데이트가 필요합니다. 앱이 새 APK를 내부에서 자동 다운로드하고 파일 해시·앱 ID·서명·버전을 검증한 뒤 ‘설치하기’를 제공합니다. **Android의 마지막 설치 확인은 사용자가 진행합니다.** Android 8 이상에서 필요한 이 앱의 설치 허용도 앱 내 안내에서 설정할 수 있습니다. 외부 브라우저에서 APK 링크를 찾는 과정은 없습니다.
 
-0.3.0부터 네이티브 버전 확인 주소는 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json`입니다. 0.8 이전 앱에는 콘텐츠 업데이트 엔진이 없으므로 현재 0.23 APK를 한 번 설치해야 합니다. [콘텐츠 배포 안내](docs/CONTENT-UPDATES.md)와 [Android 배포 안내](docs/ANDROID.md)에 검증·배포 절차를 기록했습니다.
+0.3.0부터 네이티브 버전 확인 주소는 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json`입니다. 0.8 이전 앱에는 콘텐츠 업데이트 엔진이 없으므로 현재 0.24 APK를 한 번 설치해야 합니다. [콘텐츠 배포 안내](docs/CONTENT-UPDATES.md)와 [Android 배포 안내](docs/ANDROID.md)에 검증·배포 절차를 기록했습니다.
 
 - `VITE_UPDATE_MANIFEST_URL`: 공개 HTTPS 버전 파일 주소
 - `release-version.json`: 기본 Android 버전 코드
@@ -123,6 +127,7 @@ Android 엔진이나 네이티브 기능 변경은 APK 업데이트가 필요합
 | `src/scene.ts`, `src/scene-motion.ts`, `src/scene-gestures.ts` | 트럭·벌목장, 거리 기반 이동·작업·핀치 줌 |
 | `src/scene-navigation.ts`, `src/scene-patrol.ts` | 실제 몸 크기의 충돌 회피·동물 순찰·계단 통행 |
 | `src/truck-layout.ts`, `src/truck-floor-art.ts`, `src/truck-floors.css` | 집·시설 재배치, 층별 자리·계단·증축 화면 |
+| `src/layout-direction.ts`, `src/layout-art-projection.ts` | 집·시설·밭 방향 저장과 데크 축에 맞춘 그림 정렬 |
 | `src/sky-birds.ts` | 원경 새의 독립 비행·날갯짓·활공 |
 | `src/actors.ts`, `src/character-art.ts` | 남녀 캐릭터의 애니메이션 일러스트와 작업·이동 포즈 |
 | `src/world-art.ts`, `src/creatures.ts`, `src/battle-art.ts`, `src/assets/` | 트럭·풍경·소품·작물·보리·좀비와 지역별 전투 일러스트 |
@@ -138,6 +143,6 @@ Android 엔진이나 네이티브 기능 변경은 APK 업데이트가 필요합
 
 검증: 게임·작물·전투·업데이트 단위 테스트, TypeScript/배포 빌드. 모바일 검사는 작업 완료 전 자원 미지급, 농사·벌목·확장, 3웨이브 전투·기술·일시정지·승리·철수, 구 저장 호환과 중단된 원정 복구를 포함합니다. APK 서명 및 패키지 정보는 Android 빌드 도구로 검사합니다. 실제 휴대폰 설치 및 기존 앱 위 업데이트는 별도 기기 검증이 필요합니다.
 
-v0.23 로딩 화면과 건설 시 동물 자리 이동의 실제 검수는 [최신 기록](docs/research/v023-playtest-results.md)에 기록합니다. v0.22의 화면·성장 연결은 [개편 기록](docs/research/v022-playtest-results.md), v0.21 검수는 [기존 기록](docs/research/v021-playtest-results.md)에 보존합니다. 모바일 브라우저 검수는 Chromium 에뮬레이션이며 실제 Android·iPhone 기기 검수와 구분합니다.
+v0.24 정렬·방향 변경·층 분리의 실제 검수는 [이번 기록](docs/research/v024-playtest-results.md)에 기록합니다. v0.23 로딩 화면과 건설 시 동물 자리 이동의 실제 검수는 [이전 기록](docs/research/v023-playtest-results.md)에 보존합니다. v0.22의 화면·성장 연결은 [개편 기록](docs/research/v022-playtest-results.md), v0.21 검수는 [기존 기록](docs/research/v021-playtest-results.md)에 보존합니다. 모바일 브라우저 검수는 Chromium 에뮬레이션이며 실제 Android·iPhone 기기 검수와 구분합니다.
 
 글꼴은 SIL Open Font License의 Noto Sans KR / DM Sans를 앱에 포함합니다. Noto Sans KR 라이선스는 `public/fonts/OFL-NotoSansKR.txt`, DM Sans 라이선스는 `public/fonts/OFL-DMSans.txt`에 있습니다.

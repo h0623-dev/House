@@ -2,6 +2,7 @@ import type { ActionResult, GameState, Resource } from './game';
 import { CROP_IDS, type CropId } from './crops';
 import { getBuiltTypes, getSettlement, getLegacySettlement, getUpgradedFacilityRecord, getHighestFacilityLevel, type BuildingType } from './settlement';
 import { cloneTruckLayoutFields } from './truck-layout';
+import { cloneLayoutDirectionFields } from './layout-direction';
 import { cloneCompanions } from './companions';
 import { cloneUnitProgressFields, getMaxTeamSize, getUnlockedUnitIds } from './units';
 
@@ -144,6 +145,7 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
     plots: state.plots.map(plot => ({ ...plot })), quests: [...state.quests], stats: { ...state.stats },
     ...(state.settlement ? { settlement: getLegacySettlement(state) } : {}),
     ...cloneTruckLayoutFields(state),
+    ...cloneLayoutDirectionFields(state),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
     ...cloneUnitProgressFields(state),

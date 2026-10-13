@@ -251,17 +251,14 @@ export function planYieldNavigation(world:NavigationWorld,start:NavigationLocati
     }
     return candidates;
   };
-  const candidates=collectCandidates([18,28,42,56]);
-  candidates.sort((a,b)=>distance(start.point,a.point)-distance(start.point,b.point));
-  for(const destination of candidates){const route=planNavigation(world,start,destination);if(route&&route.motion.distance>1)return route;}
-  // Larger companions at a rail can need more room than the first short step.
-  // Preserve every existing successful exit; only compare longer routes when all short exits failed.
-  let fallback:NavigationPath|undefined;
-  for(const destination of collectCandidates([84,112])){
+  // A taller stair can make a nearby landing require a much longer descent.
+  // Compare real clear routes so a farther safe step on this floor can win.
+  let shortest:NavigationPath|undefined;
+  for(const destination of collectCandidates([18,28,42,56,84,112])){
     const route=planNavigation(world,start,destination);
-    if(route&&route.motion.distance>1&&(!fallback||route.motion.duration<fallback.motion.duration))fallback=route;
+    if(route&&route.motion.distance>1&&(!shortest||route.motion.duration<shortest.motion.duration-1e-9))shortest=route;
   }
-  return fallback;
+  return shortest;
 }
 export function sampleNavigation(path:NavigationPath,elapsed:number,returning=false){
   const route=returning?path.returnMotion:path.motion,motion=sampleMotionRoute(route,elapsed,returning);

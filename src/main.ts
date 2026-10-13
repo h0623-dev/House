@@ -9,6 +9,7 @@ import './village.css';
 import { createGame, performAction, tick, applyOfflineProgress, saveGame, loadGame, expansionCost, farmExpansionCost, getFarmCapacity, questList, getCropProgress, resourceLabels, MAX_DECK_LEVEL, beginHunt, finishHunt, cancelHunt, setCompanionTeam, type Action, type Gender, type Resource, type CropId, CROPS, CROP_IDS, getSeedInventory, getSeedCount, getPlotCropId } from './game';
 import { getVillageOrder, fulfillVillageOrder } from './village-orders';
 import { Scene } from './scene';
+import { getLayoutDirection, rotateLayoutTarget, type LayoutTarget } from './layout-direction';
 import { BUILDINGS, BUILDING_TYPES, getSettlement, getUnlockedSlots, getAllUnlockedSlots, getUpgradeCost, buildFacility, moveFacility, replaceFacility, upgradeFacility, startProduction, collectProduction, collectAndRestartProduction, getBuiltTypes, buildTruckFloor, moveHome, isFacilitySlotAvailable, isHomeSlotAvailable, type BuildingType } from './settlement';
 import { getTruckFloorCount, getTruckFloorCost, getFloorSlots, getHomeLocation, getHomeSlots, getSlotFloor, getSlotLocalIndex, type TruckFloor } from './truck-layout';
 import { buildingCatalog, facilitySheet, facilityUpgradePreview, productionState } from './settlement-ui';
@@ -28,6 +29,7 @@ import './planning.css';
 import './truck-floors.css';
 import './pwa.css';
 import './village-hub.css';
+import './layout-directions.css';
 import { isAppleMobileDevice, isHomeScreenGame, showInstallHelp, hasInstallPrompt, installHomeScreenGame, homeScreenInstructions } from './pwa-install';
 import { BATTLE_ART_URLS } from './battle-art';
 import { cropIcon } from './crop-art';
@@ -127,6 +129,7 @@ app.innerHTML=`
      <div class="farm-context" id="farm-context" aria-label="선택한 밭과 할 일">
       <div class="plot-selector"><button data-plot-step="-1" aria-label="이전 밭 선택">${icon('chevron')}</button><div><strong id="context-title">1번 밭</strong><span id="context-state">수확할 준비가 됐어요</span></div><button data-plot-step="1" aria-label="다음 밭 선택">${icon('chevron')}</button></div>
       <button class="context-action" id="plot-action"><span class="control-icon">${icon('food')}</span><small>수확하기</small></button>
+      <button class="context-direction" data-layout-rotate="plot" aria-label="선택한 밭 방향 바꾸기" aria-pressed="false">${icon('refresh')}<small>방향</small></button>
       <button class="context-details" data-open="farm" aria-label="텃밭 전체 보기">${icon('map')}<small>전체 밭</small></button>
      </div>
      <div class="quick-actions" id="quick-actions" aria-label="바로 하는 활동">${quickItems.map(([a,i,t])=>`<button class="quick-action quick-${a}" data-quick="${a}" aria-label="${t}"><span class="control-icon">${icon(i)}<b class="action-count" hidden></b></span><small>${t}</small></button>`).join('')}</div>
@@ -200,6 +203,7 @@ document.querySelector('#world')!.addEventListener('sceneactionchange',event=>{
 });
 updateZoomControls();
 function setFarmTray(open:boolean){
+ if(open&&selectedZone==='home')scene.setActiveFloor(1);
  farmTrayOpen=open;document.querySelector<HTMLElement>('#farm-tray')!.hidden=!open;
  document.querySelector('.scene-card')!.classList.toggle('farm-tray-open',open);
  const toggle=document.querySelector<HTMLButtonElement>('[data-farm-toggle]')!;
@@ -207,6 +211,13 @@ function setFarmTray(open:boolean){
  toggle.querySelector('small')!.textContent=open?'도구 접기':'농사 도구';
 }
 function closeFacility(){document.querySelector('#toast')!.classList.remove('facility-toast');selectedFacilityId=null;scene.setSelectedFacility(null);document.querySelector<HTMLElement>('#facility-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('facility-selected','facility-repeat-ready');updateWalkingAvailability();}
+function changeLayoutDirection(target:LayoutTarget){
+ if(actionBusy||farmQueue.length||runningFarm||placement||homePlacement){toast('지금 작업을 마치고 방향을 바꿔 주세요.');return;}
+ const result=rotateLayoutTarget(state,target);if(!result.ok){toast(result.message);return;}
+ state=result.state;persist();
+ if(target.kind==='home'){scene.setActiveFloor(getHomeLocation(state).floor);openModal('house');}
+ render();ping();toast(result.message);
+}
 function cancelConstruction(){placement=null;homePlacement=null;scene.setConstructionMode(null);scene.setHouseMoveMode(false);scene.setPlanningViewport(null);document.querySelector<HTMLElement>('#construction-bar')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('construction-mode');updateWalkingAvailability();}
 function slotLabel(slot:number){return `${getSlotFloor(slot)}층 · ${getSlotLocalIndex(slot)+1}번 자리`;}
 function freeFacilitySlots(){return ([1,2,3] as TruckFloor[]).flatMap(floor=>getFloorSlots(state,floor)).filter(slot=>isFacilitySlotAvailable(state,slot));}
@@ -464,6 +475,8 @@ function renderSettlement(){
  start.hidden=production.ready;collect.hidden=!production.ready;start.disabled=production.running;start.querySelector('span')!.textContent=production.running?'생산 중…':'생산 시작';
  const repeat=panel.querySelector<HTMLButtonElement>('[data-facility-collect-repeat]');if(repeat)repeat.hidden=!production.ready;
  const cost=getUpgradeCost(selected),upgrade=panel.querySelector<HTMLButtonElement>('[data-facility-upgrade]')!;upgrade.title=selected.level>=definition.maxLevel?'최대 레벨이에요':`목재 ${cost.wood} · 고철 ${cost.scrap}`;
+ const direction=panel.querySelector<HTMLButtonElement>('[data-layout-rotate="facility"]')!;
+ direction.setAttribute('aria-pressed',String(getLayoutDirection(state,{kind:'facility',id:selected.id})===1));direction.disabled=actionBusy;
 }
 function updateNav(){
  const active=['build','hunt','bag','settings'].includes(currentModal)?currentModal:selectedZone==='grove'||farmFocused?'farm':'home';
@@ -544,9 +557,12 @@ function renderControls(){
  const title=context.querySelector<HTMLElement>('#context-title')!,detail=context.querySelector<HTMLElement>('#context-state')!;
  const actionButton=context.querySelector<HTMLButtonElement>('#plot-action')!;
  const details=context.querySelector<HTMLButtonElement>('.context-details')!;
+ const direction=context.querySelector<HTMLButtonElement>('[data-layout-rotate="plot"]')!;
  const plot=state.plots.find(p=>p.id===selectedPlotId)??preferredPlot();
  if(plot)selectedPlotId=plot.id;
  const grove=selectedZone==='grove';
+ direction.hidden=grove||!plot;direction.disabled=busy;
+ if(plot){direction.dataset.layoutId=String(plot.id);direction.setAttribute('aria-label',`${plot.id}번 밭 방향 바꾸기`);direction.setAttribute('aria-pressed',String(getLayoutDirection(state,{kind:'plot',id:plot.id})===1));}
  let contextAction:Action='chop',label='나무 베기',contextIcon='wood';
  title.textContent=grove?'도로 옆 벌목장':`${plot?.id??1}번 밭`;
  if(grove){detail.textContent=state.energy<10?'잠깐 쉬면 다시 나무를 벨 수 있어요':'나무를 직접 눌러도 벌목해요 · 기력 10';delete actionButton.dataset.plot;details.dataset.open='grove';details.setAttribute('aria-label','벌목장 안내 보기');details.querySelector('small')!.textContent='안내';}
@@ -877,7 +893,7 @@ function openModal(kind:string){if(kind==='seeds'){openSeedInventory();return;}i
  if(kind==='farm-expand')renderFarmExpansion();
  if(kind==='house'){
   const home=getHomeLocation(state);
-  modalShell('OUR HOME ON THE TRUCK','우리집',`<div class="home-relocation-art">${icon('home')}<strong>${home.floor}층 · ${home.slot+1}번 집 자리</strong></div><p class="modal-description">집 전체가 데크 안에 들어오는 안전한 자리에 놓아요.<br>완성된 집도 무료로 옮길 수 있어요.</p><button class="button full-width" data-home-move>${icon('move')} 우리집 재배치</button><button class="button button-light full-width activity-secondary" data-open="floors">${icon('expand')} 2층 · 3층 증축 보기</button>`);
+  modalShell('OUR HOME ON THE TRUCK','우리집',`<div class="home-relocation-art">${icon('home')}<strong>${home.floor}층 · ${home.slot+1}번 집 자리</strong></div><p class="modal-description">집 전체가 데크 안에 들어오는 안전한 자리에 놓아요.<br>완성된 집도 무료로 옮길 수 있어요.</p><button class="button full-width" data-home-move>${icon('move')} 우리집 재배치</button><button class="button button-light full-width activity-secondary" data-layout-rotate="home" aria-pressed="${getLayoutDirection(state,{kind:'home'})===1}">${icon('refresh')} 우리집 방향 바꾸기</button><button class="button button-light full-width activity-secondary" data-open="floors">${icon('expand')} 2층 · 3층 증축 보기</button>`);
  }
  if(kind==='floors'){
   setZone('home');setFarmTray(false);const count=getTruckFloorCount(state),cost=getTruckFloorCost(state),unlocked=cost!==null&&state.deckLevel>=cost.unlockLevel;
@@ -993,6 +1009,11 @@ document.addEventListener('click',e=>{
   const key=pressed?.key??t.dataset.villageAdvice,advice=villageAdvice(key);
   if(t.getAttribute('aria-disabled')==='true'||!advice){toast('이 활동은 완료됐어요. 지금 할 수 있는 일을 다시 확인해 주세요.');return;}
   goToVillageTarget(pressed?.target??advice.target);return;
+ }
+ if(t.dataset.layoutRotate){
+  const kind=t.dataset.layoutRotate;if(kind==='home')changeLayoutDirection({kind});
+  else if(kind==='facility'||kind==='plot')changeLayoutDirection({kind,id:Number(t.dataset.layoutId)});
+  return;
  }
  if(t.dataset.facilitySelect){selectFacility(Number(t.dataset.facilitySelect));return;}
  if(t.dataset.facilityCollectRepeat){receiveAndRestartFacility(Number(t.dataset.facilityCollectRepeat));return;}

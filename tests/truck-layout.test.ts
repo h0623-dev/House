@@ -4,7 +4,7 @@ import { advanceTime, beginHunt, createGame, loadGame, performAction, saveGame, 
 import { buildFacility, buildTruckFloor, collectProduction, getFacilityHistory, getLegacySettlement, getSettlement,
   getUpgradedFacilityRecord, isFacilitySlotAvailable, isHomeSlotAvailable, moveFacility, moveHome, replaceFacility,
   startProduction, upgradeFacility, validateFacilityHistory, validateSettlement, validateTruckLayout } from '../src/settlement.ts';
-import { FARM_POSITIONS, HOME_RAIL_MARGIN, SETTLEMENT_POSITIONS, getAllUnlockedSlots, getFloorBounds, getFloorSlots,
+import { FARM_POSITIONS, FLOOR_HEIGHT, HOME_RAIL_MARGIN, SETTLEMENT_POSITIONS, getAllUnlockedSlots, getFloorBounds, getFloorSlots,
   getFloorStairs, getHomeLocation, getHomeSlots, getHouseFootprint, getTruckFloorCost, getTruckFloorCount,
   getTruckLayout, projectTruckPoint, unprojectTruckPoint } from '../src/truck-layout.ts';
 import { claimGrowthQuest } from '../src/growth-quests.ts';
@@ -78,7 +78,22 @@ test('home footprints and shared stairs stay inside every unlocked truck plane',
     assert.ok(stairs.lowerEntryUV[1] - stairs.reserved.bottom >= 54);
     assert.ok(stairs.reserved.top - stairs.upperEntryUV[1] >= 54);
     assert.deepEqual(unprojectTruckPoint(projectTruckPoint([-206,-102], floor), floor).map(value => Math.round(value)), [-206,-102]);
-    assert.equal(getFloorBounds(8, floor).height, (floor - 1) * 176);
+    assert.equal(getFloorBounds(8, floor).height, (floor - 1) * FLOOR_HEIGHT);
+  }
+});
+
+test('taller floors share one projection height and preserve deck coordinates on all three planes', () => {
+  assert.equal(FLOOR_HEIGHT,264,'floor separation is 50% taller than the original 176px');
+  for (const floor of [1,2,3] as const) for (const point of [[-206,-102],[-225,140],[348,328],[17.25,-68.5]] as [number,number][]) {
+    const first=projectTruckPoint(point,1),projected=projectTruckPoint(point,floor),roundtrip=unprojectTruckPoint(projected,floor);
+    assert.equal(projected[0],first[0]);assert.equal(projected[1],first[1]-(floor-1)*FLOOR_HEIGHT);
+    assert.ok(Math.hypot(roundtrip[0]-point[0],roundtrip[1]-point[1])<1e-9);
+  }
+  for (const upper of [2,3] as const) {
+    const stairs=getFloorStairs(8,upper);
+    assert.deepEqual(stairs.bottom,projectTruckPoint(stairs.bottomUV,stairs.lowerFloor));
+    assert.deepEqual(stairs.top,projectTruckPoint(stairs.topUV,stairs.upperFloor));
+    assert.ok(stairs.bottom[1]-stairs.top[1]>FLOOR_HEIGHT,'each climb includes the unchanged deck landing offset');
   }
 });
 

@@ -17,7 +17,7 @@ export interface TruckLayout {
 export interface TruckLayoutState { deckLevel: number; truckLayout?: TruckLayout }
 export const SLOTS_PER_FLOOR = 16;
 export const MAX_TRUCK_FLOORS = 3;
-export const FLOOR_HEIGHT = 176;
+export const FLOOR_HEIGHT = 264;
 export const DEFAULT_HOME_LOCATION: HomeLocation = { floor: 1, slot: 0 };
 export const HOME_POSITIONS: readonly TruckPoint[] = [[-206,-102],[-206,-274],[-206,-446],[-206,-618],[156,-102]];
 export const HOME_HALF_WIDTH = 58, HOME_HALF_DEPTH = 57, HOME_RAIL_MARGIN = 14;

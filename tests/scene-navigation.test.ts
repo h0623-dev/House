@@ -5,8 +5,27 @@ import { createNavigationWorld, defaultHeroLocation, groundLocation, planNavigat
   HERO_BODY_RADIUS, circleOverlapsPolygon, blocksActorStep, planWorkNavigation, planYieldNavigation, distanceToSegment,
   type NavigationLocation, type NavigationPath, type NavigationPoint, type NavigationWorld } from '../src/scene-navigation.ts';
 import { WALK_SPEED, CLIMB_SPEED } from '../src/scene-motion.ts';
-import { getFloorStairs, type TruckFloor } from '../src/truck-layout.ts';
+import { FLOOR_HEIGHT, getFloorStairs, type TruckFloor } from '../src/truck-layout.ts';
 import { createPetPatrol, stepPetPatrol } from '../src/scene-patrol.ts';
+
+
+// Captured v0.21 feet retain their original deck UV or stair-segment progress.
+// Only the authored separation between floors changes; no body or path is invented.
+const CAPTURED_FLOOR_HEIGHT=176;
+const capturedDeckPoint=(point:NavigationPoint,floor:TruckFloor):NavigationPoint=>
+  [point[0],point[1]-(floor-1)*(FLOOR_HEIGHT-CAPTURED_FLOOR_HEIGHT)];
+const capturedStairPoint=(point:NavigationPoint,upper:2|3):NavigationPoint=>{
+  const stair=getFloorStairs(7,upper),current=[stair.lowerEntry,stair.bottom,stair.top,stair.upperEntry],
+    floorIds=[stair.lowerFloor,stair.lowerFloor,stair.upperFloor,stair.upperFloor],
+    offsets=floorIds.map(floor=>(floor-1)*(FLOOR_HEIGHT-CAPTURED_FLOOR_HEIGHT)),
+    original=current.map((p,index)=>[p[0],p[1]+offsets[index]]as NavigationPoint);
+  let segment=0;
+  for(let index=1;index<original.length-1;index++)
+    if(distanceToSegment(point,original[index],original[index+1])<distanceToSegment(point,original[segment],original[segment+1]))segment=index;
+  assert.ok(distanceToSegment(point,original[segment],original[segment+1])<1e-6,'a captured stair body remains on its original physical link');
+  const from=original[segment],to=original[segment+1],ratio=(point[0]-from[0])/(to[0]-from[0]);
+  return [point[0],point[1]-(offsets[segment]+ratio*(offsets[segment+1]-offsets[segment]))];
+};
 
 const deck = (u:number,v:number,floor:TruckFloor=1):NavigationLocation => ({surface:'deck',floor,point:projectDeckPoint([u,v],floor)});
 const road = (x:number,y:number):NavigationLocation => ({surface:'road',point:[x,y]});
@@ -172,6 +191,33 @@ test('all 48 facilities on three built floors remain reachable and chores return
   assert.equal(planNavigation(createNavigationWorld(8,24,[],{floors:[1,2]}),origin,deck(155,14,3)),undefined,'an unbuilt third floor has no route');
 });
 
+test('both taller stair links retain their exact physical endpoints and shared climb pace in either direction',()=>{
+  const world=createNavigationWorld(7,21,[],{floors:[1,2,3]});
+  for(const upper of [2,3]as const){
+    const stairs=getFloorStairs(7,upper),
+      lower:NavigationLocation={surface:'deck',floor:stairs.lowerFloor,point:stairs.lowerEntry},
+      higher:NavigationLocation={surface:'deck',floor:stairs.upperFloor,point:stairs.upperEntry};
+    for(const [from,to]of [[lower,higher],[higher,lower]]){
+      const path=requirePath(world,from,to),ascending=from.floor!<to.floor!;
+      assert.deepEqual(path.points,ascending?[stairs.lowerEntry,stairs.bottom,stairs.top,stairs.upperEntry]
+        :[stairs.upperEntry,stairs.top,stairs.bottom,stairs.lowerEntry]);
+      assert.deepEqual([...new Set(path.segments.map(part=>part.link))],[`${upper-1}-${upper}`]);
+      closePoint(sampleNavigation(path,0).point,from.point);closePoint(sampleNavigation(path,path.motion.duration).point,to.point);
+      closePoint(sampleNavigation(path,path.returnMotion.duration,true).point,from.point);
+      for(const part of path.motion.segments){
+        assert.equal(part.surface,'climb');assert.ok(Math.abs(part.seconds-part.distance/CLIMB_SPEED)<1e-9);
+      }
+      let previous=sampleNavigation(path,0);
+      for(let elapsed=.005;elapsed<path.motion.duration;elapsed+=.005){
+        const current=sampleNavigation(path,elapsed);
+        assert.ok(distance(current.point,previous.point)<=CLIMB_SPEED*.005+1e-6);
+        assert.equal(current.location.surface,'ladder');assert.equal(current.location.link,`${upper-1}-${upper}`);
+        assert.equal(current.climbing,ascending?'up':'down');previous=current;
+      }
+    }
+  }
+});
+
 test('retargeting either direction halfway along an upper stair retains the exact feet and correct floor',()=>{
   const world=createNavigationWorld(7,21,[],{floors:[1,2,3]}),stair=getFloorStairs(7,3),mid=stair.bottom.map((n,i)=>(n+stair.top[i])/2)as NavigationPoint;
   for(const destination of [deck(155,14,1),deck(155,14,2),deck(155,14,3),road(270,655)]){
@@ -215,7 +261,7 @@ test('an immobile companion at the usual work edge is routed around, while an oc
 
 test('the captured roadside-return deadlock has a full-body detour from the retained feet to the same target',()=>{
   for(const floor of[1,2,3]as const){
-    const offset=(floor-1)*176,start:NavigationLocation={surface:'deck',floor,point:[657.0723859545961,324.43059685150104-offset]},
+    const offset=(floor-1)*FLOOR_HEIGHT,start:NavigationLocation={surface:'deck',floor,point:[657.0723859545961,324.43059685150104-offset]},
       target:NavigationLocation={surface:'deck',floor,point:[762.1095055507535,324.92665331145355-offset]},
       dog={id:'dog',radius:25.74,location:{surface:'deck' as const,floor,point:[687.4061738611254,310.29717118725637-offset]as NavigationPoint}},
       world=createNavigationWorld(floor===1?1:7,floor===1?3:21,[],{floors:floor===1?[1]:[1,2,3],actors:[dog]});
@@ -290,15 +336,16 @@ test('expanding around built stairs keeps an in-flight companion on its physical
 });
 
 test('the captured dog yields around a hero held on the stair instead of repeatedly planning through its body',()=>{
-  const hero:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:[221.8896224924786,229.48585785025378]},
+  const hero:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:capturedStairPoint([221.8896224924786,229.48585785025378],2)},
     dog:NavigationLocation={surface:'deck',floor:1,point:[194.93286666752502,248.10948525284655]},
     cat={id:'cat',radius:24.82,location:{surface:'deck' as const,floor:1 as const,point:[121.2068415687196,323.3151386316462]as NavigationPoint}},
     heroActor={id:'hero',radius:HERO_BODY_RADIUS,location:hero},others=[heroActor,cat],
     world=createNavigationWorld(4,6,[17,18],{floors:[1,2],radius:25.74,actors:others}),
-    next={...hero,point:[hero.point[0]-.9455,hero.point[1]+1.983]as NavigationPoint},target:NavigationLocation={surface:'deck',floor:1,point:[182.36,380.19]},
+    next={...hero,point:capturedStairPoint([221.8896224924786-.9455,229.48585785025378+1.983],2)},target:NavigationLocation={surface:'deck',floor:1,point:[182.36,380.19]},
     route=planYieldNavigation(world,dog,[next,target]);assert.ok(route);closePoint(route.points[0],dog.point);
   const failedBefore:NavigationLocation={surface:'deck',floor:1,point:[184.2177305613025,222.24085834253054]};
-  assert.equal(blocksActorStep(dog,failedBefore,25.74,others)?.id,'hero','the former straight path really crosses the stationary stair body');
+  assert.equal(blocksActorStep(dog,failedBefore,25.74,others),undefined,'the taller stair lifts the retained hero clear of the original floor-one step');
+  assert.equal(blocksActorStep(dog,{...failedBefore,point:[...hero.point]},25.74,others)?.id,'hero','a direct step toward the actual retained stair body remains blocked');
   const pet=createPetPatrol('dog',world,hero,others,0,.78);assert.ok(pet);
   Object.assign(pet,{location:{...dog,point:[...dog.point]},route,elapsed:0,pauseRemaining:0,retryRemaining:0,
     distance:1194.341839858348,heading:10.602875205865576,facing:-1,facingBlend:-1,blend:0,blockedReason:'actor:hero'});
@@ -319,10 +366,10 @@ test('the captured dog yields around a hero held on the stair instead of repeate
 });
 
 test('a temporarily occupied stair retains a reachable ground destination until the moving companion clears it',()=>{
-  const hero:NavigationLocation={surface:'deck',floor:2,point:[810.3965867888622,-84.35098263471545]},
+  const hero:NavigationLocation={surface:'deck',floor:2,point:capturedDeckPoint([810.3965867888622,-84.35098263471545],2)},
     target:NavigationLocation={surface:'deck',floor:1,point:[253.16366801784113,511.3472249495062]},
-    catLocation:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:[159.89579074083665,329.4201169429952]},
-    dog={id:'dog',radius:25.74,location:{surface:'deck' as const,floor:2 as const,point:[405.5772380296471,37.54357816313969]as NavigationPoint}},
+    catLocation:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:capturedStairPoint([159.89579074083665,329.4201169429952],2)},
+    dog={id:'dog',radius:25.74,location:{surface:'deck' as const,floor:2 as const,point:capturedDeckPoint([405.5772380296471,37.54357816313969],2)as NavigationPoint}},
     catActor={id:'cat',radius:24.82,location:catLocation},actors=[dog,catActor],
     live=createNavigationWorld(7,9,[17,18],{floors:[1,2,3],actors}),
     permanent=createNavigationWorld(7,9,[17,18],{floors:[1,2,3]});
@@ -354,8 +401,8 @@ test('a temporarily occupied stair retains a reachable ground destination until 
 });
 
 test('a moving cat promptly exits the nearest stair landing so a held chore can descend and return safely',()=>{
-  const hero:NavigationLocation={surface:'deck',floor:2,point:[315.9111302836496,88.78070839974015]},
-    catLocation:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:[172.5546048669048,320.54005330232053]},
+  const hero:NavigationLocation={surface:'deck',floor:2,point:capturedDeckPoint([315.9111302836496,88.78070839974015],2)},
+    catLocation:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:capturedStairPoint([172.5546048669048,320.54005330232053],2)},
     target:NavigationLocation={surface:'deck',floor:1,point:[135.46,413.09]},
     dog={id:'dog',radius:25.74,location:{surface:'deck' as const,floor:1 as const,point:[514.8188907413205,336.53839366541376]as NavigationPoint}},
     heroActor={id:'hero',radius:HERO_BODY_RADIUS,location:hero},others=[heroActor,dog],
@@ -394,9 +441,9 @@ test('a moving cat promptly exits the nearest stair landing so a held chore can 
 });
 
 test('a dog blocking a leased cat exit yields with both full bodies so the original hero destination remains reachable',()=>{
-  const hero:NavigationLocation={surface:'deck',floor:2,point:[313.7885732381797,89.82704048894999]},
+  const hero:NavigationLocation={surface:'deck',floor:2,point:capturedDeckPoint([313.7885732381797,89.82704048894999],2)},
     target:NavigationLocation={surface:'deck',floor:1,point:[253.09952348758029,511.2168795072115]},
-    catLocation:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:[184.37623988714822,308.16278826418306]},
+    catLocation:NavigationLocation={surface:'ladder',floor:1,link:'1-2',point:capturedStairPoint([184.37623988714822,308.16278826418306],2)},
     dogLocation:NavigationLocation={surface:'deck',floor:1,point:[141.46693971433362,335.0162739474959]},
     heroActor={id:'hero',radius:HERO_BODY_RADIUS,location:hero},catActor={id:'cat',radius:24.82,location:catLocation},
     dogActor={id:'dog',radius:25.74,location:dogLocation},
@@ -442,9 +489,9 @@ test('a dog blocking a leased cat exit yields with both full bodies so the origi
 });
 
 test('both occupied stair exits clear physically before the waiting cat receives its first viable yield route',()=>{
-  const hero:NavigationLocation={surface:'deck',floor:2,point:[327.7866068091878,82.92659381193752]},
+  const hero:NavigationLocation={surface:'deck',floor:2,point:capturedDeckPoint([327.7866068091878,82.92659381193752],2)},
     target:NavigationLocation={surface:'deck',floor:1,point:[253.09952348758029,511.2168795072115]},
-    catLocation:NavigationLocation={surface:'ladder',floor:2,link:'1-2',point:[300.0805947488223,99.10764248963211]},
+    catLocation:NavigationLocation={surface:'ladder',floor:2,link:'1-2',point:capturedStairPoint([300.0805947488223,99.10764248963211],2)},
     dogLocation:NavigationLocation={surface:'deck',floor:1,point:[145.2405254946055,339.66994433167076]},
     heroActor={id:'hero',radius:HERO_BODY_RADIUS,location:hero},catActor={id:'cat',radius:24.82,location:catLocation},
     dogActor={id:'dog',radius:25.74,location:dogLocation},
@@ -468,7 +515,7 @@ test('both occupied stair exits clear physically before the waiting cat receives
   assert.equal(dog.route,null);assert.ok(Math.abs(dog.distance-2286.0194742358844-dogTravel)<1e-6);
   closePoint(catActor.location.point,catLocation.point);
   for(let i=1;i<link.points.length;i++)assert.ok(distanceToSegment(dog.location.point,link.points[i-1],link.points[i])>=dog.radius+catActor.radius+2-.01);
-  const clearedDog={...dogActor,location:dog.location},catOthers=[heroActor,clearedDog],
+  const dogYieldSeconds=seconds,clearedDog={...dogActor,location:dog.location},catOthers=[heroActor,clearedDog],
     ready={...closed,actors:catOthers},catExit=planYieldNavigation(ready,catLocation,[entry,target]);assert.ok(catExit);
   closePoint(catExit.points[0],catLocation.point);
   const cat=createPetPatrol('cat',ready,hero,catOthers,0,.73);assert.ok(cat);
@@ -484,35 +531,47 @@ test('both occupied stair exits clear physically before the waiting cat receives
   assert.ok(Math.abs(cat.distance-2647.530530024362-catTravel)<1e-6);
   const actors=[clearedDog,{...catActor,location:cat.location}],
     heroRoute=requirePath(createNavigationWorld(7,9,[17,18],{floors:[1,2,3],actors}),hero,target);
-  assert.ok(seconds+heroRoute.motion.duration<20,'even sequential physical exits and descent fit the unchanged journey bound');
+  const stairs=getFloorStairs(7,2),legacyTop:NavigationPoint=[stairs.top[0],stairs.top[1]+FLOOR_HEIGHT-CAPTURED_FLOOR_HEIGHT],
+    extraClimb=distance(stairs.bottom,stairs.top)-distance(stairs.bottom,legacyTop),
+    heightTravelSeconds=extraClimb/(44*CLIMB_SPEED/WALK_SPEED)+extraClimb/CLIMB_SPEED;
+  assert.ok(seconds-dogYieldSeconds<16,'the moving cat still clears its corridor inside the unchanged product chore stall limit');
+  assert.ok(seconds+heroRoute.motion.duration<20+heightTravelSeconds,
+    'the original 20-second traversal budget gains only the physical extra climb at unchanged companion and hero speeds');
   for(const returning of[false,true])for(let t=0;t<heroRoute.motion.duration;t+=.005)
     assert.equal(blocksActorStep(sampleNavigation(heroRoute,t,returning).location,sampleNavigation(heroRoute,t+.005,returning).location,HERO_BODY_RADIUS,actors),undefined);
   closePoint(sampleNavigation(heroRoute,heroRoute.motion.duration).point,target.point);
   closePoint(sampleNavigation(heroRoute,heroRoute.returnMotion.duration,true).point,hero.point);
 });
 
-test('the captured upper-stair cat keeps its original short exit before any larger fallback is considered',()=>{
-  const hero:NavigationLocation={surface:'deck',floor:3,point:[201.01874252325058,-7.388790750274325]},
-    cat:NavigationLocation={surface:'ladder',floor:3,link:'2-3',point:[165.4937408880556,17.519316093453497]},
-    dog={id:'dog',radius:25.74,location:{surface:'deck' as const,floor:2 as const,point:[53.23080108845005,172.83331392512872]as NavigationPoint}},
-    reserved:NavigationLocation[]=[{surface:'ladder',floor:3,link:'2-3',point:[194.44942271628653,-2.7928786218727426]},
+test('the captured upper-stair cat chooses the shortest safe landing while preserving every retained stair point',()=>{
+  const hero:NavigationLocation={surface:'deck',floor:3,point:capturedDeckPoint([201.01874252325058,-7.388790750274325],3)},
+    cat:NavigationLocation={surface:'ladder',floor:3,link:'2-3',point:capturedStairPoint([165.4937408880556,17.519316093453497],3)},
+    dog={id:'dog',radius:25.74,location:{surface:'deck' as const,floor:2 as const,point:capturedDeckPoint([53.23080108845005,172.83331392512872],2)as NavigationPoint}},
+    reserved:NavigationLocation[]=[{surface:'ladder',floor:3,link:'2-3',point:capturedStairPoint([194.44942271628653,-2.7928786218727426],3)},
       {surface:'deck',floor:1,point:[241.16319545200903,259.34724411737346]}],
     world=createNavigationWorld(7,9,[17,32,33],{floors:[1,2,3],home:{floor:3,slot:1},radius:24.82,actors:[{id:'hero',radius:7,location:hero},dog]}),
     exit=planYieldNavigation(world,cat,reserved);assert.ok(exit);
-  const expected:NavigationPoint[]=[[165.4937408880556,17.519316093453497],[164.77999999999997,18.019999999999982],
-    [70.22999999999999,216.32],[34.04999999999998,241.7],[-5.547979746446714,202.1020202535533]];
-  assert.deepEqual(exit.points,expected,'the already successful original-tier path is byte-for-byte unchanged');
+  const expected:NavigationPoint[]=[capturedStairPoint([165.4937408880556,17.519316093453497],3),
+    capturedDeckPoint([164.77999999999997,18.019999999999982],3),capturedDeckPoint([70.22999999999999,216.32],2),
+    capturedDeckPoint([34.04999999999998,241.7],2),capturedDeckPoint([-5.547979746446714,202.1020202535533],2)];
+  assert.deepEqual(exit.points.slice(0,-1),expected.slice(0,-1),'the original stair feet and every landing anchor remain exact');
+  const landing=getFloorStairs(7,3).lowerEntry,
+    shortestTarget:NavigationPoint=[landing[0]+Math.cos(Math.PI/8)*42,landing[1]+Math.sin(Math.PI/8)*42];
+  assert.ok(distance(exit.points.at(-1)!,shortestTarget)<1e-12,'the 42px clear step replaces the formerly chosen 56px endpoint');
+  assert.ok(distance(exit.target.point,cat.point)>distance(expected.at(-1)!,cat.point),
+    'the safe endpoint can be farther from the cat while its actual traversable route is shorter');
+  assert.ok(exit.motion.distance<expected.slice(1).reduce((total,point,index)=>total+distance(expected[index],point),0));
   assert.deepEqual(exit.surfaces,['ladder','ladder','ladder','deck']);
-  assert.equal(exit.motion.distance,320.75363871240035);
-  assert.equal(exit.target.floor,2);closePoint(exit.target.point,expected.at(-1)!);
+  assert.ok(Math.abs(exit.motion.distance-(expected.slice(1,-1).reduce((total,point,index)=>total+distance(expected[index],point),0)+42))<1e-9);
+  assert.equal(exit.target.floor,2);closePoint(exit.target.point,shortestTarget);assertClear(world,exit);
 });
 
 test('the captured narrow landing finds the shortest full-body fallback and still refuses an impossible exit',()=>{
-  const hero:NavigationLocation={surface:'deck',floor:3,point:[201.01874252325058,-7.388790750274325]},
-    dog:NavigationLocation={surface:'deck',floor:2,point:[33.114950215089124,241.0999586170223]},
-    cat:NavigationLocation={surface:'ladder',floor:2,link:'2-3',point:[73.17694806575022,210.13935693878082]},
-    protectedTarget:NavigationLocation={surface:'deck',floor:2,point:[-5.547979746446686,202.10202025355335]},
-    reserved:NavigationLocation[]=[{surface:'ladder',floor:3,link:'2-3',point:[194.44942271628653,-2.7928786218727426]},
+  const hero:NavigationLocation={surface:'deck',floor:3,point:capturedDeckPoint([201.01874252325058,-7.388790750274325],3)},
+    dog:NavigationLocation={surface:'deck',floor:2,point:capturedDeckPoint([33.114950215089124,241.0999586170223],2)},
+    cat:NavigationLocation={surface:'ladder',floor:2,link:'2-3',point:capturedStairPoint([73.17694806575022,210.13935693878082],3)},
+    protectedTarget:NavigationLocation={surface:'deck',floor:2,point:capturedDeckPoint([-5.547979746446686,202.10202025355335],2)},
+    reserved:NavigationLocation[]=[{surface:'ladder',floor:3,link:'2-3',point:capturedStairPoint([194.44942271628653,-2.7928786218727426],3)},
       {surface:'deck',floor:1,point:[241.16319545200903,259.34724411737346]},cat,protectedTarget],
     actors=[{id:'hero',radius:7,location:hero},{id:'cat',radius:24.82,location:cat}],
     world=createNavigationWorld(7,9,[17,32,33],{floors:[1,2,3],home:{floor:3,slot:1},radius:25.74,actors}),

@@ -3,13 +3,33 @@ import assert from 'node:assert/strict';
 import {registerHooks} from 'node:module';
 import {createPetPatrol,getPetGroundRadius,stepPetPatrol} from '../src/scene-patrol';
 import {circleOverlapsPolygon,createNavigationWorld,defaultHeroLocation,planNavigation,planYieldNavigation,projectDeckPoint,blocksActorStep,sampleNavigation,
-  type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationPoint,type NavigationWorld} from '../src/scene-navigation';
+  distanceToSegment,type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationPoint,type NavigationWorld} from '../src/scene-navigation';
 import {createGame,type GameState} from '../src/game';
 import type {PetPatrolState} from '../src/scene-patrol';
 import {UNIT_IDS} from '../src/units';
+import {FLOOR_HEIGHT,getFloorStairs,type TruckFloor} from '../src/truck-layout';
 const length=(a:readonly number[],b:readonly number[])=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 const scale=(id:string)=>id==='dog'?.78:id==='boar'?.7:.73;
 const hero=defaultHeroLocation();
+
+// Captured v0.21 feet retain their original deck UV or stair-segment progress.
+// Only the authored separation between floors changes; no body or path is invented.
+const CAPTURED_FLOOR_HEIGHT=176;
+const capturedDeckPoint=(point:NavigationPoint,floor:TruckFloor):NavigationPoint=>
+  [point[0],point[1]-(floor-1)*(FLOOR_HEIGHT-CAPTURED_FLOOR_HEIGHT)];
+const capturedStairPoint=(point:NavigationPoint,upper:2|3):NavigationPoint=>{
+  const stair=getFloorStairs(7,upper),current=[stair.lowerEntry,stair.bottom,stair.top,stair.upperEntry],
+    floorIds=[stair.lowerFloor,stair.lowerFloor,stair.upperFloor,stair.upperFloor],
+    offsets=floorIds.map(floor=>(floor-1)*(FLOOR_HEIGHT-CAPTURED_FLOOR_HEIGHT)),
+    original=current.map((p,index)=>[p[0],p[1]+offsets[index]]as NavigationPoint);
+  let segment=0;
+  for(let index=1;index<original.length-1;index++)
+    if(distanceToSegment(point,original[index],original[index+1])<distanceToSegment(point,original[segment],original[segment+1]))segment=index;
+  assert.ok(distanceToSegment(point,original[segment],original[segment+1])<1e-6,'a captured stair body remains on its original physical link');
+  const from=original[segment],to=original[segment+1],ratio=(point[0]-from[0])/(to[0]-from[0]);
+  return [point[0],point[1]-(offsets[segment]+ratio*(offsets[segment+1]-offsets[segment]))];
+};
+
 
 test('all six companions spawn outside actual footprints and retain separate paw envelopes',()=>{
  const actors:NavigationActor[]=[{id:'hero',location:hero,radius:7}];
@@ -107,17 +127,27 @@ test('the actual scene clears a blocked intermediate landing early without repla
  state.settlement={buildings:[{id:1,type:'waterworks',slot:0,level:1,startedAt:null,readyAt:null}],nextBuildingId:2,stats:{productions:0,collections:0}};
  state.truckLayout={version:1,floors:3,home:{floor:3,slot:1},placements:[{id:1,slot:17}],
   upperBuildings:[{id:17,type:'waterworks',slot:33,level:2,startedAt:null,readyAt:null},{id:18,type:'kitchen',slot:32,level:1,startedAt:null,readyAt:null}],nextBuildingId:19};
- const heldHero:NavigationLocation={surface:'deck',floor:3,point:[201.01874252325058,-7.388790750274325]},
-  dogLocation:NavigationLocation={surface:'deck',floor:2,point:[33.114950215089124,241.0999586170223]},
-  catLocation:NavigationLocation={surface:'ladder',floor:3,link:'2-3',point:[135.66530947605872,79.08232819563777]},
-  reserved:NavigationLocation[]=[{surface:'ladder',floor:3,link:'2-3',point:[194.44942271628653,-2.7928786218727426]},
+ const heldHero:NavigationLocation={surface:'deck',floor:3,point:capturedDeckPoint([201.01874252325058,-7.388790750274325],3)},
+  dogLocation:NavigationLocation={surface:'deck',floor:2,point:capturedDeckPoint([33.114950215089124,241.0999586170223],2)},
+  catLocation:NavigationLocation={surface:'ladder',floor:3,link:'2-3',point:capturedStairPoint([135.66530947605872,79.08232819563777],3)},
+  reserved:NavigationLocation[]=[{surface:'ladder',floor:3,link:'2-3',point:capturedStairPoint([194.44942271628653,-2.7928786218727426],3)},
    {surface:'deck',floor:1,point:[241.16319545200903,259.34724411737346]}],
-  beforeCat:NavigationLocation={surface:'ladder',floor:3,link:'2-3',point:[165.4937408880556,17.519316093453497]},
-  priorDog:NavigationActor={id:'dog',radius:25.74,location:{surface:'deck',floor:2,point:[53.23080108845005,172.83331392512872]}},
+  beforeCat:NavigationLocation={surface:'ladder',floor:3,link:'2-3',point:capturedStairPoint([165.4937408880556,17.519316093453497],3)},
+  priorDog:NavigationActor={id:'dog',radius:25.74,location:{surface:'deck',floor:2,point:capturedDeckPoint([53.23080108845005,172.83331392512872],2)}},
   heroActor={id:'hero',radius:7,location:heldHero},
   catWorld=createNavigationWorld(7,9,[17,32,33],{floors:[1,2,3],home:{floor:3,slot:1},radius:24.82,actors:[heroActor,priorDog]}),
   originalCat=planYieldNavigation(catWorld,beforeCat,reserved)!;
- assert.ok(originalCat);assert.ok(length(sampleNavigation(originalCat,.308).point,catLocation.point)<1e-6);
+ assert.ok(originalCat);
+ // The same captured stair progress takes longer at the unchanged climbing pace.
+ const segment=originalCat.motion.segments.findIndex(part=>distanceToSegment(catLocation.point,part.from,part.to)<1e-6);assert.ok(segment>=0);
+ const capturedDistance=originalCat.motion.segments.slice(0,segment).reduce((total,part)=>total+part.distance,0)
+   +length(originalCat.motion.segments[segment].from,catLocation.point);
+ let lower=0,upper=originalCat.motion.duration;
+ for(let iteration=0;iteration<60;iteration++){
+  const middle=(lower+upper)/2;if(sampleNavigation(originalCat,middle).distance<capturedDistance)lower=middle;else upper=middle;
+ }
+ const capturedElapsed=(lower+upper)/2;
+ assert.ok(length(sampleNavigation(originalCat,capturedElapsed).point,catLocation.point)<1e-6);
  function capturedScene(){
   const scene=Object.assign(Object.create(Scene.prototype),{state:structuredClone(state),heroLocation:structuredClone(heldHero),action:null,activeFloor:3,reducedMotion:false,
    petMotion:new Map(),petYields:new Map()}) as PatrolScene;
@@ -127,7 +157,7 @@ test('the actual scene clears a blocked intermediate landing early without repla
    const world=scene.navigationWorld(radius,[]),pet=createPetPatrol(id,world,heldHero,[],0,scale(id));assert.ok(pet);
    Object.assign(pet,{location:structuredClone(location),radius,distance,heading,facing,facingBlend:facing,turnRemaining:0,pauseRemaining:0,
     retryRemaining:id==='dog'?.45:0,blockedReason:id==='dog'?'actor:cat':null,desiredFloor:3,
-    route:id==='cat'?originalCat:null,elapsed:id==='cat'?.308:0,worldKey:JSON.stringify([world.floors,world.obstacles,world.links,world.road])});
+    route:id==='cat'?originalCat:null,elapsed:id==='cat'?capturedElapsed:0,worldKey:JSON.stringify([world.floors,world.obstacles,world.links,world.road])});
    scene.petMotion.set(id,pet);
   }
   scene.petYields.set('cat',{route:originalCat,reserved:structuredClone(reserved),reservedRadius:7});return scene;
