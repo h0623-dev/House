@@ -115,3 +115,12 @@ v0.14·v0.15 APK 및 각 체크섬을 아래 이전 공개 커밋의 고정 주�
 | --- | ---: | --- |
 | [v0.14 APK](https://raw.githubusercontent.com/h0623-dev/House/d14a1b64c5db85386af6e78fb690261a28f31010/downloads/road-haven-0.14.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/d14a1b64c5db85386af6e78fb690261a28f31010/downloads/road-haven-0.14.0-debug.apk.sha256) | 54,679,329 | `e32c61bb70bd0e45a2c339e4781bd94c94ac470e9fe93819d032d46668192b1d` |
 | [v0.15 APK](https://raw.githubusercontent.com/h0623-dev/House/d14a1b64c5db85386af6e78fb690261a28f31010/downloads/road-haven-0.15.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/d14a1b64c5db85386af6e78fb690261a28f31010/downloads/road-haven-0.15.0-debug.apk.sha256) | 54,583,104 | `55fbce9daa6b283b3ad7bf6932c0ae5dbfab07dd1549d41469da3a285f5b8d4c` |
+
+## v0.27 보관
+
+v0.16·v0.17 APK 및 각 체크섬을 아래 이전 공개 커밋의 고정 주소에 보관합니다. 정상 HTTPS로 전체 파일을 받아 기존 게시 파일의 바이트 수와 SHA-256이 일치하는지 확인했습니다. Git 이력을 유지하며 과거 APK를 포함한 25개 릴리즈에 계속 접근할 수 있습니다. 현재 앱은 서명된 최신 game-update.json을 사용하며 아래 보관 주소를 자동 롤백 주소로 사용하지 않습니다.
+
+| 보관 파일 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| [v0.16 APK](https://raw.githubusercontent.com/h0623-dev/House/fa169b7775417266de87235b93b157ffd2707695/downloads/road-haven-0.16.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/fa169b7775417266de87235b93b157ffd2707695/downloads/road-haven-0.16.0-debug.apk.sha256) | 56,284,760 | `e40aabf8acd6e875a771d1ace08bc7d0940bde462df1e5efb5fe53f1994cacb6` |
+| [v0.17 APK](https://raw.githubusercontent.com/h0623-dev/House/fa169b7775417266de87235b93b157ffd2707695/downloads/road-haven-0.17.0-debug.apk) · [체크섬](https://raw.githubusercontent.com/h0623-dev/House/fa169b7775417266de87235b93b157ffd2707695/downloads/road-haven-0.17.0-debug.apk.sha256) | 57,878,580 | `958f51433caa24d452749fb0c4ded872840ff7fd1fe27adf7b4b1eb8823dbaa1` |

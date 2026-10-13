@@ -1,9 +1,9 @@
 {
-  "version": "0.26.0",
-  "versionCode": 26,
+  "version": "0.27.0",
+  "versionCode": 27,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.26.0-debug.apk",
-  "sha256": "f6b655c08ae61906b6683cd445a9a3ab0a0321ff1817cd90b8d00546bd6b9572",
-  "notes": "데크의 장식 상자를 없애고 트럭 상점을 추가했습니다. 애완동물·캐릭터 의상·여섯 종류 씨앗을 게임 재화로 구매합니다. 구매한 의상과 동료를 적용하고 기존 저장·2배 속도·자동 패치를 유지합니다.",
-  "publishedAt": "2026-10-13T11:17:43.307Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.27.0-debug.apk",
+  "sha256": "b1b26fdc6800fe16250301755b5e28f5dd788720d64a2ff968ef9a1424e36647",
+  "notes": "농장 관리와 성장 목표를 연결하고 트럭 주변의 이동 범위를 넓혔습니다. 직접 내려가 채집하고 농사·생산·마을 성장을 이어갑니다. 기존 저장·2배 속도·의상과 동료·자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-13T13:15:41.140Z"
 }
