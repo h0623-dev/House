@@ -64,12 +64,19 @@ test('actual Scene makes room for placed buildings without changing ordinary phy
     return JSON.parse(scene.canvas.dataset.placementPetRelocation) as { sequence: number; moved: { id: UnitId; from: NavigationLocation; to: NavigationLocation; radius: number }[] };
   }
 
-  await t.test('the real fresh-game dog and cat can occupy slot 0 while one paid building lands safely', () => {
-    const scene = freshScene(), before = copy(scene.state), hero = copy(scene.heroLocation), pets = copy([...scene.petMotion.values()]);
+  await t.test('two declared full-size residents clear one paid building atomically without moving the hero', () => {
+    const scene = freshScene(), centre = projectDeckPoint([-42, -106]);
+    // Removing the cottage changes default patrol spawns. Keep the two-body
+    // atomic-placement regression with explicitly declared, physically valid feet.
+    scene.petMotion.get('dog')!.location = { surface: 'deck', floor: 1, point: [centre[0]-27, centre[1]] };
+    scene.petMotion.get('cat')!.location = { surface: 'deck', floor: 1, point: [centre[0]+27, centre[1]] };
+    for (const pet of scene.petMotion.values()) assert.ok(groundLocation(scene.navigationWorld(pet.radius,
+      scene.physicalActors().filter(actor=>actor.id!==pet.id)), pet.location.point, 1), 'complete initial bodies clear each other and deck obstacles');
+    const before = copy(scene.state), hero = copy(scene.heroLocation), pets = copy([...scene.petMotion.values()]);
     const result = buildFacility(scene.state, 'waterworks', 0); assert.equal(result.ok, true);
     const obstacle = createNavigationWorld(1, 3, [0]).obstacles.find(value => value.kind === 'facility')!;
     assert.ok(pets.every(pet => actorIntersectsPlacement({ id: pet.id, radius: pet.radius, location: pet.location }, [obstacle])),
-      'this fixture uses the real initial patrol spawns, rather than a synthetic pet overlap');
+      'both physically validated complete bodies intersect the intended construction footprint');
     assert.equal(scene.canPlaceFacility(0), true, 'pets never mark an otherwise valid placement as unavailable');
     // Retain gait distance and direction; jumping must not pretend to walk.
     for (const pet of scene.petMotion.values()) { pet.distance = 123; pet.turnRemaining = .2; pet.retryRemaining = .45; pet.blockedReason = 'actor:hero'; scene.petYields.set(pet.id, {}); }
@@ -128,15 +135,16 @@ test('actual Scene makes room for placed buildings without changing ordinary phy
     assert.equal(scene.canvas.dataset.placementPetRelocation, undefined);
   });
 
-  await t.test('a moved house clears its new footprint while retaining the companion progress and untouched cat', () => {
+  await t.test('inert legacy home metadata never reserves deck space or teleports a companion', () => {
     const scene = freshScene(fundedState()), dog = scene.petMotion.get('dog')!, cat = scene.petMotion.get('cat')!;
     dog.location = { surface: 'deck', floor: 1, point: projectDeckPoint([-206, -274]) };
     assert.ok(groundLocation(scene.navigationWorld(dog.radius, []), dog.location.point));
     dog.distance = 314; const beforeDog = copy(dog), beforeCat = copy(cat), beforeHero = copy(scene.heroLocation), beforeSave = copy(scene.state);
     const result = moveHome(scene.state, { floor: 1, slot: 1 }); assert.equal(result.ok, true);
-    assert.equal(scene.canPlaceHome(1, 1), true); assert.equal(scene.relocatePetsForPlacement(result.state), true);
+    assert.equal(scene.canPlaceHome(1, 1), false, 'removed cottage has no placement interaction'); assert.equal(scene.relocatePetsForPlacement(result.state), true);
     scene.setState(result.state);
-    assert.deepEqual(receipt(scene).moved.map(value => value.id), ['dog']); assert.deepEqual(cat, beforeCat);
+    assert.deepEqual(receipt(scene).moved, [], 'inert legacy location introduces no newly placed obstacle');
+    assert.deepEqual(dog, beforeDog); assert.deepEqual(cat, beforeCat);
     assert.equal(dog.distance, beforeDog.distance); assertFullBodiesClear(scene); assert.deepEqual(scene.heroLocation, beforeHero);
     assert.deepEqual(scene.state.companions, beforeSave.companions); assert.deepEqual(scene.state.resources, beforeSave.resources);
     assert.deepEqual(scene.state.truckLayout!.home, { floor: 1, slot: 1 });

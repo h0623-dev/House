@@ -1,7 +1,7 @@
 import type { GameState } from './game';
 import { getFarmCapacity } from './game';
 import { getSettlement, isFacilitySlotAvailable, type BuildingType } from './settlement';
-import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorSlots, getHomeLocation, getHousePosition,
+import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorSlots,
   getSlotFloor, getSlotLocalIndex, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
 
 export type VillageBounds = { left:number; top:number; right:number; bottom:number };
@@ -14,11 +14,7 @@ export function mergeVillageBounds(bounds:readonly VillageBounds[]):VillageBound
 }
 /** Camera-only bounds: these never become building or actor collision shapes. */
 export function getVillageContentBounds(state:GameState,floor:TruckFloor):VillageBounds {
-  const bounds:VillageBounds[]=[],home=getHomeLocation(state);
-  if(home.floor===floor){
-    const[x,y]=projectTruckPoint(getHousePosition(home),floor,-1);
-    bounds.push({left:x-66,top:y-151,right:x+66,bottom:y+15});
-  }
+  const bounds:VillageBounds[]=[];
   for(const building of getSettlement(state).buildings.filter(b=>getSlotFloor(b.slot)===floor)){
     const[x,y]=projectTruckPoint(SETTLEMENT_POSITIONS[getSlotLocalIndex(building.slot)],floor),[w,h]=VILLAGE_FACILITY_SIZE[building.type];
     // Production bubbles and the finished roof are part of the visible village.
@@ -46,7 +42,12 @@ export function getVillageContentBounds(state:GameState,floor:TruckFloor):Villag
 export function fitVillageCamera(bounds:VillageBounds,availableWidth:number,availableHeight:number){
   const width=Math.max(100,availableWidth),height=Math.max(70,availableHeight),padding=28;
   const maxScale=width>height*1.4?1.15:.92;
-  return { x:(bounds.left+bounds.right)/2,y:(bounds.top+bounds.bottom)/2,
-    width:Math.max(bounds.right-bounds.left+padding*2,480,width/maxScale),
-    height:Math.max(bounds.bottom-bounds.top+padding*2,300,height/maxScale),zoom:1 };
+  // Product bubbles remain finger-sized as the deck zooms out. Reserve their
+  // actual screen pixels before fitting roofs, instead of padding only in world
+  // units, which becomes too small on an expanded truck in portrait.
+  const side=24,top=20,bottom=0;
+  const scale=Math.min(maxScale,(width-side*2)/Math.max(bounds.right-bounds.left+padding*2,480),
+    (height-top-bottom)/Math.max(bounds.bottom-bounds.top+padding*2,300));
+  return { x:(bounds.left+bounds.right)/2,y:(bounds.top+bounds.bottom)/2-(top-bottom)/(2*scale),
+    width:width/scale,height:height/scale,zoom:1 };
 }

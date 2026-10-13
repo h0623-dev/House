@@ -19,7 +19,6 @@ function startupVillageArt(){
    <radialGradient id="startup-patch-glow"><stop stop-color="#fff5c8" stop-opacity=".9"/><stop offset="1" stop-color="#fff5c8" stop-opacity="0"/></radialGradient>
    <radialGradient id="startup-patch-shadow"><stop stop-color="#344b2d" stop-opacity=".3"/><stop offset="1" stop-color="#344b2d" stop-opacity="0"/></radialGradient>
    <clipPath id="startup-patch-truck-crop"><path d="M10 188 159 78 181 76 219 116 313 180 343 226 377 240 421 270 449 313 454 344 477 367 500 410 500 478 459 506 447 549 403 574 343 570 276 537 223 463 167 432 108 403 47 377 14 325Z"/></clipPath>
-   <clipPath id="startup-patch-cottage-crop"><path d="M552 62H637V111H724L794 259 817 286 803 307 824 340V513L739 558H603L524 509 488 455V291L451 280V242L476 216 538 178 552 159Z"/></clipPath>
    <clipPath id="startup-patch-tree-crop"><path d="M836 60H1202V567H887L812 465 809 237Z"/></clipPath>
   </defs>
   <ellipse cx="231" cy="193" rx="214" ry="174" fill="url(#startup-patch-glow)"/>
@@ -27,7 +26,6 @@ function startupVillageArt(){
   <ellipse cx="235" cy="374" rx="220" ry="31" fill="url(#startup-patch-shadow)"/>
   <svg x="279" y="31" width="139" height="179" viewBox="809 60 393 507"><image href="${worldAtlasUrl}" width="1536" height="1024" clip-path="url(#startup-patch-tree-crop)"/></svg>
   <svg x="63" y="86" width="328" height="311" viewBox="0 62 510 520"><image href="${worldAtlasUrl}" width="1536" height="1024" clip-path="url(#startup-patch-truck-crop)"/></svg>
-  <svg x="110" y="20" width="148" height="197" viewBox="451 62 374 498"><image href="${worldAtlasUrl}" width="1536" height="1024" clip-path="url(#startup-patch-cottage-crop)"/></svg>
   <svg x="250" y="140" width="40" height="55" viewBox="1207 181 146 201"><image href="${worldAtlasUrl}" width="1536" height="1024"/></svg>
   <svg x="48" y="278" width="61" height="75" viewBox="42 73 309 377"><image href="${dogAtlasUrl}" width="1536" height="1024"/></svg>
   <svg x="204" y="318" width="64" height="64" viewBox="63 86 537 535"><image href="${catAtlasUrl}" width="1254" height="1254"/></svg>

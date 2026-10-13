@@ -1,5 +1,5 @@
 import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRoute } from './scene-motion';
-import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs, getHouseFootprint,
+import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   projectTruckPoint, unprojectTruckPoint, type HomeLocation, type TruckFloor } from './truck-layout';
 export { FARM_POSITIONS, SETTLEMENT_POSITIONS, DECK_FRONTS } from './truck-layout';
 export const navigationDeckBounds = getFloorBounds;
@@ -45,7 +45,8 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   const floors=ids.map(id=>{const d=getFloorBounds(level,id);return{id,
     outer:{left:d.left,top:d.back,right:d.end,bottom:d.front},
     deck:{left:d.left+6+clearance.x,top:d.back+6+clearance.y,right:d.end-6-clearance.x,bottom:d.front-6-clearance.y}};});
-  const home=options.home??{floor:1,slot:0},obstacles:NavigationObstacle[]=[{surface:'deck',floor:home.floor,kind:'house',bounds:getHouseFootprint(home)}];
+  // The truck is the home. Legacy cottage coordinates never reserve deck space.
+  const obstacles:NavigationObstacle[]=[];
   for(const [u,v]of FARM_POSITIONS.slice(0,plotCount))obstacles.push({surface:'deck',floor:1,kind:'farm',bounds:{left:u,top:v,right:u+69,bottom:v+68}});
   for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}

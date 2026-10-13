@@ -54,10 +54,26 @@ test('projected ground identifies empty floors and rejects beds, buildings, rail
     closePoint(unprojectDeckPoint(projectDeckPoint(p)),p);
     assert.equal(groundLocation(world,projectDeckPoint(p))?.surface,'deck');
   }
-  for(const p of [[-82,75],[-42,-106],[-238,-104],[-317,10],[0,140]]as NavigationPoint[])
+  for(const p of [[-82,75],[-42,-106],[-317,10],[0,140]]as NavigationPoint[])
     assert.equal(groundLocation(world,projectDeckPoint(p)),undefined);
+  assert.equal(groundLocation(world,projectDeckPoint([-238,-104]))?.surface,'deck','the removed cottage no longer blocks empty deck');
   assert.equal(groundLocation(world,[270,655])?.surface,'road');
   for(const p of [[97,601],[184,564],[999,999],[NaN,20]]as NavigationPoint[])assert.equal(groundLocation(world,p),undefined);
+});
+
+test('all three paid deck planes allow a direct walk through former cottage space regardless of legacy home metadata',()=>{
+  for(const floor of [1,2,3]as const){
+    const world=createNavigationWorld(7,9,[],{floors:[1,2,3],home:{floor,slot:0}}),
+      alternate=createNavigationWorld(7,9,[],{floors:[1,2,3],home:{floor,slot:4}}),
+      from=deck(-280,-102,floor),center=deck(-206,-102,floor),to=deck(-136,-102,floor),
+      path=requirePath(world,from,to);
+    assert.equal(world.obstacles.some(obstacle=>obstacle.kind==='house'),false);
+    assert.deepEqual(world.obstacles,alternate.obstacles,'legacy metadata never changes physical collision shapes');
+    assert.ok(groundLocation(world,center.point,floor));
+    assert.equal(path.points.length,2);assert.equal(path.climbSegments.length,0);
+    closePoint(path.points[0],from.point);closePoint(path.points[1],to.point);assertClear(world,path);
+    assert.ok(Math.abs(path.motion.travelSeconds-distance(from.point,to.point)/WALK_SPEED)<1e-9,'walking pace remains 2×');
+  }
 });
 
 test('a direct empty-floor walk keeps exact retained endpoints, ramps and the shared twofold pace',()=>{

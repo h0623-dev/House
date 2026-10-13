@@ -130,16 +130,64 @@ test('paid stairways stay at their built positions while later expansions keep h
   }
 });
 
-test('fresh players can move home for free and the home and facility previews share occupancy', () => {
+test('legacy home metadata reserves no facility space and retires safely only for a new overlapping placement', () => {
   const state = funded(), before = structuredClone(state), moved = moveHome(state, { floor: 1, slot: 4 });
   assert.equal(moved.ok, true); assert.deepEqual(moved.state.resources, state.resources); assert.deepEqual(state, before);
-  assert.equal(isFacilitySlotAvailable(moved.state, 1), false); assert.strictEqual(buildFacility(moved.state, 'kitchen', 1).state, moved.state);
-  const back = moveHome(moved.state, { floor: 1, slot: 0 }); assert.equal(back.ok, true);
-  const facility = buildFacility(back.state, 'kitchen', 1); assert.equal(facility.ok, true);
-  assert.equal(isHomeSlotAvailable(facility.state, { floor: 1, slot: 4 }), false);
-  assert.strictEqual(moveHome(facility.state, { floor: 1, slot: 4 }).state, facility.state);
+  assert.equal(isFacilitySlotAvailable(moved.state, 1), true);
+  const facility = buildFacility(moved.state, 'kitchen', 1); assert.equal(facility.ok, true);
+  assert.deepEqual(facility.state.truckLayout!.home, { floor: 1, slot: 0 }, 'retired metadata stays readable by older bundles');
+  assert.equal(facility.state.resources.wood, moved.state.resources.wood - 16);
+  assert.equal(facility.state.resources.scrap, moved.state.resources.scrap - 6);
+  assert.equal(isHomeSlotAvailable(facility.state, { floor: 1, slot: 4 }), true);
+  assert.equal(isFacilitySlotAvailable(facility.state, 1), false, 'a real facility still occupies its slot');
+  assert.equal(validateTruckLayout(facility.state.truckLayout, facility.state), true);
+  const target = storage(); assert.equal(saveGame(facility.state, target), true);
+  const loaded = loadGame(target)!; assert.ok(loaded.lastSaved > 0);
+  assert.deepEqual({ ...loaded, lastSaved:facility.state.lastSaved }, facility.state);
   assert.strictEqual(moveHome(state, { floor: 2, slot: 0 }).state, state);
   assert.strictEqual(moveHome(state, { floor: 1, slot: 99 }).state, state);
+});
+
+test('the legacy fallback home slot clears every facility and paid stair at every deck level', () => {
+  const overlaps = (a: {left:number;right:number;top:number;bottom:number}, b: typeof a) =>
+    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  for (let level = 1; level <= 8; level++) {
+    const count = level >= 7 ? 3 : level >= 4 ? 2 : 1, state = paidFloors(level, count);
+    for (const floor of [1,2,3] as const) {
+      if (floor > count) continue;
+      assert.ok(getHomeSlots(state, floor).includes(0));
+      const retired = getHouseFootprint({ floor, slot: 0 });
+      for (const slot of getFloorSlots(state, floor)) {
+        const [u,v] = SETTLEMENT_POSITIONS[slot % 16];
+        assert.equal(overlaps(retired, { left:u-65, right:u+65, top:v-65, bottom:v+65 }), false);
+      }
+      if (count > 1) assert.equal(overlaps(retired, getFloorStairs(state, 2).reserved), false);
+      if (count > 2) assert.equal(overlaps(retired, getFloorStairs(state, 3).reserved), false);
+    }
+  }
+});
+
+test('a producing facility can move through retired cottage space without changing its batch, charges or identities', () => {
+  for (const floor of [1,2,3] as const) {
+    let state = paidFloors(7, 3);
+    state = moveHome(state, { floor, slot: 4 }).state;
+    state.layoutDirections = { version:1, home:1, facilities:[], plots:[] };
+    const slot = (floor - 1) * 16, built = buildFacility(state, 'waterworks', slot);
+    assert.equal(built.ok, true, built.message); state = built.state;
+    assert.deepEqual(state.truckLayout!.home, { floor, slot:4 }, 'unrelated placement preserves historical metadata');
+    const id = getSettlement(state).buildings[0].id;
+    state = startProduction(state, id).state;
+    const before = structuredClone(state), job = getSettlement(state).buildings[0],
+      moved = moveFacility(state, id, slot + 1);
+    assert.equal(moved.ok, true, moved.message); state = moved.state;
+    assert.deepEqual(getSettlement(state).buildings[0], { ...job, slot:slot + 1 });
+    assert.deepEqual(state.resources, before.resources); assert.deepEqual(state.stats, before.stats);
+    assert.deepEqual(state.plots, before.plots); assert.deepEqual(state.companions, before.companions);
+    assert.deepEqual(state.layoutDirections, before.layoutDirections); assert.equal(state.totalMinutes, before.totalMinutes);
+    assert.deepEqual(state.truckLayout!.home, { floor, slot:0 }); assert.deepEqual(before.truckLayout!.home, { floor, slot:4 });
+    const target = storage(); assert.equal(saveGame(state, target), true);
+    assert.deepEqual({ ...loadGame(target)!, lastSaved:state.lastSaved }, state);
+  }
 });
 
 test('upper facilities start at ID17 while legacy IDs, slots and allocation remain readable', () => {
@@ -299,7 +347,7 @@ test('time, resting, quest rewards and deliveries detach every sidecar record wi
   }
 });
 
-test('malformed floors, duplicates, locked slots and occupied home reject save atomically', () => {
+test('malformed floors, duplicates and locked slots reject saves while inert home overlap remains valid', () => {
   let state = paidFloors(4, 2); state = buildFacility(state, 'waterworks', 16).state;
   const target = storage(); assert.equal(saveGame(state, target), true);
   const invalids = [
@@ -316,5 +364,10 @@ test('malformed floors, duplicates, locked slots and occupied home reject save a
   }
   state = buildFacility(state, 'kitchen', 1).state;
   const occupied = { ...state.truckLayout!, home: { floor: 1 as const, slot: 4 } };
-  assert.equal(saveGame({ ...state, truckLayout: occupied }, target), false);
+  const overlappingMetadata = { ...state, truckLayout: occupied };
+  assert.equal(saveGame(overlappingMetadata, target), true);
+  assert.deepEqual({ ...loadGame(target)!, lastSaved:overlappingMetadata.lastSaved }, overlappingMetadata);
+  const duplicateFacility = { ...occupied, upperBuildings: [{ ...occupied.upperBuildings[0], slot: 1 }] };
+  assert.equal(saveGame({ ...state, truckLayout: duplicateFacility }, target), false);
+  assert.deepEqual({ ...loadGame(target)!, lastSaved:overlappingMetadata.lastSaved }, overlappingMetadata, 'a real duplicate still rejects atomically');
 });

@@ -50,25 +50,25 @@ const targetKey = (target: VillageTarget) => target.kind === 'facility' ? `${tar
 
 function restAdvice(): VillageAdvice {
   return { id: 'prepare-rest', title: '잠깐 쉬고 다시 출발해요', detail: '식량과 물이 있으면 동물 친구들도 더 든든하게 회복해요.',
-    cta: '우리집에서 쉬기', icon: 'bed', target: { kind: 'rest' }, tag: '기력 회복' };
+    cta: '트럭에서 쉬기', icon: 'bed', target: { kind: 'rest' }, tag: '기력 회복' };
 }
 function readyAdvice(building: Building): VillageAdvice {
   const definition = BUILDINGS[building.type];
   return { id: `collect-${building.id}`, title: `${definition.name} 물자 도착`,
     detail: `${resourceLabels[definition.yieldResource]} ${definition.yieldAmount * building.level}개를 받아 다음 성장을 준비해요.`,
-    cta: '물자 받기', icon: definition.icon, target: facilityTarget(building, 'collect'), tag: '수령 가능' };
+    cta: '물자 받기', icon: definition.yieldResource, target: facilityTarget(building, 'collect'), tag: '수령 가능' };
 }
 function startAdvice(building: Building): VillageAdvice {
   const definition = BUILDINGS[building.type];
   return { id: `start-${building.id}`, title: `${definition.name} 다시 가동`,
     detail: `${resourceLabels[definition.yieldResource]}를 만들어 농사와 마을 성장에 보태요.`,
-    cta: '생산 시작', icon: definition.icon, target: facilityTarget(building, 'start'), tag: '생산 준비' };
+    cta: '생산 시작', icon: definition.yieldResource, target: facilityTarget(building, 'start'), tag: '생산 준비' };
 }
 function workingAdvice(state: GameState, building: Building): VillageAdvice {
   const definition = BUILDINGS[building.type];
   return { id: `working-${building.id}`, title: `${definition.name}에서 준비 중`,
     detail: `${gameMinutesToSeconds(building.readyAt! - state.totalMinutes)}초 뒤 물자를 받아요. 기다리는 동안 다른 마을 일을 할 수 있어요.`,
-    cta: '생산 확인', icon: definition.icon, target: facilityTarget(building, 'collect'), tag: '생산 중' };
+    cta: '생산 확인', icon: definition.yieldResource, target: facilityTarget(building, 'collect'), tag: '생산 중' };
 }
 function farmAdvice(state: GameState, mode: 'harvest' | 'water' | 'plant'): VillageAdvice {
   const ready = state.plots.filter(plot => getCropProgress(state, plot) >= 1).length;

@@ -8,6 +8,7 @@ export interface HomeLocation { floor: TruckFloor; slot: number }
 export interface TruckLayout {
   version: 1;
   floors: TruckFloor;
+  /** Inert legacy cottage metadata; the truck itself is the player's home. */
   home: HomeLocation;
   placements: { id: number; slot: number }[];
   upperBuildings: Building[];
@@ -64,6 +65,7 @@ export function unprojectTruckPoint([x,y]: readonly number[], floor: TruckFloor 
 export function getHomeLocation(state: Pick<TruckLayoutState, 'truckLayout'>): HomeLocation {
   return state.truckLayout ? { ...state.truckLayout.home } : { ...DEFAULT_HOME_LOCATION };
 }
+/** Legacy save geometry only. This cottage is no longer rendered or an obstacle. */
 export function getHousePosition(value: TruckLayoutState | HomeLocation = DEFAULT_HOME_LOCATION): TruckPoint {
   const location = 'floor' in value ? value : getHomeLocation(value);
   return [...HOME_POSITIONS[location.slot]];

@@ -39,7 +39,7 @@ function adviceButton(advice: VillageAdvice, key: string, className = 'village-a
 /** Render once; clock updates patch existing buttons rather than replacing the dock. */
 export function renderVillageHub(model: VillageHubModel): string {
   const activities = model.activities.slice(0, 3);
-  return `<section class="village-hub-dock" aria-label="지금 할 수 있는 마을 활동" data-village-activity-count="${activities.length}"><div class="village-hub-heading"><span><b data-village-hub-ready>${model.summary.readyFacilities}</b>개 생산 완료 <span class="village-hub-working">· <b data-village-hub-working>${model.summary.workingFacilities}</b>개 생산 중</span></span><button data-open="village" aria-label="마을 생산과 성장 운영 열기">${icon('home')}<strong>마을 운영</strong>${icon('chevron')}</button></div><div class="village-activity-list">${activities.map(advice => adviceButton(advice, activityKey(advice))).join('')}</div></section>`;
+  return `<section class="village-hub-dock" aria-label="지금 할 수 있는 마을 활동" data-village-activity-count="${activities.length}"><div class="village-hub-heading"><span><b data-village-hub-ready>${model.summary.readyFacilities}</b>개 생산 완료 <span class="village-hub-working">· <b data-village-hub-working>${model.summary.workingFacilities}</b>개 생산 중</span></span><button data-open="village" aria-label="마을 생산과 성장 운영 열기">${icon('truck')}<strong>마을 운영</strong>${icon('chevron')}</button></div><div class="village-activity-list">${activities.map(advice => adviceButton(advice, activityKey(advice))).join('')}</div></section>`;
 }
 
 function setText(root: ParentNode, selector: string, value: string | number): void {

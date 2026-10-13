@@ -170,7 +170,7 @@ export function validateTruckLayout(value: unknown, state: Pick<GameState, 'deck
   const buildings = getSettlement(candidate).buildings, slots = new Set<number>();
   if (buildings.length > getAllUnlockedSlots(candidate)) return false;
   for (const building of buildings) {
-    if (!validSlot(building.slot) || slots.has(building.slot) || !fitsHomeAndStairs(candidate, building.slot)) return false;
+    if (!validSlot(building.slot) || slots.has(building.slot) || !fitsStairs(candidate, building.slot)) return false;
     slots.add(building.slot);
   }
   if (Object.hasOwn(value, 'facilityHistory')) {
@@ -232,15 +232,24 @@ function blocked(state: GameState): SettlementResult | null {
   return null;
 }
 function overlaps(a: TruckRect, b: TruckRect): boolean { return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top; }
-function fitsHomeAndStairs(state: GameState | Pick<GameState, 'deckLevel' | 'truckLayout'>, slot: number): boolean {
+function fitsStairs(state: GameState | Pick<GameState, 'deckLevel' | 'truckLayout'>, slot: number): boolean {
   const floor = getSlotFloor(slot), position = SETTLEMENT_POSITIONS[getSlotLocalIndex(slot)];
   if (!position) return false;
   const [u,v] = position, bounds = { left: u - 65, top: v - 65, right: u + 65, bottom: v + 65 };
-  if (getHomeLocation(state).floor === floor && overlaps(bounds, getHouseFootprint(state))) return false;
   return getTruckFloorCount(state) === 1 || !overlaps(bounds, getFloorStairs(state, 2).reserved);
 }
+/** Old bundles still validate the retired cottage. Only a new overlapping edit
+ * moves this inert metadata to its universally clear legacy slot; paid state,
+ * production clocks and all unrelated old metadata stay untouched. */
+function preserveLegacyHomeCompatibility(state: GameState, slot: number): void {
+  if (!state.truckLayout || state.truckLayout.home.floor !== getSlotFloor(slot)) return;
+  const [u,v] = SETTLEMENT_POSITIONS[getSlotLocalIndex(slot)];
+  if (overlaps(getHouseFootprint(state), { left: u - 65, top: v - 65, right: u + 65, bottom: v + 65 })) {
+    state.truckLayout.home = { floor: state.truckLayout.home.floor, slot: 0 };
+  }
+}
 export function isFacilitySlotAvailable(state: GameState, slot: number, exceptId?: number): boolean {
-  return isInteger(slot, 0, 47) && getFloorSlots(state, getSlotFloor(slot)).includes(slot) && fitsHomeAndStairs(state, slot)
+  return isInteger(slot, 0, 47) && getFloorSlots(state, getSlotFloor(slot)).includes(slot) && fitsStairs(state, slot)
     && !getSettlement(state).buildings.some(building => building.slot === slot && building.id !== exceptId);
 }
 function mutableBuilding(state: GameState, id: number): Building | undefined {
@@ -258,14 +267,9 @@ export function buildTruckFloor(state: GameState): SettlementResult {
   return success(next, `${cost.floor}층 플랫폼과 연결 계단을 지었어요. 새 층에도 생활 시설을 놓을 수 있어요.`);
 }
 export function isHomeSlotAvailable(state: GameState, location: HomeLocation): boolean {
-  if (!isRecord(location) || Object.keys(location).length !== 2 || !isInteger(location.floor, 1, getTruckFloorCount(state))
-    || !isInteger(location.slot, 0, HOME_POSITIONS.length - 1) || !getHomeSlots(state, location.floor).includes(location.slot)) return false;
-  const bounds = getHouseFootprint(location);
-  return !getSettlement(state).buildings.some(building => {
-    if (getSlotFloor(building.slot) !== location.floor) return false;
-    const [u,v] = SETTLEMENT_POSITIONS[getSlotLocalIndex(building.slot)];
-    return overlaps(bounds, { left: u - 65, top: v - 65, right: u + 65, bottom: v + 65 });
-  }) && !(getTruckFloorCount(state) > 1 && overlaps(bounds, getFloorStairs(state, 2).reserved));
+  // Kept for older sidecar callers; this metadata reserves no physical space.
+  return isRecord(location) && Object.keys(location).length === 2 && isInteger(location.floor, 1, getTruckFloorCount(state))
+    && isInteger(location.slot, 0, HOME_POSITIONS.length - 1) && getHomeSlots(state, location.floor).includes(location.slot);
 }
 export function moveHome(state: GameState, location: HomeLocation): SettlementResult {
   const unavailable = blocked(state); if (unavailable) return unavailable;
@@ -318,6 +322,7 @@ export function buildFacility(state: GameState, type: BuildingType, slot: number
     next.truckLayout = getTruckLayout(next);
     next.truckLayout.upperBuildings.push({ id: next.truckLayout.nextBuildingId++, type, slot, level: 1, startedAt: null, readyAt: null });
   }
+  preserveLegacyHomeCompatibility(next, slot);
   recordFacilityProgress(next);
   return success(next, `${definition.name}을 건설했어요. 생산을 시작해 우리집의 생활 물자를 모아 보세요!`);
 }
@@ -354,6 +359,7 @@ export function moveFacility(state: GameState, id: number, slot: number): Settle
     next.truckLayout = getTruckLayout(next);
     next.truckLayout.placements = [...next.truckLayout.placements.filter(item => item.id !== id), { id, slot }];
   }
+  preserveLegacyHomeCompatibility(next, slot);
   return success(next, `${BUILDINGS[building.type].name}을 새 자리로 옮겼어요. 진행 중인 생산은 그대로 이어져요.`);
 }
 export function upgradeFacility(state: GameState, id: number): SettlementResult {

@@ -147,14 +147,21 @@ test('actual Scene uses one physical clock on a phone rendering every 350 ms', a
     });
 
     for (const variant of ['immobile', 'reduced-motion'] as const) await t.test(`${variant} bodies still stop the return and cancel after 16 seconds`, async () => {
-      const scene = freshScene(), observed = observePhysics(scene), run = start(scene);
-      // Introduce a real, stationary body while the hero is still on the
-      // roadside ladder. This physical point is from the captured patrol and
-      // clears static structures; it blocks the eventual retained home anchor.
+      const scene = freshScene(), blockingLocation = copy(scene.petMotion.get('cat')!.location),
+        observed = observePhysics(scene), run = start(scene);
+      // Retain a real initial patrol foot position, then introduce the stationary
+      // dog there while the hero is on the return ladder and the cat has left.
+      // The retired cottage changes patrol positions: the old hardcoded blocker
+      // would overlap the new cat. This captured, clear point blocks the return aisle.
       for (let frame = 0; frame < 20 && scene.action!.elapsed < scene.action!.walk + scene.action!.work + .3; frame++) run.next();
       assert.equal(scene.currentHeroLocation().surface, 'ladder');
       const dog = scene.petMotion.get('dog')!;
-      dog.location = { surface: 'deck', floor: 1, point: [425.1790621336332, 287.4662282921495] };
+      const others = scene.physicalActors().filter(actor => actor.id !== 'dog');
+      assert.ok(groundLocation(scene.navigationWorld(dog.radius, others), blockingLocation.point, blockingLocation.floor),
+        'the captured blocking feet clear static structures and every current companion at the full dog radius');
+      assert.equal(blocksActorStep(blockingLocation, blockingLocation, dog.radius, others), undefined,
+        'introducing the blocker never creates an existing hero or companion overlap');
+      dog.location = copy(blockingLocation);
       dog.route = null;
       dog.elapsed = 0;
       scene.petYields.delete('dog');
