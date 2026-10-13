@@ -1,9 +1,9 @@
 {
-  "version": "0.24.0",
-  "versionCode": 24,
+  "version": "0.25.0",
+  "versionCode": 25,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.24.0-debug.apk",
-  "sha256": "729e7c3b5a37d8a608606d340dc926d9b4d497e4a89b4d02161e9824195670a0",
-  "notes": "건물과 밭을 데크 방향에 맞춰 배치하고 방향을 바꿀 수 있어요. 층 사이를 높이고 선택한 층만 표시하여 편하게 작업할 수 있습니다. 기존 저장과 반려동물 안전 이동·2배 속도·자동 패치를 유지합니다.",
-  "publishedAt": "2026-10-13T07:22:38.244Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.25.0-debug.apk",
+  "sha256": "a21f72a1e6bf111eac4e1a281ff2bdd7a50b56f3ff4e896063c3082adaee19c8",
+  "notes": "트럭이 우리집이 되어 별도 집 건물을 없앴습니다. 생산 시설 위에 실제 생산품 그림과 수량·상태가 나타납니다. 기존 저장·반려동물 안전 이동·2배 속도·자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-13T10:12:28.352Z"
 }
