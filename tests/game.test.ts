@@ -1,3 +1,4 @@
+import { waitForEnergy } from './fixtures/energy-recovery.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, cancelHunt, createGame, CROPS, CROP_IDS, expansionCost, finishHunt, getCropProgress, getPlotCropId, getSeedCount, getSeedInventory, loadGame, MAX_DECK_LEVEL, performAction, questList, SAVE_KEY, saveGame, SEED_PACK_SIZE, tick, type Action, type CropId, type GameState, type HuntResult, type SaveStorage } from '../src/game.ts';
@@ -219,7 +220,7 @@ test('exploration and chopping discover exact three-seed packs in a fixed variet
   }
   for (const id of CROP_IDS) assert.equal(getSeedCount(state, id), originalSeeds[id] + 3, id);
   for (let i = 0; i < CROP_IDS.length; i++) {
-    if (state.energy < 10) state = performAction(state, 'rest').state;
+    if (state.energy < 10) state = waitForEnergy(state);
     const previousTotal = state.resources.seeds;
     const discovered = performAction(state, 'chop');
     assert.equal(discovered.ok, true);
@@ -369,7 +370,7 @@ test('gathering provides materials and only awards the scout goal once', () => {
   assert.equal(fourth.resources.wood - state.resources.wood, 10);
 });
 
-test('zero supplies and energy still allow resting, gathering, and recovery', () => {
+test('zero supplies allow health rest and timed energy recovery before gathering', () => {
   let state = createGame();
   state.energy = 0;
   state.health = 1;
@@ -378,9 +379,11 @@ test('zero supplies and energy still allow resting, gathering, and recovery', ()
   assert.equal(performAction(state, 'gather').ok, false);
   const rested = performAction(state, 'rest');
   assert.equal(rested.ok, true);
-  assert.equal(rested.state.energy, 35);
+  assert.equal(rested.state.energy, 0);
+  assert.equal(performAction(rested.state, 'gather').ok, false);
   assert.equal(rested.state.health, 4);
-  const gathered = performAction(rested.state, 'gather');
+  const recovered = waitForEnergy(rested.state, 10);
+  const gathered = performAction(recovered, 'gather');
   assert.equal(gathered.ok, true);
   assert.ok(gathered.state.resources.seeds > 0);
   assert.ok(gathered.state.resources.water > 0);
@@ -470,7 +473,7 @@ test('maximum deck expansion cannot charge the player or create invalid extra pl
   state.resources.wood = 10_000;
   state.resources.scrap = 10_000;
   for (let level = 1; level < MAX_DECK_LEVEL; level++) {
-    if (state.energy < 15) state = performAction(state, 'rest').state;
+    if (state.energy < 15) state = waitForEnergy(state);
     const result = performAction(state, 'expand');
     assert.equal(result.ok, true);
     state = result.state;
@@ -505,8 +508,9 @@ test('extended mixed play keeps resources, stats, crop IDs, and save state consi
   const storage = memoryStorage();
   const activities: Action[] = ['gather', 'plant', 'water', 'chop', 'harvest', 'expand', 'repair', 'pet', 'rest'];
   for (let i = 0; i < 1200; i++) {
+    if (state.energy < 16) state = waitForEnergy(state);
     const previous = JSON.stringify(state);
-    const activity = state.energy < 16 ? 'rest' : activities[(i * 7) % activities.length];
+    const activity = activities[(i * 7) % activities.length];
     const result = performAction(state, activity);
     assert.equal(JSON.stringify(state), previous, `input mutated at action ${i}`);
     state = tick(result.state, (i % 4) * 0.5);

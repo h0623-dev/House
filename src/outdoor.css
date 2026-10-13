@@ -6,7 +6,7 @@
 .pet-passage-summary{display:flex;align-items:center;gap:13px;padding:16px;border:1px solid #c9cfad;border-radius:16px;background:#edf0df;margin-bottom:18px}
 .pet-passage-summary>.icon{width:42px;height:42px;flex-shrink:0}.pet-passage-summary strong,.pet-passage-summary span{display:block}.pet-passage-summary strong{font-size:16px;color:#4a6245}.pet-passage-summary span{margin-top:5px;font-size:13px;color:#6c765e}
 .construction-mode .road-controls,.facility-selected .road-controls{display:none}
-.quick-actions{grid-template-columns:repeat(7,minmax(44px,1fr));gap:1px}
+.quick-actions{grid-template-columns:repeat(6,minmax(44px,1fr));gap:1px}
 .quick-action{min-width:44px}.quick-fertilize .control-icon{background:#e4ebc5}
 .outdoor-cards{display:grid;gap:10px}.outdoor-card{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid #c7ba90;border-radius:13px;background:#fbf6e4;min-width:0}
 .outdoor-card-art{display:flex;align-items:center;justify-content:center;width:58px;height:63px;flex-shrink:0}.outdoor-card-art>.icon{width:54px;height:57px}
@@ -17,3 +17,11 @@
 .farm-all-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.farm-all-tools>.button{font-size:10px;min-height:46px;padding:7px 4px;gap:4px}
 @media(max-width:380px){.road-controls{gap:4px}.outdoor-card{padding:9px;gap:7px}.outdoor-card-art{width:48px;height:55px}.outdoor-card-art>.icon{width:46px;height:51px}.outdoor-card strong{font-size:12px}.outdoor-card span:not(.outdoor-card-art){font-size:10px}.quick-action>small{font-size:8px}}
 @media(orientation:landscape) and (max-height:600px){.road-controls{top:61px;gap:4px}.road-controls button{min-width:46px;min-height:46px;padding:3px}.road-controls .icon{width:20px;height:20px}.road-controls small{font-size:8px}.outdoor-cards{grid-template-columns:1fr 1fr}.outdoor-card{padding:8px;gap:7px}.outdoor-card-art{width:44px;height:47px}.outdoor-card-art>.icon{width:42px;height:45px}}
+
+button.vitals-energy{min-height:44px;border:0;background:none;padding:0;font:inherit;text-align:initial;justify-content:center;gap:4px}
+.energy-auto-rate{font-size:8px;line-height:10px;color:#7e8b52;letter-spacing:0;text-align:right;white-space:nowrap}
+.vital-energy>span .icon{color:#c28c34}
+.energy-recovery-summary{display:grid;justify-items:center;gap:12px;border:1px solid #d5c091;border-radius:20px;background:#f7eed6;padding:24px 14px;margin:14px 0 20px;color:#586447}
+.energy-recovery-summary>span .icon{width:40px;height:40px;color:#ba8c35}
+.energy-recovery-summary>strong{font-size:22px}.energy-recovery-summary>p{font-size:13px;text-align:center;line-height:1.6}
+@media (orientation: landscape) and (max-height: 600px){.energy-auto-rate{display:none}}

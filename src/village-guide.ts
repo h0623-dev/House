@@ -18,7 +18,7 @@ export type VillageTarget =
   | { kind: 'build'; buildingType: BuildingType }
   | { kind: 'farm'; mode: 'harvest' | 'water' | 'plant'; cropId?: CropId }
   | { kind: 'roadside'; siteId: OutdoorSiteId }
-  | { kind: 'gather' | 'chop' | 'rest' | 'orders' | 'farm-delivery' | 'expand' | 'floors' | 'farm-expand' | 'hunt' | 'companions' };
+  | { kind: 'gather' | 'chop' | 'rest' | 'energy' | 'orders' | 'farm-delivery' | 'expand' | 'floors' | 'farm-expand' | 'hunt' | 'companions' };
 
 export interface VillageAdvice {
   id: string;
@@ -54,9 +54,13 @@ const targetKey = (target: VillageTarget) => target.kind === 'facility' ? `${tar
   : target.kind === 'build' ? `${target.kind}:${target.buildingType}` : target.kind === 'farm' ? `${target.kind}:${target.mode}`
   : target.kind === 'quest' ? `${target.kind}:${target.questId}` : target.kind;
 
-function restAdvice(): VillageAdvice {
-  return { id: 'prepare-rest', title: '잠깐 쉬고 다시 출발해요', detail: '식량과 물이 있으면 동물 친구들도 더 든든하게 회복해요.',
-    cta: '트럭에서 쉬기', icon: 'bed', target: { kind: 'rest' }, tag: '기력 회복' };
+function energyAdvice(): VillageAdvice {
+  return { id: 'prepare-energy', title: '기력이 자동으로 회복되고 있어요', detail: '기력은 실제 시간 20초마다 1씩, 1분에 3씩 자동 회복돼요.',
+    cta: '회복 시간 보기', icon: 'bolt', target: { kind: 'energy' }, tag: '자동 회복' };
+}
+function companionAdvice(): VillageAdvice {
+  return { id: 'prepare-companions', title: '동료를 돌봐 주세요', detail: '동료 화면에서 체력과 편성을 확인해요. 함께 쉬면 동물 체력을 회복할 수 있어요.',
+    cta: '동료 돌보기', icon: 'paw', target: { kind: 'companions' }, tag: '동료 체력' };
 }
 function readyAdvice(building: Building): VillageAdvice {
   const definition = BUILDINGS[building.type];
@@ -96,14 +100,18 @@ export function getFarmDeliveryAdvice(state: GameState): VillageAdvice {
     progress: { current: Math.min(stock, target), max: target } };
   if (order.ready || state.expedition) return base;
   const matching = state.plots.filter(plot => plot.plantedAt !== null && (plot.cropId ?? 'carrot') === cropId);
+  const recovery = { ...energyAdvice(), progress: base.progress };
+  if (matching.some(plot => getCropProgress(state, plot) >= 1) && state.energy < 4) return recovery;
   if (matching.some(plot => getCropProgress(state, plot) >= 1) && state.energy >= 4) {
     return { ...base, id: `${base.id}-harvest`, title: `${crop.name}을 수확해 납품을 준비해요`,
       cta: '수확하기', target: { kind: 'farm', mode: 'harvest' }, tag: '수확 가능' };
   }
+  if (matching.some(plot => !plot.watered) && state.resources.water > 0 && state.energy < 3) return recovery;
   if (matching.some(plot => !plot.watered) && state.energy >= 3 && state.resources.water > 0) {
     return { ...base, id: `${base.id}-water`, title: `${crop.name} 새싹에 물을 주세요`,
       cta: '물 주기', target: { kind: 'farm', mode: 'water' }, tag: '다음 납품 준비' };
   }
+  if (state.plots.some(plot => plot.plantedAt === null) && getSeedCount(state, cropId) > 0 && state.energy < 4) return recovery;
   if (state.plots.some(plot => plot.plantedAt === null) && getSeedCount(state, cropId) > 0 && state.energy >= 4) {
     return { ...base, id: `${base.id}-plant`, title: `이번에는 ${crop.name}을 심어요`,
       detail: `${crop.seedName}을 골라 빈 밭에 이어 심어요. 수확물을 납품하면 코인 ${order.rewards.coins}와 건설 재료를 받아요.`,
@@ -120,24 +128,25 @@ function supplyAdvice(state: GameState, cost: Cost, purpose: string): VillageAdv
   const prefix = `${purpose}에 ${resourceLabels[shortage.resource]} ${shortage.missing}개가 더 필요해요.`;
   if (ready) return { ...readyAdvice(ready), detail: `${prefix} 완성된 생산품부터 받아요.` };
   if (shortage.resource === 'food' && state.plots.some(plot => getCropProgress(state, plot) >= 1)) {
-    return state.energy < 4 ? restAdvice() : { ...farmAdvice(state, 'harvest'), detail: `${prefix} 익은 작물을 수확해요.` };
+    return state.energy < 4 ? energyAdvice() : { ...farmAdvice(state, 'harvest'), detail: `${prefix} 익은 작물을 수확해요.` };
   }
   const idle = facilities.find(building => canStart(state, building));
   if (idle) return { ...startAdvice(idle), detail: `${prefix} 시설을 가동해 물자를 만들어요.` };
   if (shortage.resource === 'food') {
-    if (state.energy < 4) return restAdvice();
+    if (state.energy < 4) return energyAdvice();
     if (state.plots.some(plot => plot.plantedAt !== null && !plot.watered) && state.resources.water > 0) return farmAdvice(state, 'water');
     if (state.plots.some(plot => plot.plantedAt === null) && CROP_IDS.some(id => getSeedCount(state, id) > 0)) return farmAdvice(state, 'plant');
     const working = facilities.find(building => isWorking(state, building));
     if (working) return { ...workingAdvice(state, working), detail: `${prefix} ${gameMinutesToSeconds(working.readyAt! - state.totalMinutes)}초 뒤 식량을 받아요.` };
-    if (state.energy < 16 || !getReadyTeam(state).length) return restAdvice();
+    if (state.energy < 16) return energyAdvice();
+    if (!getReadyTeam(state).length) return companionAdvice();
     return { id: 'prepare-food', title: '동물 친구들과 보급품을 찾아요', detail: `${prefix} 건강한 친구들을 편성해 도로로 나가요.`, cta: '탐험 준비', icon: 'hunt', target: { kind: 'hunt' }, tag: '식량 보급' };
   }
   const siteIds: Record<Exclude<Resource, 'food'>, OutdoorSiteId> = {
     wood: 'grove', scrap: 'salvage', water: 'spring', seeds: 'seed-meadow',
   };
   const view = getRoadsideSite(state, siteIds[shortage.resource]);
-  if (state.energy < view.energyCost) return restAdvice();
+  if (state.energy < view.energyCost) return energyAdvice();
   return { id: `prepare-${shortage.resource}`, title: `${resourceLabels[shortage.resource]}를 먼저 모아요`,
     detail: `${prefix} ${view.site.name}에서 ${view.ready ? `${view.yieldAmount}개를 채집해요.` : `${view.remainingSeconds}초 뒤 다시 채집할 수 있어요.`}`,
     cta: `${view.site.name} 가기`, icon: shortage.resource,
@@ -145,7 +154,7 @@ function supplyAdvice(state: GameState, cost: Cost, purpose: string): VillageAdv
 }
 function prepareInvestment(state: GameState, advice: VillageAdvice, cost: Cost): VillageAdvice {
   const energy = advice.target.kind === 'expand' ? 15 : advice.target.kind === 'farm-expand' ? 8 : 0;
-  const supply = state.energy < energy ? restAdvice() : supplyAdvice(state, cost, advice.title);
+  const supply = state.energy < energy ? energyAdvice() : supplyAdvice(state, cost, advice.title);
   return supply ? { ...supply, id: `investment-${supply.id}`, tag: '다음 성장 준비' } : advice;
 }
 function investmentAdvice(state: GameState, freeSlots: number): VillageAdvice {
@@ -199,7 +208,7 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
     else if (type) preparation = supplyAdvice(state, constructionCost(type), BUILDINGS[type].name);
     if (!preparation && freeSlots <= 0) preparation = investment;
   } else if (kind === 'expand') {
-    preparation = state.energy < 15 ? restAdvice() : supplyAdvice(state, expansionCost(state), '데크 확장');
+    preparation = state.energy < 15 ? energyAdvice() : supplyAdvice(state, expansionCost(state), '데크 확장');
   } else if (kind === 'collect') {
     const facility = facilities.find(building => canCollect(state, building))
       ?? facilities.find(building => canStart(state, building))
@@ -220,7 +229,7 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
     const thirsty = state.plots.some(plot => plot.plantedAt !== null && !plot.watered);
     const empty = state.plots.some(plot => plot.plantedAt === null);
     const seeds = CROP_IDS.some(id => getSeedCount(state, id) > 0);
-    if (state.energy < (kind === 'water' ? 3 : 4)) preparation = restAdvice();
+    if (state.energy < (kind === 'water' ? 3 : 4)) preparation = energyAdvice();
     else if (kind === 'harvest' && !ready || kind === 'water' && !thirsty) {
       if (thirsty) preparation = supplyAdvice(state, { water: 1 }, '텃밭 돌보기') ?? farmAdvice(state, 'water');
       else if (empty && seeds) preparation = farmAdvice(state, 'plant');
@@ -232,8 +241,9 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
       : { ...investment, id: 'prepare-crop-space', detail: '밭의 작물이 자라는 동안 다음 마을 일을 준비해요.' };
     else if (kind === 'water') preparation = supplyAdvice(state, { water: 1 }, '텃밭 돌보기');
   } else if (kind === 'hunt') {
-    if (state.energy < 16 || !getReadyTeam(state).length) preparation = restAdvice();
-  } else if ((kind === 'gather' || kind === 'chop') && state.energy < 10) preparation = restAdvice();
+    if (state.energy < 16) preparation = energyAdvice();
+    else if (!getReadyTeam(state).length) preparation = companionAdvice();
+  } else if ((kind === 'gather' || kind === 'chop') && state.energy < 10) preparation = energyAdvice();
   return preparation ? { ...preparation, id: `quest-prepare-${quest.id}-${preparation.id}`,
     detail: `${quest.title} 준비 · ${preparation.detail}`, tag: '목표 준비', progress: base.progress } : base;
 }

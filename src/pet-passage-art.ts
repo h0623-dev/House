@@ -25,48 +25,49 @@ export function drawPetPassage(c: CanvasRenderingContext2D, level: number, open:
     const a = route[index], b = route[index + 1], length = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const n: Point = [-(b[1] - a[1]) / length, (b[0] - a[0]) / length];
     const corners: [Point, Point, Point, Point] = [offset(a, n, -half), offset(a, n, half), offset(b, n, half), offset(b, n, -half)];
-    const shadow = corners.map(p => [p[0] + 6, p[1] + 9] as Point);
-    polygon(c, shadow, 'rgba(47,44,30,.18)', 'rgba(47,44,30,.08)', .6);
-    polygon(c, corners, '#b38b57'); painted = paintWorldQuad(c, 'wood', corners, .06) && painted;
-    c.strokeStyle = 'rgba(82,59,35,.36)'; c.lineWidth = 1;
-    for (let distance = 15; distance < length; distance += 22) {
+    const shadow = corners.map(p => [p[0] + 3, p[1] + 5] as Point);
+    polygon(c, shadow, 'rgba(47,44,30,.12)', 'rgba(47,44,30,.04)', .4);
+    polygon(c, corners.map(p => [p[0], p[1] + 3] as Point), '#75684d', '', 0);
+    polygon(c, corners, '#c3a16e', '#8c7656', .85); painted = paintWorldQuad(c, 'wood', corners, .015) && painted;
+    c.strokeStyle = 'rgba(112,86,54,.3)'; c.lineWidth = .85;
+    for (let distance = 18; distance < length; distance += 20) {
       const p: Point = [a[0] + (b[0] - a[0]) * distance / length, a[1] + (b[1] - a[1]) * distance / length];
       c.beginPath(); c.moveTo(...offset(p, n, -half + 3)); c.lineTo(...offset(p, n, half - 3)); c.stroke();
     }
     // Low raised edges preserve the painted paw silhouette on the wide walkway.
     for (const side of [-1, 1]) {
       const from = offset(a, n, side * (half - 2)), to = offset(b, n, side * (half - 2));
-      c.beginPath(); c.moveTo(from[0], from[1] - 6); c.lineTo(to[0], to[1] - 6);
-      c.strokeStyle = '#55766b'; c.lineWidth = 5; c.stroke();
-      c.strokeStyle = '#b7c9a2'; c.lineWidth = 1.2; c.stroke();
+      c.beginPath(); c.moveTo(from[0], from[1] - 3); c.lineTo(to[0], to[1] - 3);
+      c.strokeStyle = '#668074'; c.lineWidth = 2.6; c.stroke();
+      c.strokeStyle = '#bbc6a8'; c.lineWidth = .7; c.stroke();
     }
   }
   // Full paw circles need wood beyond the outer corner of perpendicular flights.
   // These open junctions soften the rail ends without fencing across a turn.
   for (const point of route.slice(1, -1)) {
-    c.save(); c.fillStyle = 'rgba(47,44,30,.16)'; c.beginPath(); c.ellipse(point[0] + 5, point[1] + 8, half + 2, half + 2, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(point[0], point[1], half, half, 0, 0, Math.PI * 2); c.fillStyle = '#b38b57'; c.fill();
+    c.save(); c.fillStyle = 'rgba(47,44,30,.10)'; c.beginPath(); c.ellipse(point[0] + 3, point[1] + 5, half + 1, half + 1, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(point[0], point[1], half, half, 0, 0, Math.PI * 2); c.fillStyle = '#c3a16e'; c.fill();
     c.clip();
     const cap: [Point, Point, Point, Point] = [[point[0] - half, point[1] - half], [point[0] + half, point[1] - half],
       [point[0] + half, point[1] + half], [point[0] - half, point[1] + half]];
-    painted = paintWorldQuad(c, 'wood', cap, .06) && painted;
+    painted = paintWorldQuad(c, 'wood', cap, .015) && painted;
     c.restore();
   }
   const a = geometry.hinge, b = geometry.entry, length = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const n: Point = [-(b[1] - a[1]) / length, (b[0] - a[0]) / length];
   const first = offset(a, n, -half + 3), second = offset(a, n, half - 3);
   for (const post of [first, second]) {
-    polygon(c, [[post[0] - 3, post[1]], [post[0] + 3, post[1]], [post[0] + 3, post[1] - 30], [post[0] - 3, post[1] - 30]], '#658071');
-    c.fillStyle = '#d7c998'; c.beginPath(); c.ellipse(post[0], post[1] - 31, 5, 3, 0, 0, Math.PI * 2); c.fill();
+    polygon(c, [[post[0] - 2, post[1]], [post[0] + 2, post[1]], [post[0] + 2, post[1] - 22], [post[0] - 2, post[1] - 22]], '#718a78', '#5d7567', .7);
+    c.fillStyle = '#d7c998'; c.beginPath(); c.ellipse(post[0], post[1] - 23, 3.4, 2.2, 0, 0, Math.PI * 2); c.fill();
   }
-  const gateEnd: Point = open ? [first[0] - (b[0] - a[0]) / length * 58, first[1] - (b[1] - a[1]) / length * 58] : second;
-  for (const height of [11, 23]) {
+  const gateEnd: Point = open ? [first[0] - (b[0] - a[0]) / length * 46, first[1] - (b[1] - a[1]) / length * 46] : second;
+  for (const height of [8, 18]) {
     c.beginPath(); c.moveTo(first[0], first[1] - height); c.lineTo(gateEnd[0], gateEnd[1] - height);
-    c.strokeStyle = '#8d754d'; c.lineWidth = 5; c.stroke(); c.strokeStyle = '#e3c58b'; c.lineWidth = 1.3; c.stroke();
+    c.strokeStyle = '#a0885f'; c.lineWidth = 3; c.stroke(); c.strokeStyle = '#e3cba1'; c.lineWidth = .8; c.stroke();
   }
   for (let amount = .2; amount < 1; amount += .2) {
     const x = first[0] + (gateEnd[0] - first[0]) * amount, y = first[1] + (gateEnd[1] - first[1]) * amount;
-    c.beginPath(); c.moveTo(x, y - 8); c.lineTo(x, y - 26); c.strokeStyle = '#79927b'; c.lineWidth = 3.6; c.stroke();
+    c.beginPath(); c.moveTo(x, y - 5); c.lineTo(x, y - 20); c.strokeStyle = '#79927b'; c.lineWidth = 2.4; c.stroke();
   }
   // A small paw sign communicates who can use this route without a UI overlay.
   const sign: Point = [geometry.entry[0] + 12, geometry.entry[1] - 35];

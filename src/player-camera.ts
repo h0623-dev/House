@@ -1,25 +1,45 @@
-export type PlayerCameraPoint = readonly [number, number];
+import type { GameState } from './game';
+import { getRoadBounds } from './scene-navigation';
+import { OUTDOOR_SITES } from './outdoor-sites';
+import { getPetPassageGeometry } from './pet-passage';
+import { getFloorBounds, projectTruckPoint, type TruckFloor } from './truck-layout';
+import { getVillageContentBounds, mergeVillageBounds, type VillageBounds } from './village-camera';
 
-/** One close gameplay scale is shared by deck, stairs, road and outdoor work.
- * Map size and the destination never change the resident's on-screen size. */
-export function framePlayerCamera(point: PlayerCameraPoint, availableWidth: number, availableHeight: number) {
-  const width = Math.max(100, availableWidth), height = Math.max(70, availableHeight);
-  const scale = Math.max(.8, Math.min(1.15, width / 360, height / 190));
-  return { x: point[0], y: point[1] - 36, width: width / scale, height: height / scale, zoom: 1, scale };
+/** Camera bounds never change navigation, collision footprints or actor feet.
+ * Ground belongs to the first-floor overview; other tabs show only that floor. */
+export function getHomeOverviewBounds(state: GameState, floor: TruckFloor, level = state.deckLevel): VillageBounds {
+  const deck = getFloorBounds(level, floor);
+  const corners = [[deck.left, deck.back], [deck.end, deck.back], [deck.end, deck.front], [deck.left, deck.front]]
+    .map(point => projectTruckPoint(point, floor));
+  const bounds: VillageBounds[] = [{
+    left: Math.min(...corners.map(point => point[0])) - 28,
+    top: Math.min(...corners.map(point => point[1])) - 98,
+    right: Math.max(...corners.map(point => point[0])) + 28,
+    bottom: Math.max(...corners.map(point => point[1])) + (floor === 1 ? 115 : 32),
+  }, getVillageContentBounds(state, floor)];
+  if (floor === 1) {
+    const cabin = projectTruckPoint([deck.end + 95, (deck.back + deck.front) / 2], 1, -107);
+    bounds.push({ left: cabin[0] - 126, top: cabin[1] - 147, right: cabin[0] + 134, bottom: cabin[1] + 61 });
+    const road = getRoadBounds(level);
+    // At either road edge the complete original resident, rather than just its
+    // feet, remains inside the overview. Animals retain their full paw radius.
+    bounds.push({ left: road.left - 32, top: road.top - 84, right: road.right + 32, bottom: road.bottom + 32 });
+    bounds.push(getPetPassageGeometry(level).bounds);
+    for (const site of OUTDOOR_SITES) bounds.push({
+      left: site.point[0] - 100, top: site.point[1] - (site.id === 'grove' ? 178 : 105),
+      right: site.point[0] + 100, bottom: site.point[1] + 70,
+    });
+  }
+  return mergeVillageBounds(bounds);
 }
 
-/** Confine follow lag to the usable viewport without changing magnification.
- * An explicit zoom may make the body taller than the viewport; in that case
- * keep its centre visible and allow balanced cropping rather than zooming out. */
-export function keepPlayerVisible(camera: { x: number; y: number }, feet: PlayerCameraPoint,
-  usableWidth: number, usableHeight: number, scale: number, bodyHeight = 128 * .64): { x: number; y: number } {
-  if (!Number.isFinite(scale) || scale <= 0) return { ...camera };
-  const width = Math.max(0, usableWidth), height = Math.max(0, usableHeight);
-  const side = Math.min(24, width / 2), horizontal = (width / 2 - side) / scale;
-  const minY = feet[1] - (height / 2 - 4) / scale;
-  const maxY = feet[1] - bodyHeight + (height / 2 - 8) / scale;
-  return {
-    x: Math.max(feet[0] - horizontal, Math.min(feet[0] + horizontal, camera.x)),
-    y: minY <= maxY ? Math.max(minY, Math.min(maxY, camera.y)) : feet[1] - bodyHeight / 2 - 2 / scale,
-  };
+/** Fit the whole playable map to the actual area between the phone HUDs.
+ * Ordinary movement and chores cannot change these bounds or magnification. */
+export function frameHomeOverview(bounds: VillageBounds, availableWidth: number, availableHeight: number) {
+  const width = Math.max(100, availableWidth), height = Math.max(70, availableHeight);
+  const margin = 16;
+  const scale = Math.min((width - margin * 2) / Math.max(1, bounds.right - bounds.left),
+    (height - margin * 2) / Math.max(1, bounds.bottom - bounds.top));
+  return { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
+    width: width / scale, height: height / scale, zoom: 1, scale };
 }

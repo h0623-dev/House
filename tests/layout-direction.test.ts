@@ -1,3 +1,4 @@
+import { waitForEnergy } from './fixtures/energy-recovery.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, createGame, loadGame, performAction, SAVE_KEY, saveGame, tick,
@@ -17,7 +18,7 @@ function funded(level = 1): GameState {
   let state = createGame('male');
   state.resources.wood = state.resources.scrap = state.resources.food = state.resources.water = 10_000;
   for (let current = 1; current < level; current++) {
-    if (state.energy < 15) state = performAction(state, 'rest').state;
+    if (state.energy < 15) state = waitForEnergy(state);
     const expanded = performAction(state, 'expand'); assert.equal(expanded.ok, true, expanded.message); state = expanded.state;
   }
   return state;

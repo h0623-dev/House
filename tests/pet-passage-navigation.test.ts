@@ -55,6 +55,30 @@ test('every pet bridge segment and every gate approach clears the whole human la
   }
 });
 
+test('the compact outside flight paints no wood over farm, building or stair footprints at any deck size', () => {
+  for (let level = 1; level <= 8; level++) {
+    const slots = Array.from({ length: Math.min(16, level * 2) }, (_, index) => index),
+      world = createNavigationWorld(level, Math.min(24, level * 3), slots, { floors: level >= 7 ? [1, 2, 3] : level >= 4 ? [1, 2] : [1] }),
+      geometry = getPetPassageGeometry(level), paintedRadius = geometry.width / 2;
+    const length = geometry.points.slice(1).reduce((sum, point, index) => sum + distance(point, geometry.points[index]), 0);
+    assert.ok(length <= 330, 'one short flight replaces the former 548–636px bridge');
+    assert.ok(length / 44 < 7.5, 'the unmodified 44px/s walking speed crosses the compact flight within 7.5 seconds');
+    assert.equal(geometry.points.length, 3, 'there is one sloped flight and one real gate landing');
+    for (let index = 1; index < geometry.points.length; index++) {
+      const a = geometry.points[index - 1], b = geometry.points[index];
+      for (let step = 0; step <= 100; step++) {
+        const amount = step / 100, point: [number, number] = [a[0] + (b[0] - a[0]) * amount, a[1] + (b[1] - a[1]) * amount];
+        for (const obstacle of world.obstacles.filter(obstacle => obstacle.surface === 'deck' && obstacle.floor === 1)) {
+          const r = obstacle.bounds, polygon = [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]]
+            .map(corner => projectDeckPoint(corner as [number, number]));
+          assert.equal(circleOverlapsPolygon(point, paintedRadius, polygon), false,
+            `level ${level} keeps the entire painted wood width outside every ${obstacle.kind} footprint`);
+        }
+      }
+    }
+  }
+});
+
 test('an idle hero on the actual human landing never blocks dog, cat or boar walking either bridge direction', () => {
   for(let level=1;level<=8;level++)for(const id of['dog','cat','boar']as const){
     const radius=radiusFor(id),scale=id==='dog'?.78:id==='boar'?.7:.73,geometry=getPetPassageGeometry(level);

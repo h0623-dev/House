@@ -1,3 +1,4 @@
+import { cloneEnergyRecoveryFields } from './energy-recovery';
 import type { ActionResult, GameState, Resource } from './game';
 import { cloneCompanions } from './companions';
 import { cloneUnitProgressFields } from './units';
@@ -223,6 +224,7 @@ function copy(state: GameState): GameState {
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
     ...clonePetPassageFields(state),
+    ...cloneEnergyRecoveryFields(state),
     expedition: state.expedition ? { ...state.expedition, ...(state.expedition.participantIds ? { participantIds: [...state.expedition.participantIds] } : {}) } : null,
     settlement: getLegacySettlement(state),
   };

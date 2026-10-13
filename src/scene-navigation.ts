@@ -275,6 +275,12 @@ export function planYieldNavigation(world:NavigationWorld,start:NavigationLocati
         location=groundLocation(world,point,(base.floor||1)as TruckFloor,base.floor===0?'road':undefined);
       if(!location||floorId(location)!==base.floor)continue;
       if([...reserved,...landingReservations].some(goal=>floorId(goal)===base.floor&&distance(point,goal.point)<world.radius+reservedRadius+2))continue;
+      // Road path planning reserves actors with their full axis-aligned envelope.
+      // A diagonal circle-clear yield beside a corner landing can still cover
+      // that landing's route start. Leave its complete planning envelope open.
+      if(landingReservations.some(goal=>goal.surface==='road'&&base.floor===0
+        &&Math.abs(point[0]-goal.point[0])<world.radius+reservedRadius+2
+        &&Math.abs(point[1]-goal.point[1])<world.radius+reservedRadius+2))continue;
       if(occupiedLinks.some(link=>(base.floor===link.lower||base.floor===link.upper)&&link.points.slice(1).some((to,index)=>
         distanceToSegment(point,link.points[index],to)<world.radius+reservedRadius+2)))continue;
       candidates.push(location);

@@ -5,7 +5,8 @@ import { drawHero, type HeroPose } from './actors';
 import { getEquippedOutfit } from './shop';
 import { drawZombie } from './creatures';
 import { drawCompanion, companionPawContacts, sampleCompanionGait, type CompanionOptions } from './companion-art';
-import { drawTruckFloor, drawTruckStairway } from './truck-floor-art';
+import { drawTruckFloor } from './truck-floor-art';
+import { drawTruckAccessStairs } from './truck-stair-art';
 import { drawSkyBirds, skyNightAmount } from './sky-birds';
 import { createPetPatrol, stepPetPatrol, getPetGroundRadius, type PetPatrolState } from './scene-patrol';
 import { planPlacementPetRelocations } from './scene-placement';
@@ -19,8 +20,8 @@ import { drawFacility, facilityArtReady, FACILITY_BASE_SLOPES } from './settleme
 import { getLayoutDirection, type LayoutDirection } from './layout-direction';
 import { type MotionRoute } from './scene-motion';
 import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
-import { fitVillageCamera, getVillageContentBounds, VILLAGE_FACILITY_SIZE } from './village-camera';
-import { framePlayerCamera, keepPlayerVisible } from './player-camera';
+import { fitVillageCamera, getVillageContentBounds, mergeVillageBounds, VILLAGE_FACILITY_SIZE } from './village-camera';
+import { frameHomeOverview, getHomeOverviewBounds } from './player-camera';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
   sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
   type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld, type NavigationLink } from './scene-navigation';
@@ -94,6 +95,7 @@ export class Scene {
   private petPassageEventState = '';
   private petPassagePaint: { drawn: boolean; painted: boolean } = { drawn: false, painted: false };
   private petPassageLeasedPaint: { owners: UnitId[]; points: Point[]; drawn: boolean; painted: boolean }[] = [];
+  private accessStairPaint: ReturnType<typeof drawTruckAccessStairs> | null = null;
   private zone: 'home' | 'grove' = 'home';
   private selectedPlotId: number | null = null;
   private farmFocus = false;
@@ -108,6 +110,8 @@ export class Scene {
   private cameraViewport: Point = [920, 560];
   private manualViewport: Point | null = null;
   private playerCameraFollowing = false;
+  private cameraMode: 'overview' | 'manual' | 'focus' | 'planning' = 'overview';
+  private overviewBounds: WorldBounds | null = null;
   private pinch = new MapPinchGesture();
   private cancelledGesturePointers = new Set<number>();
   private pendingFarmTouch: { pointerId: number; point: Point; timer: number } | null = null;
@@ -119,7 +123,7 @@ export class Scene {
   private planningMode: PlanningMode | null = null;
   private planningLevel: number | null = null;
   private expansionPreview: number | null = null;
-  private cameraFocusRequested = false;
+  private cameraFocusRequested = true;
   private villageOverview = false;
   private safeViewport = { top: 0, bottom: 0, left: 0, right: 0, width: 1, height: 1 };
   private queuedPlotIds: number[] = [];
@@ -354,11 +358,12 @@ export class Scene {
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
-  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; }
+  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; if(enabled)this.villageOverview=false; }
   /** A farming tool stays selected while taps or a finger swipe queue further plots. */
   setFarmMode(mode: FarmAction | null, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
     if (mode !== this.farmMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.farmMode = mode;
+    if(mode)this.villageOverview=false;
     this.canvas.style.touchAction = 'none';
     this.queuedPlotIds = mode ? [...queuedPlotIds] : [];
     this.plantingCropId = selectedSeed;
@@ -527,7 +532,7 @@ export class Scene {
       ...(passage?{passage:{...passage,points:passage.points.map(point=>[...point])},...(passageOwner?{passageOwner}:{})}:{})});
   }
   private followFloor(floor:TruckFloor) {
-    if(floor===this.activeFloor)return;this.activeFloor=floor;this.renderFloor=floor;this.manualViewport=null;this.mapPan=[0,0];
+    if(floor===this.activeFloor)return;this.activeFloor=floor;this.renderFloor=floor;
     this.canvas.dispatchEvent(new CustomEvent('scenefloorchange',{detail:{floor,following:true}}));
   }
   /** Only an explicit new-game reset discards the session's retained position. */
@@ -537,19 +542,20 @@ export class Scene {
     this.publishWalking();
   }
   resetMapView() {
-    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.villageOverview = false;
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.villageOverview = true;
     this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
   }
-  /** Resume the resident's viewpoint without discarding the player's zoom. */
+  /** Legacy controllers resume the map, preserving deliberate zoom and pan.
+   * Walking and gate visits never switch back to the retired close follow view. */
   resumePlayerCamera() {
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
     this.followFloor(this.currentHeroLocation().floor??1);
-    this.manualViewport=null;this.mapPan=[0,0];this.villageOverview=false;this.zone='home';this.cameraFocusRequested=true;
+    this.villageOverview=true;this.zone='home';
     this.render();
   }
-  /** Explicit overview fits the complete selected deck and cab; no actor moves. */
+  /** Explicit overview fits the selected floor and its playable surroundings. */
   showVillageOverview() {
     this.resetMapView(); this.villageOverview = true; this.cameraFocusRequested = true; this.render();
   }
@@ -566,8 +572,7 @@ export class Scene {
   focusOutdoorSite(id:OutdoorSiteId) {
     const site=getOutdoorSite(id);if(!site||this.action)return;
     if(this.activeFloor!==1)this.setActiveFloor(1);
-    // The information sheet already previews the place. Travel and work keep
-    // the actual resident in view, rather than fitting a second, wider map.
+    // Information sheets and physical travel use the same complete map.
     this.resumePlayerCamera();
   }
   /** Rewards belong to the controller and can commit only after actual work finishes. */
@@ -810,6 +815,7 @@ export class Scene {
       farmMode: this.farmMode, constructionMode: this.constructionMode, mapZoom: this.mapZoom,
       mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null,
       playerFollowing:this.playerCameraFollowing,cameraCenter:{x:round(this.camera.x),y:round(this.camera.y)},
+      cameraMode:this.cameraMode,overviewBounds:this.overviewBounds,
       cameraViewport:{width:round(this.cameraViewport[0]),height:round(this.cameraViewport[1])},
       planningMode: this.planningMode, planningLevel: this.planningLevel, expansionPreview: this.expansionPreview,
       activeFloor:this.activeFloor,floorCount:this.state?getTruckFloorCount(this.state):1,houseMoveMode:false,
@@ -1083,9 +1089,9 @@ export class Scene {
       ??planNavigation(this.choreWorld(),this.heroLocation,target);
     if(!navigation)return;
     if(navigation.motion.duration<.001){this.stopWalking();return;}
-    // A ground tap resumes close follow on every surface; magnification belongs
-    // to the player and is kept through deck, ladder and road transitions.
-    this.manualViewport=null;this.mapPan=[0,0];this.villageOverview=false;this.zone='home';
+    // Tapping a destination moves feet while retaining the complete map or the
+    // deliberate camera position chosen by a pinch/drag.
+    this.villageOverview=true;this.zone='home';
     this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0};
     this.lastFrame=performance.now();this.publishWalking();this.render();
   }
@@ -1142,8 +1148,6 @@ export class Scene {
   private plotPosition(index: number): Point {
     return FARM_POSITIONS[index] ?? FARM_POSITIONS[0];
   }
-  private rampTop(): Point { return this.p(-225, this.deckBounds().front - 3, 95); }
-  private rampBottom(): Point { return [140, 527]; }
   private heroState(): { point: Point; pose: HeroPose; facing: 1 | -1; progress: number; time: number; climbing?: 'up' | 'down' } {
     const action = this.action;
     if (!action) {
@@ -1265,9 +1269,8 @@ export class Scene {
       const desiredZoom = this.villageOverview ? 1 : facility ? 1.35 : 1;
       target = { x: targetX, y: targetY, zoom: desiredZoom };
     }
-    // Normal home composition follows the inhabited village, including the real
-    // roof and production bubbles, rather than centring a vast empty deck/cab.
-    // An explicit overview and an expansion still show the full built platform.
+    // A deliberately selected facility retains readable roofs and production
+    // controls. The normal map composition is fitted independently below.
     if (this.state && this.zone === 'home' && !showFarm && !this.action && !this.villageOverview) {
       let bounds = getVillageContentBounds(this.state, this.activeFloor);
       const selected = this.selectedFacilityId === null ? undefined : getSettlement(this.state).buildings.find(b=>b.id===this.selectedFacilityId);
@@ -1278,12 +1281,20 @@ export class Scene {
       const village=fitVillageCamera(bounds,availableWidth,availableHeight);
       viewWidth=village.width;viewHeight=village.height;target={x:village.x,y:village.y,zoom:village.zoom};
     }
-    const resident=this.currentHeroLocation(),residentVisible=(resident.floor??1)===this.activeFloor;
-    const playerView=residentVisible&&!showFarm&&!this.planningMode&&!this.constructionMode&&!this.villageOverview
-      &&this.action?.kind!=='expand'&&(this.freeWalk!==null||this.action!==null||this.zone==='home'&&this.selectedFacilityId===null);
-    if(playerView){
-      const player=framePlayerCamera(resident.point,availableWidth,availableHeight);
-      viewWidth=player.width;viewHeight=player.height;target={x:player.x,y:player.y,zoom:player.zoom};
+    const overviewView=!!this.state&&!showFarm&&!this.planningMode&&!this.constructionMode&&(this.villageOverview||this.selectedFacilityId===null);
+    this.overviewBounds=null;
+    if(overviewView&&this.state){
+      let bounds=getHomeOverviewBounds(this.state,this.activeFloor,level);
+      if(this.activeFloor===1){
+        const leased=this.activePetPassageLeases().map(path=>({
+          left:Math.min(...path.points.map(point=>point[0]))-40,top:Math.min(...path.points.map(point=>point[1]))-72,
+          right:Math.max(...path.points.map(point=>point[0]))+40,bottom:Math.max(...path.points.map(point=>point[1]))+40,
+        }));
+        if(leased.length)bounds=mergeVillageBounds([bounds,...leased]);
+      }
+      this.overviewBounds=bounds;
+      const overview=frameHomeOverview(bounds,availableWidth,availableHeight);
+      viewWidth=overview.width;viewHeight=overview.height;target={x:overview.x,y:overview.y,zoom:overview.zoom};
     }
     const planning = this.planningBounds();
     if (planning) {
@@ -1294,7 +1305,8 @@ export class Scene {
     // Keep the viewport as well as the camera fixed after a manual move. An action
     // starting or ending must not silently change the map's scale under the finger.
     if (this.manualViewport) [viewWidth, viewHeight] = this.manualViewport;
-    this.playerCameraFollowing=playerView&&!this.manualViewport&&!this.pinch.active;
+    this.playerCameraFollowing=false;
+    this.cameraMode=this.manualViewport||this.pinch.active?'manual':planning?'planning':overviewView?'overview':'focus';
     this.cameraViewport = [viewWidth, viewHeight];
     // One user-controlled magnification works on the truck, farm, grove and during chores.
     const road=this.activeFloor===1?getRoadBounds(this.state?.deckLevel??1):null;
@@ -1308,17 +1320,14 @@ export class Scene {
       this.camera = { ...target }; this.cameraFocusRequested = false;
     }
     if (!this.manualViewport && !this.pinch.active) {
-      const movementBlend=playerView?(this.reducedMotion ? .6 : .32):blend;
-      this.camera.x += (target.x - this.camera.x) * movementBlend;
-      this.camera.y += (target.y - this.camera.y) * movementBlend;
-      if(playerView)this.camera.zoom=target.zoom;
-      else this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
+      if(overviewView){this.camera={...target};}
+      else{
+        this.camera.x += (target.x - this.camera.x) * blend;
+        this.camera.y += (target.y - this.camera.y) * blend;
+        this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
+      }
     }
     this.scale = Math.min(availableWidth / viewWidth, availableHeight / viewHeight) * this.camera.zoom;
-    if(this.playerCameraFollowing){
-      const visible=keepPlayerVisible(this.camera,resident.point,availableWidth,availableHeight,this.scale);
-      this.camera.x=visible.x;this.camera.y=visible.y;
-    }
     this.dx = insets.left + availableWidth / 2 - this.camera.x * this.scale;
     this.dy = safeTop + availableHeight / 2 - this.camera.y * this.scale;
   }
@@ -1333,6 +1342,7 @@ export class Scene {
     this.updateCamera();
     c.translate(this.dx, this.dy); c.scale(this.scale, this.scale);
     this.hits = [];
+    this.accessStairPaint=null;
     this.layoutPaintGeometry=[];this.productionItems=[];
     this.petPassagePaint={drawn:false,painted:false};
     this.petPassageLeasedPaint=[];
@@ -1372,7 +1382,7 @@ export class Scene {
         ready:stock?.ready??true,yieldAmount:stock?.yieldAmount??null,remainingSeconds:stock?.remainingSeconds??0,
         bounds:[this.dx+site.point[0]*this.scale-24,this.dy+(site.point[1]-72)*this.scale-24,
           this.dx+site.point[0]*this.scale+24,this.dy+(site.point[1]-72)*this.scale+24]};}),
-      ladderEntry:{x:this.dx+140*this.scale,y:this.dy+508*this.scale}});
+      ladderEntry:{x:this.dx+140*this.scale,y:this.dy+508*this.scale},accessStairs:this.accessStairPaint});
     // Assets are cached before the next frame; the fallback never hides interactions.
     if (!worldArtReady()) this.label('그림을 불러오는 중…', 470, 45, 13, '#fff2d0');
   }
@@ -1839,14 +1849,9 @@ export class Scene {
   }
 
   private ramp() {
-    const top = this.rampTop(), bottom = this.rampBottom();
-    drawTruckStairway(this.ctx,top,bottom);
-    this.ctx.save(); this.ctx.setLineDash([5, 9]);
-    this.line([[bottom[0], bottom[1] + 9], [157, 552], [151, 571], [130, 590]], '#e8c987', 2); this.ctx.restore();
-    const pixel=1/this.scale,x=bottom[0],y=bottom[1]-19,road=this.currentHeroLocation().surface==='road';
-    this.round(x-23*pixel,y-22*pixel,46*pixel,44*pixel,12*pixel,'#fff8e5f0','#a89669');
-    this.label(road?'↑':'↓',x,y+6*pixel,26*pixel,'#526d45',700);
-    this.label(road?'트럭으로':'도로로',x,y+35*pixel,10*pixel,'#435b3e',800);
+    const {top,bottom}=this.navigationWorld().ladder;
+    this.accessStairPaint=drawTruckAccessStairs(this.ctx,top,bottom);
+    const pixel=1/this.scale,x=bottom[0],y=bottom[1]-19;
     this.hits.push({kind:'road-entry',x,y,radius:0,bounds:[x-23*pixel,y-22*pixel,x+23*pixel,y+22*pixel]});
   }
 
@@ -1859,11 +1864,8 @@ export class Scene {
     this.petPassagePaint={drawn:art.drawn,painted:art.painted};
     const detail=this.getPetPassageSceneState(),[x,y]=detail.gate.worldPoint,bounds=detail.gate.worldBounds;
     this.hits.push({kind:'pet-gate',x,y,radius:0,bounds});
-    const pixel=1/this.scale;
-    this.round(x-24*pixel,y-24*pixel,48*pixel,48*pixel,13*pixel,this.petGateClosing?'#e2e9d7f2':'#fff8e5ef','#a89669');
-    this.label(this.petGateClosing?'…':art.open?'열림':'닫힘',x,y+5*pixel,11*pixel,'#526d45',800);
-    this.label('동물 문',x,y+36*pixel,10*pixel,'#435b3e',800);
-    this.pulse('pet-gate',x,y,26*pixel);
+    // The physical paw sign belongs to the painted village. The HUD provides
+    // the finger-sized control without covering this small access ramp.
   }
 
   private outdoorSites() {

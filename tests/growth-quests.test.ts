@@ -1,3 +1,4 @@
+import { waitForEnergy } from './fixtures/energy-recovery.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { beginHunt, createGame, getSeedInventory, loadGame, performAction, setCompanionTeam, SAVE_KEY, saveGame, tick, type ActionResult, type GameState, type SaveStorage } from '../src/game.ts';
@@ -48,7 +49,7 @@ function achievedGame(): GameState {
   let state = createGame(); state.resources.wood = 10_000; state.resources.scrap = 10_000;
   state.resources.food = 10_000; state.resources.water = 10_000;
   for (let level = 1; level < 8; level++) {
-    if (state.energy < 15) state = requireSuccess(performAction(state, 'rest'));
+    if (state.energy < 15) state = waitForEnergy(state);
     state = requireSuccess(performAction(state, 'expand'));
   }
   for (const [slot, type] of BUILDING_TYPES.entries()) state = requireSuccess(buildFacility(state, type, slot));

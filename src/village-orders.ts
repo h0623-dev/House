@@ -1,3 +1,4 @@
+import { cloneEnergyRecoveryFields } from './energy-recovery';
 import type { ActionResult, GameState, Resource } from './game';
 import { getLegacySettlement } from './settlement';
 import { cloneTruckLayoutFields } from './truck-layout';
@@ -91,6 +92,7 @@ export function fulfillVillageOrder(state: GameState, expectedId: string): Actio
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
     ...clonePetPassageFields(state),
+    ...cloneEnergyRecoveryFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...cloneUnitProgressFields(state),

@@ -16,9 +16,11 @@ test('actual ramp canvas geometry paints an active old lease before the current 
   } });
   globalThis.Image = class { complete = false; naturalWidth = 0 } as unknown as typeof Image;
   let drawPetPassage: typeof import('../src/pet-passage-art').drawPetPassage;
+  let drawTruckAccessStairs: typeof import('../src/truck-stair-art').drawTruckAccessStairs;
   let Scene: typeof import('../src/scene').Scene;
   try {
     ({ drawPetPassage } = await import('../src/pet-passage-art'));
+    ({ drawTruckAccessStairs } = await import('../src/truck-stair-art'));
     ({ Scene } = await import('../src/scene'));
   } finally { hook.deregister(); globalThis.Image = priorImage; }
   let points: Point[] = [], closed = false;
@@ -27,7 +29,7 @@ test('actual ramp canvas geometry paints an active old lease before the current 
     ellipse(x:number,y:number,rx:number,ry:number) { if(rx===38&&ry===38)caps.push([x,y]); }, roundRect() {}, fillText() {},
     beginPath() { points = []; closed = false; }, moveTo(x: number, y: number) { points.push([x, y]); },
     lineTo(x: number, y: number) { points.push([x, y]); }, closePath() { closed = true; },
-    fill() { if (closed && this.fillStyle === '#b38b57') wood.push(points.map(point => [...point])); },
+    fill() { if (closed && this.fillStyle === '#c3a16e') wood.push(points.map(point => [...point])); },
   } as unknown as CanvasRenderingContext2D;
   const old = getPetPassageLink(1), retained = structuredClone(old), current = getPetPassageGeometry(8);
   const art = drawPetPassage(c, 8, true, { points: old.points });
@@ -43,6 +45,15 @@ test('actual ramp canvas geometry paints an active old lease before the current 
     assert.ok(Math.abs(distance(quad[0], quad[1]) - 76) < 1e-7, 'the actual painted landing keeps full body width');
   }
   assert.ok(distance(art.geometry.entry, current.entry) > 90, 'the override really retains the old expanded-edge displacement');
+  const top: Point = [182.79, 313.36], bottom: Point = [140, 527], preservedEndpoints = structuredClone({ top, bottom });
+  const access = drawTruckAccessStairs(c, top, bottom);
+  assert.equal(access.drawn, true); assert.equal(access.painted, false, 'image stubs cannot claim decoded painted art');
+  assert.equal(access.width, 48, 'human access is scaled to the character instead of the former 82px flight');
+  assert.ok(distance(midpoint(access.treadQuads[0][0], access.treadQuads[0][1]), top) < 1e-7);
+  const finalTread = access.treadQuads.at(-1)!;
+  assert.ok(distance(midpoint(finalTread[2], finalTread[3]), bottom) < 1e-7, 'the actual canvas flight ends at the retained walking feet');
+  for (const tread of access.treadQuads) assert.ok(Math.abs(distance(tread[0], tread[1]) - 48) < 1e-7);
+  assert.deepEqual({ top, bottom }, preservedEndpoints);
   const state = createGame(); state.deckLevel = 8;
   const halfway: Point = midpoint(old.points[0], old.points[1]);
   const dog = { id: 'dog', location: { surface: 'ramp', floor: 1, link: old.id, point: halfway }, passageLease: old };

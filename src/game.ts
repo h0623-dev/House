@@ -1,3 +1,4 @@
+import { cloneEnergyRecoveryFields, recoverEnergy, validateEnergyRecovery, type EnergyRecoveryProgress } from './energy-recovery';
 import { CROPS, CROP_IDS, isCropId, type CropId } from './crops';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { realDuration } from './game-speed';
@@ -50,6 +51,8 @@ export interface GameState {
   minutes: number;
   health: number;
   energy: number;
+  /** Actual elapsed-time recovery; absent legacy saves start a new baseline. */
+  energyRecovery?: EnergyRecoveryProgress;
   morale: number;
   resources: Record<Resource, number>;
   /** Missing only in older saves. resources.seeds remains the inventory total. */
@@ -165,6 +168,7 @@ function copy(state: GameState): GameState {
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
     ...clonePetPassageFields(state),
+    ...cloneEnergyRecoveryFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
@@ -302,7 +306,7 @@ export function applyOfflineProgress(state: GameState, now = Date.now()): Offlin
   const secondsApplied = Math.min(seconds, clockHeadroom);
   const next = secondsApplied > 0 ? tick(state, secondsApplied) : copy(state);
   next.lastSaved = now;
-  return { state: next, secondsApplied };
+  return { state: recoverEnergy(next, now), secondsApplied };
 }
 
 /** Daily provisions and zombie damage are applied once for every midnight crossed. */
@@ -475,7 +479,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
     gather: 10, chop: 10, hunt: 16, water: 3, fertilize: FARM_FERTILIZER_COST.energy, plant: 4, harvest: 4, expand: 15, expandFarm: 8, rest: 0, pet: 0, repair: 6,
   };
   if (!Object.hasOwn(energyCosts, action)) return fail('아직 할 수 없는 행동이에요.');
-  if (state.energy < energyCosts[action]) return fail('기운이 부족해요. 먼저 침대에서 쉬어 주세요.');
+  if (state.energy < energyCosts[action]) return fail('기력이 부족해요. 20초마다 1씩 자동으로 회복돼요.');
   let message = '';
   let duration = 0;
   let xp = 0;
@@ -608,19 +612,17 @@ export function performAction(state: GameState, action: Action, plotId?: number,
     case 'rest': {
       const meal = next.resources.food >= 1 && next.resources.water >= 1;
       if (meal) { next.resources.food -= 1; next.resources.water -= 1; reconcileFarmEconomyFood(next); }
-      next.energy = clamp(next.energy + (meal ? 55 : 35));
       next.health = clamp(next.health + (meal ? 12 : 3));
       const roster = getUnitRoster(next);
       for (const id of getUnlockedUnitIds(next)) roster[id].health = clamp(roster[id].health + (meal ? 35 : 10));
       applyRoster(next, roster);
       next.morale = clamp(next.morale + 5);
-      message = meal ? '따뜻한 식사를 하고 함께 쉬었어요. 기운 +55 · 체력 +12 · 동물 체력 +35%' : '친구들과 잠깐 눈을 붙였어요. 기운 +35 · 체력 +3 · 동물 체력 +10%';
+      message = meal ? '따뜻한 식사를 하고 함께 쉬었어요. 체력 +12 · 동물 체력 +35%' : '친구들과 잠깐 눈을 붙였어요. 체력 +3 · 동물 체력 +10%';
       duration = 90;
       break;
     }
     case 'pet':
       next.morale = clamp(next.morale + 12);
-      next.energy = clamp(next.energy + 3);
       message = `${next.petName}가 꼬리를 흔들어요. 함께라서 오늘도 든든해요! 기분 +12`;
       duration = 5;
       break;
@@ -686,6 +688,7 @@ function validateSave(value: unknown): value is GameState {
   if (Object.hasOwn(value, 'farmEconomy') && !validateFarmEconomy(value.farmEconomy, value as unknown as GameState)) return false;
   if (Object.hasOwn(value, 'roadside') && !validateRoadsideProgress(value.roadside)) return false;
   if (Object.hasOwn(value, 'petPassage') && !validatePetPassage(value.petPassage)) return false;
+  if (Object.hasOwn(value, 'energyRecovery') && !validateEnergyRecovery(value.energyRecovery)) return false;
   if (!isRecord(value.stats) || !['harvests', 'gathers', 'hunts', 'expansions', 'chops', 'battlesWon', 'defeatedEnemies'].every(key => isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
   if (!['plantings', 'waterings'].every(key => !Object.hasOwn(value.stats as object, key) || isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
   if (value.stats.expansions !== value.deckLevel - 1) return false;

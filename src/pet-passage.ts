@@ -29,16 +29,13 @@ export function setPetPassageOpen(state: GameState, open: unknown): ActionResult
   return { state: next, ok: true, message: open ? '동물 통로 문을 열었어요. 친구들이 경사로로 따라와요.' : '동물 통로 문을 닫았어요. 친구들이 지금 있는 곳에 머물러요.' };
 }
 export function getPetPassageGeometry(level: number) {
-  const left = getFloorBounds(level).left, entryUV: TruckPoint = [left + 70, 0], hingeUV: TruckPoint = [left + 8, 0];
-  const entry = projectTruckPoint(entryUV), hinge = projectTruckPoint(hingeUV), ground: TruckPoint = [200, 660];
-  // Ground-to-deck order matches other navigation links. The middle point is
-  // the real gateway, rather than a jump from a road sprite to a deck sprite.
-  const front = getFloorBounds(level).front;
-  const humanLink = [[140, 527], projectTruckPoint([-225, front - 3]), projectTruckPoint([-225, front - 60])] as TruckPoint[];
-  // Keep the entire paw envelope beside the human stairway, including its
-  // stationary deck landing. The lower approach also clears the grove canopy.
-  const rightX = Math.max(210, ...humanLink.map(point => point[0] + 46));
-  const points: TruckPoint[] = [ground, [rightX, 570], [rightX, hinge[1]], hinge, entry];
+  const { left } = getFloorBounds(level);
+  // One short outside flight keeps the complete largest pet beside the truck,
+  // clear of the human stairs and of every painted farm and building footprint.
+  // The road landing also stays above the grove's canopy, with full paw room.
+  const entryUV: TruckPoint = [left + 70, 0], hingeUV: TruckPoint = [left + 8, 0], entry = projectTruckPoint(entryUV),
+    hinge = projectTruckPoint(hingeUV), ground: TruckPoint = [-9, 391];
+  const points: TruckPoint[] = [ground, hinge, entry];
   const heroApproaches: TruckPoint[] = [[entry[0] + 30, hinge[1] - 42],
     [entry[0] + 35, hinge[1] - 48], [entry[0] + 40, hinge[1] - 54]];
   return { entryUV, hingeUV, entry, hinge, ground, points, heroApproaches, width: PET_PASSAGE_WIDTH,

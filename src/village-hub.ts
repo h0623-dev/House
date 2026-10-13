@@ -29,7 +29,8 @@ function activityLabel(advice: VillageAdvice): string {
     case 'build': return '시설 건설';
     case 'gather': return '물자 탐색';
     case 'chop': return '나무 베기';
-    case 'rest': return '함께 휴식';
+    case 'rest': return '동료 돌보기';
+    case 'energy': return '기력 회복';
     case 'expand': return '데크 확장';
     case 'floors': return '층 증축';
     case 'farm-expand': return '밭 확장';

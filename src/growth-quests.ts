@@ -1,3 +1,4 @@
+import { cloneEnergyRecoveryFields } from './energy-recovery';
 import type { ActionResult, GameState, Resource } from './game';
 import { CROP_IDS, type CropId } from './crops';
 import { getBuiltTypes, getSettlement, getLegacySettlement, getUpgradedFacilityRecord, getHighestFacilityLevel, type BuildingType } from './settlement';
@@ -54,10 +55,10 @@ function quest(id: string, chapter: number, title: string, description: string, 
     reward: Object.freeze(reward), hint, story: GROWTH_CHAPTERS[chapter - 1].story });
 }
 export const GROWTH_QUESTS: readonly GrowthQuestDefinition[] = Object.freeze([
-  quest('road-supplies', 1, '첫 보급품을 찾아요', '주변 도로를 1번 탐색하기', 'gathers', 1, { kind: 'gather' }, { resources: { wood: 6, scrap: 3 }, xp: 10 }, '탐색으로 목재·고철·물·씨앗을 모아요. 기력이 부족하면 먼저 쉬어요.'),
+  quest('road-supplies', 1, '첫 보급품을 찾아요', '주변 도로를 1번 탐색하기', 'gathers', 1, { kind: 'gather' }, { resources: { wood: 6, scrap: 3 }, xp: 10 }, '탐색으로 목재·고철·물·씨앗을 모아요. 기력은 1분에 3씩 자동 회복돼요.'),
   quest('first-carrot', 1, '작은 농부의 첫 수확', '텃밭에서 작물 1밭 수확하기', 'harvests', 1, { kind: 'harvest' }, { resources: { water: 4 }, seeds: { carrot: 3 }, xp: 15 }, '처음부터 익어 있는 1번 밭을 수확해 보세요.'),
   quest('rainwater-home', 1, '물을 모으는 우리집', '빗물 정수소 건설하기', 'building', 1, { kind: 'build', buildingType: 'waterworks' }, { resources: { wood: 8, scrap: 4 }, xp: 20 }, '빈 건설 자리에 빗물 정수소를 놓아요. 목재 12·고철 4가 필요해요.'),
-  quest('first-delivery', 1, '우리 손으로 만든 물자', '생활 시설 생산품 1번 받기', 'collections', 1, { kind: 'collect', buildingType: 'waterworks' }, { resources: { wood: 12, scrap: 6 }, xp: 20 }, '정수소에서 생산을 시작해요. 완성 후 수령해 주세요. 휴식해도 게임 시간이 흘러요.'),
+  quest('first-delivery', 1, '우리 손으로 만든 물자', '생활 시설 생산품 1번 받기', 'collections', 1, { kind: 'collect', buildingType: 'waterworks' }, { resources: { wood: 12, scrap: 6 }, xp: 20 }, '정수소에서 생산을 시작해요. 완성 후 수령해 주세요. 생산품은 표시된 시간이 지나면 준비돼요.'),
   quest('new-seeds', 2, '두 밭에 새 씨앗', '씨앗을 총 2밭에 심기', 'plantings', 2, { kind: 'plant' }, { resources: { water: 4 }, seeds: { potato: 3, tomato: 3 }, xp: 20 }, '씨앗을 선택한 뒤 빈 밭 두 곳을 눌러요. 이미 자라는 밭은 수확하면 비워져요.'),
   quest('tender-watering', 2, '물 한 방울의 정성', '작물에 총 2밭 물 주기', 'waterings', 2, { kind: 'water' }, { resources: { wood: 10, scrap: 6 }, xp: 20 }, '씨앗을 심은 밭에 물을 주세요. 실제로 돌본 밭만 목표에 기록돼요.'),
   quest('warm-kitchen', 2, '따뜻한 한 끼를 준비해요', '트럭 부엌 건설하기', 'building', 1, { kind: 'build', buildingType: 'kitchen' }, { resources: { food: 4, water: 6 }, xp: 25 }, '목재 16·고철 6으로 부엌을 지어요. 물을 사용해 식량을 생산할 수 있어요.'),
@@ -154,6 +155,7 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
     ...clonePetPassageFields(state),
+    ...cloneEnergyRecoveryFields(state),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
     ...cloneUnitProgressFields(state),

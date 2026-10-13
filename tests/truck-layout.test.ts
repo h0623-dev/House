@@ -1,3 +1,4 @@
+import { waitForEnergy } from './fixtures/energy-recovery.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, createGame, loadGame, performAction, saveGame, tick, type GameState, type SaveStorage } from '../src/game.ts';
@@ -15,7 +16,7 @@ function funded(level = 1): GameState {
   let state = createGame();
   state.resources.wood = state.resources.scrap = state.resources.food = state.resources.water = 10_000;
   for (let current = 1; current < level; current++) {
-    if (state.energy < 15) state = performAction(state, 'rest').state;
+    if (state.energy < 15) state = waitForEnergy(state);
     const expanded = performAction(state, 'expand'); assert.equal(expanded.ok, true, expanded.message); state = expanded.state;
   }
   return state;
@@ -287,7 +288,7 @@ test('facilities relocated into newly unlocked first-floor slots cannot exhaust 
     const built = buildFacility(state, 'waterworks', slot); assert.equal(built.ok, true, built.message); state = built.state;
   }
   while (state.deckLevel < 8) {
-    if (state.energy < 15) state = performAction(state, 'rest').state;
+    if (state.energy < 15) state = waitForEnergy(state);
     const expanded = performAction(state, 'expand'); assert.equal(expanded.ok, true, expanded.message); state = expanded.state;
   }
   const third = buildTruckFloor(state); assert.equal(third.ok, true, third.message); state = third.state;

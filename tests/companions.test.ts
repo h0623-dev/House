@@ -1,3 +1,4 @@
+import { waitForEnergy } from './fixtures/energy-recovery.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { COMPANION_IDS, getCompanionLevel, getCompanionMaxHealth, getCompanions, MAX_COMPANION_XP, validateCompanions } from '../src/companions.ts';
@@ -134,8 +135,9 @@ test('rest recovers all animals with the existing meal cost and zero supplies ca
   const nap = performAction(down, 'rest', undefined, undefined, { advanceClock: false });
   assert.deepEqual(nap.state.companions, { dog: { health: 10, xp: 100 }, cat: { health: 10, xp: 180 } });
   assert.deepEqual(nap.state.resources, down.resources);
-  assert.equal(nap.state.energy, 35);
-  assert.equal(beginHunt(nap.state, 1).ok, true);
+  assert.equal(nap.state.energy, 0);
+  assert.equal(beginHunt(nap.state, 1).ok, false);
+  assert.equal(beginHunt(waitForEnergy(nap.state, 16), 1).ok, true);
   const full = performAction(createGame(), 'rest', undefined, undefined, { advanceClock: false });
   assert.equal(full.state.companions!.dog.health, 100);
   assert.equal(full.state.companions!.cat.health, 100);

@@ -59,7 +59,7 @@ export function performRoadsideAction(state: GameState, id: unknown): ActionResu
   if (Object.hasOwn(state, 'roadside') && !validateRoadsideProgress(state.roadside)) return fail('도로 채집 기록을 확인할 수 없어요.');
   const view = getRoadsideSite(state, site.id), rule = ROADSIDE_RULES[site.id];
   if (!view.ready) return fail(`${site.name}는 다시 준비 중이에요. ${view.remainingSeconds}초 뒤 다른 물자를 모아요.`);
-  if (state.energy < rule.energy) return fail(`기력 ${rule.energy}이 필요해요. 트럭에서 쉬고 돌아와요.`);
+  if (state.energy < rule.energy) return fail(`기력 ${rule.energy}이 필요해요. 기력은 1분에 3씩 자동 회복돼요.`);
   const readyAt = state.totalMinutes + rule.cooldownSeconds * GAME_MINUTES_PER_SECOND;
   const metric = site.kind === 'chop' ? 'chops' : 'gathers';
   if (!integer(state.stats[metric]) || state.stats[metric] >= LIMIT || view.visits >= LIMIT

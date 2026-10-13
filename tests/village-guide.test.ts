@@ -1,8 +1,9 @@
+import { waitForEnergy } from './fixtures/energy-recovery.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, createGame, expansionCost, loadGame, performAction, saveGame,
   type GameState, type SaveStorage } from '../src/game.ts';
-import { claimGrowthQuest, getActiveGrowthQuest } from '../src/growth-quests.ts';
+import { claimGrowthQuest, getActiveGrowthQuest, GROWTH_QUESTS } from '../src/growth-quests.ts';
 import { BUILDINGS, buildFacility, buildTruckFloor, collectProduction, getFloorSlots, getSettlement,
   isFacilitySlotAvailable, startProduction } from '../src/settlement.ts';
 import { getVillageHub, getFarmDeliveryAdvice, type VillageAdvice } from '../src/village-guide.ts';
@@ -55,7 +56,7 @@ function fundedGame(deckLevel: number): GameState {
   state.resources.wood = 10_000; state.resources.scrap = 10_000;
   state.resources.food = 10_000; state.resources.water = 10_000;
   while (state.deckLevel < deckLevel) {
-    if (state.energy < 15) state = performAction(state, 'rest').state;
+    if (state.energy < 15) state = waitForEnergy(state);
     state = action(state, 'expand');
   }
   return state;
@@ -90,7 +91,7 @@ test('a construction objective routes to its actual missing material and restore
   state.resources.wood = BUILDINGS.waterworks.wood;
   assert.deepEqual(getVillageHub(state).primary.target, { kind: 'quest', questId: 'rainwater-home' });
   state.resources.wood = 0; state.energy = 9;
-  assert.equal(getVillageHub(state).primary.target.kind, 'rest');
+  assert.equal(getVillageHub(state).primary.target.kind, 'energy');
 });
 
 test('a collection objective starts an idle facility, shows the saved running clock, then offers its earned output', () => {
@@ -124,7 +125,7 @@ test('an unaffordable deck objective directs to missing supplies or recovery bef
   state.resources.wood = cost.wood; state.resources.scrap = 0;
   assert.deepEqual(getVillageHub(state).primary.target, { kind: 'roadside', siteId: 'salvage' });
   state.energy = 14;
-  assert.equal(getVillageHub(state).primary.target.kind, 'rest');
+  assert.equal(getVillageHub(state).primary.target.kind, 'energy');
   state.energy = 85; state.resources.scrap = cost.scrap;
   assert.deepEqual(getVillageHub(state).primary.target, { kind: 'quest', questId: 'wider-deck' });
 });
@@ -178,7 +179,7 @@ test('floor investment follows actual deck unlock and completed paid floors with
   hub = getVillageHub(state);
   assert.equal(hub.summary.floorCount, 2); assert.notEqual(hub.investment.target.kind, 'floors');
   while (state.deckLevel < 7) {
-    if (state.energy < 15) state = performAction(state, 'rest').state;
+    if (state.energy < 15) state = waitForEnergy(state);
     state = action(state, 'expand');
   }
   assert.match(getVillageHub(state).investment.title, /3층/);
@@ -310,7 +311,7 @@ test('water advice uses the spring energy cost and records cooldown without inve
   assert.equal(state.resources.water, 12);
   assert.equal(state.energy, 0);
   assert.equal(getRoadsideSite(state, 'spring').ready, false);
-  assert.equal(getVillageHub(state).primary.target.kind, 'rest');
+  assert.equal(getVillageHub(state).primary.target.kind, 'energy');
   // An explicit shortage fixture keeps the real paid spring cooldown.
   state.resources.water = 0; state.energy = 8;
   const waiting = getVillageHub(state).primary;
@@ -318,5 +319,56 @@ test('water advice uses the spring energy cost and records cooldown without inve
   assert.equal(waiting.tag, '목표 준비');
   assert.match(waiting.detail, /20초/);
   state.energy = 7;
-  assert.equal(getVillageHub(state).primary.target.kind, 'rest');
+  assert.equal(getVillageHub(state).primary.target.kind, 'energy');
+});
+
+test('low energy guidance shows automatic real-time recovery without spending food or changing saved progress', () => {
+  const state = createGame();
+  state.energy = 0;
+  state.energyRecovery = { version: 1, checkedAt: 1_000_000, carryMs: 7_500 };
+  const before = JSON.stringify(state), hub = getVillageHub(state), delivery = getFarmDeliveryAdvice(state);
+  assert.equal(hub.primary.target.kind, 'energy');
+  assert.equal(hub.primary.icon, 'bolt');
+  assert.equal(hub.primary.cta, '회복 시간 보기');
+  assert.match(hub.primary.detail, /20초마다 1씩, 1분에 3씩 자동 회복/);
+  assert.ok(![hub.primary, hub.investment, ...hub.activities].some(advice => advice.target.kind === 'rest'));
+  assert.deepEqual(delivery.target, { kind: 'energy' });
+  assert.equal(delivery.cropId, undefined); // Recovery uses the bolt icon, rather than a produce icon.
+  assert.equal(delivery.icon, 'bolt');
+  assert.deepEqual(delivery.progress, { current: 0, max: 3 });
+  assert.equal(JSON.stringify(state), before);
+});
+
+test('hunt preparation distinguishes depleted energy from injured companions without granting either recovery', () => {
+  const state = createGame();
+  // Imported objective fixture: claims only select the current view; this test does not earn battle rewards.
+  const index = GROWTH_QUESTS.findIndex(quest => quest.id === 'safe-road');
+  state.growthQuests = { claimed: GROWTH_QUESTS.slice(0, index).map(quest => quest.id) };
+  state.companions!.dog.health = 0; state.companions!.cat.health = 0;
+  state.energy = 15;
+  let before = JSON.stringify(state), advice = getVillageHub(state).primary;
+  assert.deepEqual(advice.target, { kind: 'energy' });
+  assert.equal(JSON.stringify(state), before);
+  state.energy = 16;
+  before = JSON.stringify(state); advice = getVillageHub(state).primary;
+  assert.deepEqual(advice.target, { kind: 'companions' });
+  assert.equal(advice.cta, '동료 돌보기');
+  assert.match(advice.detail, /동물 체력을 회복/);
+  assert.equal(JSON.stringify(state), before);
+  state.companions!.dog.health = 1;
+  assert.deepEqual(getVillageHub(state).primary.target, { kind: 'quest', questId: 'safe-road' });
+});
+
+test('crop delivery stays executable at zero energy and a valid watering task keeps its priority at three energy', () => {
+  let state = action(createGame(), 'harvest', 1);
+  state.energy = 0;
+  const before = JSON.stringify(state);
+  assert.deepEqual(getFarmDeliveryAdvice(state).target, { kind: 'farm-delivery' });
+  assert.equal(JSON.stringify(state), before);
+  state = fulfillFarmOrder(state, getFarmOrder(state).id).state;
+  state.plots[0].plantedAt = state.totalMinutes; state.plots[0].cropId = 'potato'; state.plots[0].watered = false;
+  state.energy = 3;
+  assert.deepEqual(getFarmDeliveryAdvice(state).target, { kind: 'farm', mode: 'water' });
+  state.energy = 2;
+  assert.deepEqual(getFarmDeliveryAdvice(state).target, { kind: 'energy' });
 });

@@ -104,7 +104,7 @@ test('insufficient wood, scrap, energy, full decks and active expeditions fail a
   }
   const tired = legacyDeck(2);
   tired.energy = 7;
-  assertRejectedWithoutMutation(tired, /기운이 부족/);
+  assertRejectedWithoutMutation(tired, /기력이 부족/);
   assertRejectedWithoutMutation(legacyDeck(1), /트럭을 확장/);
   const hunt = beginHunt(legacyDeck(2), 1);
   assert.equal(hunt.ok, true);
