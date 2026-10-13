@@ -43,6 +43,7 @@ import { getFarmOrder, getFarmPlotCare, fulfillFarmOrder } from './farm-economy'
 import { renderFarmDelivery, renderFarmCropLedger, renderFarmDeliveryPreview, updateFarmDeliveryPreview } from './farm-economy-ui';
 import { OUTDOOR_SITES, getOutdoorSite, type OutdoorSiteId } from './outdoor-sites';
 import { getRoadsideSite, performRoadsideAction } from './roadside';
+import { getPetPassage, setPetPassageOpen } from './pet-passage';
 import './farm-economy.css';
 import './outdoor.css';
 
@@ -131,7 +132,7 @@ app.innerHTML=`
     <div class="map-controls" role="group" aria-label="지도 확대와 축소"><button data-map-zoom="1" aria-label="지도 확대"><span>+</span><small>확대</small></button><button data-map-reset aria-label="지도 기본 크기로 보기"><strong data-map-percent>100%</strong><small>기본 보기</small></button><button data-map-zoom="-1" aria-label="지도 축소"><span>−</span><small>축소</small></button><button data-map-overview aria-label="트럭 마을 전체 보기"><span>${icon('map')}</span><small>전체 보기</small></button><button data-farm-toggle aria-label="농사 도구 펼치기"><span>${icon('seeds')}</span><small>농사 도구</small></button></div>
     <button class="settlement-objective" id="settlement-objective" data-next-goal aria-label="현재 성장 목표 진행"><span>${icon('flag')}</span><div><small id="objective-chapter">도로 위 우리 마을</small><strong id="objective-title">첫 목표를 확인해 보세요</strong><p id="objective-detail">작은 목표를 따라 우리 마을을 키워요</p><div class="objective-progress" aria-hidden="true"><i></i></div></div><b class="objective-cta" data-objective-cta>하러 가기</b></button>
     <div class="village-hub" id="village-hub">${renderVillageHub(getVillageHub(state))}</div>
-    <div class="road-controls" aria-label="트럭 아래 도로 활동"><button data-road-walk aria-label="사다리를 내려가 도로 걷기">${icon('move')}<small>도로 걷기</small></button><button data-open="roadside" aria-label="도로 채집 장소 보기">${icon('map')}<small>채집 장소</small></button><button data-road-return aria-label="실제 사다리로 트럭에 돌아오기">${icon('truck')}<small>트럭으로</small></button></div>
+    <div class="road-controls" aria-label="주인공 시점과 도로 활동"><button data-camera-player aria-label="현재 확대율로 주인공 따라보기">${icon('character')}<small>주인공</small></button><button data-road-walk aria-label="사다리를 내려가 도로 걷기">${icon('move')}<small>도로 걷기</small></button><button data-open="roadside" aria-label="도로 채집 장소 보기">${icon('map')}<small>채집 장소</small></button><button data-road-return aria-label="실제 사다리로 트럭에 돌아오기">${icon('truck')}<small>트럭으로</small></button><button data-open="pet-passage" aria-label="동물 통로 문 조작">${icon('paw')}<small>동물 문</small></button></div>
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
     <div class="chore-status" hidden role="status" aria-live="polite"></div>
@@ -165,6 +166,7 @@ const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number)=>{
  if(kind==='facility'){if(plotId!==undefined){if(placement)toast('표시된 빈 자리를 눌러 배치해 주세요.');else selectFacility(plotId);}return;}
  if(kind==='farm-expand'){if(!actionBusy)openModal('farm-expand');return;}
  if(kind==='outdoor-site'){const site=OUTDOOR_SITES[plotId??-1];if(site&&!actionBusy)openRoadsideSite(site.id);return;}
+ if(kind==='pet-gate'){if(!actionBusy)openModal('pet-passage');return;}
  if(kind==='farm'&&farmMode){if(plotId!==undefined)enqueueFarmPlot(plotId);return;}
  if(actionBusy)return;
  if(kind==='farm'){
@@ -189,6 +191,10 @@ function updateMapMoveControl(){
  button.querySelector('small')!.textContent=enabled?'이동 모드':'화면 이동';
 }
 function recenterMap(){scene.setMapMoveMode(false);scene.resetMapView();}
+function resumePlayerView(){
+ closeModal();cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();
+ setZone('home',false,true);setFarmTray(false);scene.setFarmFocus(false);scene.setMapMoveMode(false);scene.resumePlayerCamera();updateWalkingAvailability();
+}
 function updateWalkingAvailability(){
  scene.setWalkingEnabled(playerConfirmed&&!startupPending&&!contentActivationPending&&!battleView&&!currentModal&&!placement&&selectedFacilityId===null&&!actionBusy);
 }
@@ -212,7 +218,7 @@ document.querySelector('#world')!.addEventListener('sceneactionchange',event=>{
  const detail=(event as CustomEvent<{phase:string;progress:number;climbing:'up'|'down'|null}>).detail;
  const status=document.querySelector<HTMLElement>('.chore-status')!;if(status.hidden)return;
  const phase=status.querySelector('[data-chore-phase]'),track=status.querySelector<HTMLElement>('.chore-track');
- const text=detail.climbing==='down'?'사다리 내려가는 중':detail.climbing==='up'?'사다리 올라가는 중':detail.phase==='working'?'작업 중':detail.phase==='returning'?'돌아오는 중':'이동 중';
+ const text=detail.climbing==='down'?'사다리 내려가는 중':detail.climbing==='up'?'사다리 올라가는 중':detail.phase==='waiting'?'친구가 지나가길 기다리는 중':detail.phase==='working'?'작업 중':detail.phase==='returning'?'돌아오는 중':'이동 중';
  if(phase&&phase.textContent!==text)phase.textContent=text;
  if(track){track.setAttribute('aria-valuenow',String(detail.progress));track.querySelector<HTMLElement>('i')!.style.width=`${detail.progress}%`;}
 });
@@ -470,8 +476,8 @@ function updateNav(){
  const active=['build','hunt','bag','settings','shop','shop-confirm'].includes(currentModal)?(currentModal==='shop-confirm'?'shop':currentModal):selectedZone==='grove'||farmFocused?'farm':'home';
  document.querySelectorAll('[data-nav]').forEach(el=>{const selected=el.getAttribute('data-nav')===active;el.classList.toggle('active',selected);el.setAttribute('aria-current',selected?'page':'false');});
 }
-function setZone(zone:'home'|'grove',focusFarm=false) {
- scene.stopWalking();
+function setZone(zone:'home'|'grove',focusFarm=false,preserveWalk=false) {
+ if(!preserveWalk)scene.stopWalking();
  selectedZone=zone;farmFocused=zone==='home'&&focusFarm;scene.setZone(zone);scene.setFarmFocus(farmFocused);
  document.querySelector('.scene-card')!.classList.toggle('work-view',zone==='grove'||farmFocused);
  scene.setSelectedPlot(zone==='home'&&farmFocused?selectedPlotId:null);
@@ -523,6 +529,9 @@ function renderFarmMode(){
 function renderControls(){
  updateWalkingAvailability();
  const busy=actionBusy||Boolean(battleView),farmingBusy=Boolean(runningFarm)&&!battleView;
+ const gateButton=document.querySelector<HTMLButtonElement>('.road-controls [data-open="pet-passage"]')!;
+ gateButton.disabled=busy;gateButton.setAttribute('aria-label',`동물 통로 문 ${getPetPassage(state).open?'열림':'닫힘'} · 문 조작`);
+ gateButton.setAttribute('aria-pressed',String(getPetPassage(state).open));
  const farmExpand=document.querySelector<HTMLButtonElement>('.farm-expand-tool')!;
  farmExpand.disabled=busy&&!farmingBusy;
  farmExpand.setAttribute('aria-label',`밭 확장 · 현재 ${state.plots.length}칸 / 최대 ${getFarmCapacity(state)}칸`);
@@ -598,6 +607,7 @@ function render(){
  if(currentModal==='shop'||currentModal==='shop-confirm')renderLiveShop();
  if(currentModal==='farm-delivery')renderLiveFarmDelivery();
  if(currentModal==='roadside'||currentModal==='outdoor-site')renderLiveRoadside();
+ if(currentModal==='pet-passage')updatePetPassageControls();
  renderSettlement();renderVillageOrder();refreshUpdateUI();
 }
 
@@ -868,9 +878,31 @@ function renderLiveRoadside(){
  }
 }
 function openRoadsideSite(id:OutdoorSiteId){activeRoadsideSite=id;openModal('outdoor-site');}
+function petPassageContent(){
+ const open=getPetPassage(state).open;
+ return `<div class="pet-passage-summary">${icon('paw')}<div><strong>친구들만 다니는 경사로</strong><span data-pet-passage-status>${open?'문이 열려 있어요':'문이 닫혀 있어요'}</span></div></div><p class="modal-description">강아지와 고양이는 전용 경사로로 트럭과 지상을 오가요.<br>주인공이 문까지 걸어가 직접 열고 닫아요.</p><button class="button full-width" data-pet-passage-toggle="${open?'close':'open'}">${icon('paw')} ${open?'문 닫으러 가기':'문 열러 가기'}</button><p class="fine-print">재료와 기력을 사용하지 않아요.<br>문을 닫으면 친구들은 지금 있는 층이나 지상에서 산책해요. 이미 경사로를 건너는 친구는 끝까지 지나간 뒤 닫아요.</p>`;
+}
+function updatePetPassageControls(){
+ const open=getPetPassage(state).open,button=document.querySelector<HTMLButtonElement>('[data-pet-passage-toggle]');if(!button)return;
+ button.disabled=actionBusy||Boolean(battleView);
+ const status=document.querySelector('[data-pet-passage-status]')!,text=open?'문이 열려 있어요':'문이 닫혀 있어요';if(status.textContent!==text)status.textContent=text;
+ const target=open?'close':'open';if(button.dataset.petPassageToggle!==target){button.dataset.petPassageToggle=target;button.innerHTML=`${icon('paw')} ${open?'문 닫으러 가기':'문 열러 가기'}`;}
+}
+async function operatePetPassage(open:boolean){
+ if(actionBusy||battleView||startupPending||contentActivationPending)return;
+ const before=setPetPassageOpen(state,open);if(!before.ok){toast(before.message);return;}
+ if(!prepareRoadWalk())return;
+ scene.setMapMoveMode(false);scene.resumePlayerCamera();actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
+ const status=document.querySelector<HTMLElement>('.chore-status')!;
+ status.innerHTML=`<span class="chore-pulse">${icon('paw')}</span><div><strong>동물 통로 문 ${open?'열기':'닫기'}<small data-chore-phase>이동 중</small></strong><span>${open?'문까지 걸어가 친구들의 길을 열어요':'건너는 친구가 지나간 뒤 문을 닫아요'}</span><div class="chore-track" role="progressbar" aria-label="동물 문 조작 진행" aria-valuemin="0" aria-valuemax="100"><i style="width:0%"></i></div></div>`;status.hidden=false;
+ let failure:unknown;
+ try{await scene.playPetPassageGate(open);}catch(error){failure=error;}finally{actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');}
+ if(failure){scene.clearPetPassageGateOperation();render();finishDeferredUpdate();toast(failure instanceof Error?failure.message:'문까지 가는 통로를 확인해 주세요.');return;}
+ const result=setPetPassageOpen(state,open);if(result.ok){state=result.state;persist();ping();}scene.clearPetPassageGateOperation();render();toast(result.message);finishDeferredUpdate();
+}
 function prepareRoadWalk(){
  if(actionBusy||battleView||startupPending||contentActivationPending){toast('현재 작업을 마친 뒤 도로로 이동해요.');return false;}
- closeModal();cancelConstruction();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);scene.setFarmFocus(false);updateWalkingAvailability();return true;
+ closeModal();cancelConstruction();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);scene.setFarmFocus(false);scene.setMapMoveMode(false);scene.resumePlayerCamera();updateWalkingAvailability();return true;
 }
 async function roadsideAction(id:OutdoorSiteId):Promise<boolean>{
  if(actionBusy||battleView||startupPending||contentActivationPending)return false;
@@ -975,6 +1007,7 @@ function openModal(kind:string){
  if(kind==='menu')modalShell('OUR LITTLE VILLAGE','마을 메뉴',`<div class="village-menu-grid">${[['flag','성장 목표','settlement-goals'],['expand','트럭 확장','expand'],['plot-empty','밭 확장','farm-expand'],['axe','벌목장','grove'],['bag','마을 의뢰','orders'],['bag','트럭 상점','shop'],['settings','설정','settings'],['paw','동물 동료','pet'],['character','생존자','character'],['map','도움말','guide']].map(([i,t,id])=>`<button data-open="${id}">${icon(i)}<span>${t}</span></button>`).join('')}</div>`);
  if(kind==='farm-delivery'){renderedFarmDeliveryKey='';renderLiveFarmDelivery();}
  if(kind==='roadside'||kind==='outdoor-site'){renderedRoadsideKey='';renderLiveRoadside();}
+ if(kind==='pet-passage')modalShell('A PATH FOR OUR FRIENDS','동물 통로 문',petPassageContent());
  if(kind==='orders')modalShell('NEIGHBORS ON THE ROAD','마을 의뢰',`<div id="village-order-content" data-order="${getVillageOrder(state).id}">${villageOrderContent()}</div>`);
  if(kind==='build'){setZone('home');setFarmTray(false);closeFacility();modalShell('BUILD OUR TRUCK VILLAGE','트럭 위 마을 건설',buildingCatalog(state),true);showPlanningSheet('catalog');}
  if(kind==='settlement-goals'){selectedGrowthChapter??=getActiveGrowthQuest(state)?.chapter;modalShell('CURRENT QUEST','마을 성장 목표',renderGrowthQuestBoard(state,selectedGrowthChapter),true);}
@@ -1092,6 +1125,8 @@ document.addEventListener('pointercancel',event=>{
 },{capture:true});
 document.addEventListener('click',e=>{
  const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||battleView||contentActivationPending)return;
+ if(t.hasAttribute('data-camera-player')){resumePlayerView();return;}
+ if(t.dataset.petPassageToggle){void operatePetPassage(t.dataset.petPassageToggle==='open');return;}
  if(t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')){if(prepareRoadWalk()){if(t.hasAttribute('data-road-return'))scene.walkToTruck();else scene.walkOntoRoad();}return;}
  if(t.dataset.outdoorSite){const site=getOutdoorSite(t.dataset.outdoorSite);if(site&&!actionBusy)openRoadsideSite(site.id);return;}
  if(t.dataset.outdoorCollect){const site=getOutdoorSite(t.dataset.outdoorCollect);if(site)void roadsideAction(site.id);return;}

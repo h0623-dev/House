@@ -2,6 +2,7 @@ import type { ActionResult, GameState } from './game';
 import { cloneShopFields } from './shop';
 import { cloneFarmEconomyFields } from './farm-economy';
 import { cloneRoadsideFields } from './roadside';
+import { clonePetPassageFields } from './pet-passage';
 
 /** Two deck-aligned facing axes; crop rows turn within their existing bed. */
 export type LayoutDirection = 0 | 1;
@@ -88,5 +89,5 @@ export function rotateLayoutTarget(state: GameState, target: LayoutTarget): Acti
     else entries.push({ id: target.id, direction });
   }
   const label = target.kind === 'home' ? '우리집' : target.kind === 'facility' ? '시설' : '밭고랑';
-  return { state: { ...state, ...cloneShopFields(state), ...cloneFarmEconomyFields(state), ...cloneRoadsideFields(state), layoutDirections: directions }, ok: true, message: `${label}의 방향을 바꿨어요.` };
+  return { state: { ...state, ...cloneShopFields(state), ...cloneFarmEconomyFields(state), ...cloneRoadsideFields(state), ...clonePetPassageFields(state), layoutDirections: directions }, ok: true, message: `${label}의 방향을 바꿨어요.` };
 }

@@ -93,9 +93,9 @@ test('following either upper floor traverses every built stairway without telepo
  }
 });
 
-test('companions follow to the wider ground beneath the truck and return through its actual ladder',()=>{
+test('companions follow to the wider ground beneath the truck and return through their open walking ramp',()=>{
  for(const id of['dog','cat','boar']as const){
-  const radius=getPetGroundRadius(id,scale(id)),world=createNavigationWorld(1,3,[],{radius}),
+  const radius=getPetGroundRadius(id,scale(id)),world=createNavigationWorld(1,3,[],{radius,actor:'pet',petPassageOpen:true}),
    pet=createPetPatrol(id,world,hero,[],0,scale(id));assert.ok(pet);
   const outdoor:NavigationLocation={surface:'road',point:[600,820]},links=new Set<string>();
   let reachedGround=false,reachedDeck=false;
@@ -106,7 +106,7 @@ test('companions follow to the wider ground beneath the truck and return through
    assert.ok(moved<=44*.05+1e-6,'following outdoors uses continuous twofold patrol pace');
    assert.ok(Math.abs(pet.distance-beforeDistance-moved)<1e-6,'road gait measures accepted travel only');
    assert.equal(blocksActorStep(before,pet.location,radius,[{id:'hero',location:outdoor,radius:7}]),undefined);
-   if(pet.location.surface==='ladder')links.add(pet.location.link!);
+   if(pet.location.surface==='ramp'){links.add(pet.location.link!);assert.equal(pet.route?.climbSegments.length,0);}
    if(pet.location.surface==='road'){
     for(const obstacle of world.obstacles.filter(obstacle=>obstacle.surface==='road')){
      const b=obstacle.bounds,polygon=[[b.left,b.top],[b.right,b.top],[b.right,b.bottom],[b.left,b.bottom]];
@@ -115,15 +115,15 @@ test('companions follow to the wider ground beneath the truck and return through
     if(length(pet.location.point,outdoor.point)<160){reachedGround=true;break;}
    }
   }
-  assert.ok(reachedGround,`${id} reaches the actual outdoor resident`);assert.deepEqual([...links],['road-1']);
+  assert.ok(reachedGround,`${id} reaches the actual outdoor resident`);assert.deepEqual([...links],['pet-road-1']);
   links.clear();
   for(let frame=0;frame<2000;frame++){
    const before=[...pet.location.point];stepPetPatrol(pet,world,hero,[],.05);
    assert.ok(length(before,pet.location.point)<=44*.05+1e-6,'returning cannot teleport to a deck patrol point');
-   if(pet.location.surface==='ladder')links.add(pet.location.link!);
+   if(pet.location.surface==='ramp')links.add(pet.location.link!);
    if(pet.location.surface==='deck'){reachedDeck=true;break;}
   }
-  assert.ok(reachedDeck,`${id} returns to the actual deck`);assert.deepEqual([...links],['road-1']);
+  assert.ok(reachedDeck,`${id} returns to the actual deck`);assert.deepEqual([...links],['pet-road-1']);
  }
 });
 
@@ -156,7 +156,8 @@ test('the actual scene clears a blocked intermediate landing early without repla
  try{({Scene}=await import('../src/scene'));}finally{hook.deregister();globalThis.Image=priorImage;}
  type Lease={route:NavigationPath;reserved:NavigationLocation[];reservedRadius:number};
  type PatrolScene={state:GameState;heroLocation:NavigationLocation;action:null;activeFloor:3;reducedMotion:boolean;
-  petMotion:Map<string,PetPatrolState>;petYields:Map<string,Lease>;advancePets(delta:number):void;navigationWorld(radius:number,actors:NavigationActor[]):NavigationWorld};
+  petMotion:Map<string,PetPatrolState>;petYields:Map<string,Lease>;advancePets(delta:number):void;navigationWorld(radius:number,actors:NavigationActor[]):NavigationWorld;
+  petNavigationWorld(radius:number,actors:NavigationActor[]):NavigationWorld};
  const state=createGame();state.deckLevel=7;state.plots=Array.from({length:9},(_,i)=>({id:i+1,plantedAt:null,watered:false}));
  state.settlement={buildings:[{id:1,type:'waterworks',slot:0,level:1,startedAt:null,readyAt:null}],nextBuildingId:2,stats:{productions:0,collections:0}};
  state.truckLayout={version:1,floors:3,home:{floor:3,slot:1},placements:[{id:1,slot:17}],
@@ -169,7 +170,7 @@ test('the actual scene clears a blocked intermediate landing early without repla
   beforeCat:NavigationLocation={surface:'ladder',floor:3,link:'2-3',point:capturedStairPoint([165.4937408880556,17.519316093453497],3)},
   priorDog:NavigationActor={id:'dog',radius:25.74,location:{surface:'deck',floor:2,point:capturedDeckPoint([53.23080108845005,172.83331392512872],2)}},
   heroActor={id:'hero',radius:7,location:heldHero},
-  catWorld=createNavigationWorld(7,9,[17,32,33],{floors:[1,2,3],home:{floor:3,slot:1},radius:24.82,actors:[heroActor,priorDog]}),
+  catWorld=createNavigationWorld(7,9,[17,32,33],{floors:[1,2,3],home:{floor:3,slot:1},radius:24.82,actors:[heroActor,priorDog],actor:'pet'}),
   originalCat=planYieldNavigation(catWorld,beforeCat,reserved)!;
  assert.ok(originalCat);
  // The same captured stair progress takes longer at the unchanged climbing pace.
@@ -188,7 +189,7 @@ test('the actual scene clears a blocked intermediate landing early without repla
   for(const [id,location,radius,distance,heading,facing]of[
    ['dog',dogLocation,25.74,2304.1688700639174,-11.995837236168049,1],
    ['cat',catLocation,24.82,2081.4330261337745,14.582085192072077,-1]]as const){
-   const world=scene.navigationWorld(radius,[]),pet=createPetPatrol(id,world,heldHero,[],0,scale(id));assert.ok(pet);
+   const world=scene.petNavigationWorld(radius,[]),pet=createPetPatrol(id,world,heldHero,[],0,scale(id));assert.ok(pet);
    Object.assign(pet,{location:structuredClone(location),radius,distance,heading,facing,facingBlend:facing,turnRemaining:0,pauseRemaining:0,
     retryRemaining:id==='dog'?.45:0,blockedReason:id==='dog'?'actor:cat':null,desiredFloor:3,
     route:id==='cat'?originalCat:null,elapsed:id==='cat'?capturedElapsed:0,worldKey:JSON.stringify([world.floors,world.obstacles,world.links,world.road])});

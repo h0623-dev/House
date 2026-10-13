@@ -6,6 +6,7 @@ import { cloneLayoutDirectionFields } from './layout-direction';
 import { cloneShopFields } from './shop';
 import { cloneFarmEconomyFields } from './farm-economy';
 import { cloneRoadsideFields } from './roadside';
+import { clonePetPassageFields } from './pet-passage';
 import { cloneCompanions } from './companions';
 import { cloneUnitProgressFields, getMaxTeamSize, getUnlockedUnitIds } from './units';
 
@@ -152,6 +153,7 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
     ...cloneShopFields(state),
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
+    ...clonePetPassageFields(state),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
     ...cloneUnitProgressFields(state),

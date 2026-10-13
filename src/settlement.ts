@@ -5,6 +5,7 @@ import { cloneLayoutDirectionFields } from './layout-direction';
 import { cloneShopFields } from './shop';
 import { cloneFarmEconomyFields, reconcileFarmEconomyFood, validateFarmEconomy } from './farm-economy';
 import { cloneRoadsideFields } from './roadside';
+import { clonePetPassageFields } from './pet-passage';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { cloneTruckLayoutFields, getAllUnlockedSlots, getFloorSlots, getHomeLocation, getHomeSlots, getHouseFootprint,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCost, getTruckFloorCount, getTruckLayout, getFloorStairs, SETTLEMENT_POSITIONS,
@@ -221,6 +222,7 @@ function copy(state: GameState): GameState {
     ...cloneShopFields(state),
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
+    ...clonePetPassageFields(state),
     expedition: state.expedition ? { ...state.expedition, ...(state.expedition.participantIds ? { participantIds: [...state.expedition.participantIds] } : {}) } : null,
     settlement: getLegacySettlement(state),
   };

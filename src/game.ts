@@ -7,6 +7,7 @@ import { cloneLayoutDirectionFields, validateLayoutDirections, type LayoutDirect
 import { cloneShopFields, validateShopProgress, type ShopProgress } from './shop';
 import { cloneFarmEconomyFields, FARM_FERTILIZER_COST, getFarmPlotCare, markFarmPlotFertilized, recordFarmHarvest, reconcileFarmEconomyFood, validateFarmEconomy, type FarmEconomyProgress } from './farm-economy';
 import { cloneRoadsideFields, validateRoadsideProgress, type RoadsideProgress } from './roadside';
+import { clonePetPassageFields, validatePetPassage, type PetPassageProgress } from './pet-passage';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 import { COMPANION_IDS, MAX_COMPANION_XP, getCompanions, isCompanionId, validateCompanionHealth, validateCompanions, type CompanionHealth, type CompanionId, type CompanionRoster } from './companions';
@@ -65,6 +66,8 @@ export interface GameState {
   farmEconomy?: FarmEconomyProgress;
   /** Actually visited outdoor sites; old villages begin with no cooldown or reward grants. */
   roadside?: RoadsideProgress;
+  /** Player-operated animal passage; absent older saves keep the gate closed. */
+  petPassage?: PetPassageProgress;
   /** Lifetime construction records stay separate from legacy settlement schemas. */
   facilityHistory?: FacilityHistory;
   /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
@@ -161,6 +164,7 @@ function copy(state: GameState): GameState {
     ...cloneShopFields(state),
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
+    ...clonePetPassageFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
@@ -681,6 +685,7 @@ function validateSave(value: unknown): value is GameState {
   }
   if (Object.hasOwn(value, 'farmEconomy') && !validateFarmEconomy(value.farmEconomy, value as unknown as GameState)) return false;
   if (Object.hasOwn(value, 'roadside') && !validateRoadsideProgress(value.roadside)) return false;
+  if (Object.hasOwn(value, 'petPassage') && !validatePetPassage(value.petPassage)) return false;
   if (!isRecord(value.stats) || !['harvests', 'gathers', 'hunts', 'expansions', 'chops', 'battlesWon', 'defeatedEnemies'].every(key => isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
   if (!['plantings', 'waterings'].every(key => !Object.hasOwn(value.stats as object, key) || isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
   if (value.stats.expansions !== value.deckLevel - 1) return false;

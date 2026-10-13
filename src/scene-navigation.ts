@@ -1,5 +1,6 @@
 import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRoute } from './scene-motion';
 import { OUTDOOR_SITES } from './outdoor-sites';
+import { getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   projectTruckPoint, unprojectTruckPoint, type HomeLocation, type TruckFloor } from './truck-layout';
 export { FARM_POSITIONS, SETTLEMENT_POSITIONS, DECK_FRONTS } from './truck-layout';
@@ -8,19 +9,20 @@ export const projectDeckPoint = projectTruckPoint;
 export const unprojectDeckPoint = unprojectTruckPoint;
 export const HERO_BODY_RADIUS = 7;
 export const PET_BODY_RADIUS = 6;
-export type NavigationSurface = 'deck' | 'road' | 'ladder';
+export type NavigationSurface = 'deck' | 'road' | 'ladder' | 'ramp';
 export type NavigationPoint = [number, number];
 export interface NavigationLocation { point: NavigationPoint; surface: NavigationSurface; floor?: TruckFloor; link?: string }
 export interface NavigationRect { left: number; top: number; right: number; bottom: number }
 export interface NavigationObstacle { surface: 'deck' | 'road'; floor?: TruckFloor; kind?: string; bounds: NavigationRect }
-export interface NavigationActor { id: string; location: NavigationLocation; radius: number }
+export interface NavigationActor { id: string; location: NavigationLocation; radius: number; passageIntent?:string }
 export interface NavigationFloor { id: TruckFloor; deck: NavigationRect; outer: NavigationRect }
-export interface NavigationLink { id: string; lower: 0 | TruckFloor; upper: TruckFloor; points: NavigationPoint[] }
+export interface NavigationLink { id: string; lower: 0 | TruckFloor; upper: TruckFloor; points: NavigationPoint[]; surface?: 'ladder' | 'ramp'; entryAllowed?: boolean }
 export interface NavigationWorld {
   deck: NavigationRect; deckOuter: NavigationRect; road: NavigationRect; roadOuter: NavigationRect; activeFloor: TruckFloor;
   floors: NavigationFloor[]; radius: number; actors: NavigationActor[];
   obstacles: NavigationObstacle[]; links: NavigationLink[];
   ladder: { entry: NavigationPoint; top: NavigationPoint; bottom: NavigationPoint };
+  actor?: 'hero' | 'pet'; petPassageOpen?: boolean;
 }
 export interface NavigationPath {
   points: NavigationPoint[]; surfaces: NavigationSurface[]; climbSegments: number[];
@@ -30,6 +32,13 @@ export interface NavigationPath {
 }
 export interface NavigationWorldOptions {
   floors?: readonly TruckFloor[]; home?: HomeLocation; activeFloor?: TruckFloor; radius?: number; actors?: NavigationActor[];
+  actor?: 'hero' | 'pet'; petPassageOpen?: boolean; petPassageLease?: NavigationLink;
+}
+export const isNavigationLinkSurface = (surface: NavigationSurface) => surface === 'ladder' || surface === 'ramp';
+/** A lease admits only the animal already crossing; it never reopens entry. */
+export function getPetPassageLink(level: number, entryAllowed = true): NavigationLink {
+  return { id: PET_PASSAGE_LINK_ID, lower: 0, upper: 1, points: getPetPassageGeometry(level).points,
+    surface: 'ramp', entryAllowed };
 }
 export const defaultHeroLocation = (): NavigationLocation => ({surface:'deck',point:projectDeckPoint([-74,14]),floor:1});
 const inside = (p: MotionPoint,r:NavigationRect) => p[0]>=r.left-1e-7&&p[0]<=r.right+1e-7&&p[1]>=r.top-1e-7&&p[1]<=r.bottom+1e-7;
@@ -66,7 +75,11 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
     {surface:'road',kind:'tree',bounds:{left:1033,top:718,right:1077,bottom:746}});
   for(const site of OUTDOOR_SITES.filter(site=>site.id!=='grove'))obstacles.push({surface:'road',kind:'outdoor-site',bounds:{...site.bounds}});
   const front=getFloorBounds(level).front,ladder={entry:projectDeckPoint([-225,front-60]),top:projectDeckPoint([-225,front-3]),bottom:[140,527]as NavigationPoint};
-  const links:NavigationLink[]=[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry]}];
+  const links:NavigationLink[]=options.actor==='pet'
+    ?options.petPassageLease?.id===PET_PASSAGE_LINK_ID
+      ?[{...options.petPassageLease,points:options.petPassageLease.points.map(point=>[...point]),surface:'ramp',entryAllowed:options.petPassageOpen??false}]
+      :options.petPassageOpen?[getPetPassageLink(level)]:[]
+    :[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry]}];
   for(const upper of ids.filter(id=>id>1)){
     const stair=getFloorStairs(level,upper as 2|3);
     links.push({id:String(stair.lowerFloor)+'-'+String(upper),lower:stair.lowerFloor,upper,
@@ -76,7 +89,8 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   const active=floors.find(f=>f.id===activeFloor)??floors[0];
   const roadOuter=getRoadBounds(level);
   return {deck:active.deck,deckOuter:active.outer,activeFloor:active.id,floors,radius,actors:(options.actors??[]).map(a=>({...a,location:copyLocation(a.location)})),
-    obstacles,links,roadOuter,road:{left:roadOuter.left+radius,top:roadOuter.top+radius,right:roadOuter.right-radius,bottom:roadOuter.bottom-radius},ladder};
+    obstacles,links,roadOuter,road:{left:roadOuter.left+radius,top:roadOuter.top+radius,right:roadOuter.right-radius,bottom:roadOuter.bottom-radius},ladder,
+    actor:options.actor??'hero',petPassageOpen:options.petPassageOpen??false};
 }
 function obstaclesFor(world:NavigationWorld,floor:number):NavigationRect[] {
   const clearance=floor?margin(world.radius):{x:world.radius,y:world.radius};
@@ -178,7 +192,7 @@ function floorPath(world:NavigationWorld,floor:number,from:MotionPoint,to:Motion
   const path:NavigationPoint[]=[];for(let i=1;i>=0;i=previous[i])path.unshift(project(nodes[i]));return path;
 }
 function escapePoint(world:NavigationWorld,location:NavigationLocation):NavigationPoint|undefined {
-  if(location.surface==='ladder')return;
+  if(isNavigationLinkSurface(location.surface))return;
   const floor=floorId(location),project=(p:MotionPoint):NavigationPoint=>floor?projectDeckPoint(p,floor as TruckFloor):[...p],
     start=floor?unprojectDeckPoint(location.point,floor as TruckFloor):location.point,bounds=boundsFor(world,floor);if(!bounds||!inside(start,bounds))return;
   // Visibility nodes use conservative UV boxes. Only a real physical overlap can
@@ -197,7 +211,7 @@ function escapePoint(world:NavigationWorld,location:NavigationLocation):Navigati
 }
 /** Multi-floor routes always use a built stair link; selecting a view never teleports feet. */
 export function planNavigation(world:NavigationWorld,start:NavigationLocation,target:NavigationLocation):NavigationPath|undefined {
-  if(!finite(start.point)||!finite(target.point)||!['deck','road','ladder'].includes(start.surface)||(target.surface!=='deck'&&target.surface!=='road'))return;
+  if(!finite(start.point)||!finite(target.point)||!['deck','road','ladder','ramp'].includes(start.surface)||(target.surface!=='deck'&&target.surface!=='road'))return;
   const points:NavigationPoint[]=[[...start.point]],surfaces:NavigationSurface[]=[],segments:NavigationPath['segments']=[];
   const append=(point:MotionPoint,surface:NavigationSurface,fromFloor:number,toFloor=fromFloor,link?:string)=>{
     if(distance(points[points.length-1],point)>1e-6){points.push([...point]);surfaces.push(surface);segments.push({fromFloor,toFloor,...(link?{link}:{})});}
@@ -206,19 +220,19 @@ export function planNavigation(world:NavigationWorld,start:NavigationLocation,ta
     for(const point of path.slice(1))append(point,id?'deck':'road',id);return true;};
   const pointFloor=(link:NavigationLink,index:number)=>link.lower===0?index===0?0:1:index<2?link.lower:link.upper;
   const appendLink=(link:NavigationLink,indices:number[])=>{
-    for(let n=1;n<indices.length;n++)append(link.points[indices[n]],'ladder',pointFloor(link,indices[n-1]),pointFloor(link,indices[n]),link.id);
+    for(let n=1;n<indices.length;n++)append(link.points[indices[n]],link.surface??'ladder',pointFloor(link,indices[n-1]),pointFloor(link,indices[n]),link.id);
   };
   let current=floorId(start),returnIndex=0;
-  if(start.surface==='ladder'){
+  if(isNavigationLinkSurface(start.surface)){
     const found=world.links.flatMap(link=>link.points.slice(1).map((p,index)=>({link,index,a:link.points[index],b:p})))
-      .find(({link,a,b})=>(!start.link||start.link===link.id)&&Math.abs(distance(a,start.point)+distance(start.point,b)-distance(a,b))<.01);
+      .find(({link,a,b})=>(link.surface??'ladder')===start.surface&&(!start.link||start.link===link.id)&&Math.abs(distance(a,start.point)+distance(start.point,b)-distance(a,b))<.01);
     if(!found)return;
     const towardUpper=floorId(target)>=found.link.upper,indices=towardUpper?found.link.points.map((_,i)=>i).slice(found.index+1):found.link.points.map((_,i)=>i).slice(0,found.index+1).reverse();
-    append(found.link.points[indices[0]],'ladder',pointFloor(found.link,found.index),pointFloor(found.link,indices[0]),found.link.id);
+    append(found.link.points[indices[0]],found.link.surface??'ladder',pointFloor(found.link,found.index),pointFloor(found.link,indices[0]),found.link.id);
     appendLink(found.link,indices);
     current=towardUpper?found.link.upper:found.link.lower;
   }else{
-    if(start.surface==='deck'&&current===1&&!inside(unprojectDeckPoint(start.point),world.floors[0].deck)){
+    if(world.actor!=='pet'&&start.surface==='deck'&&current===1&&!inside(unprojectDeckPoint(start.point),world.floors[0].deck)){
       const {entry,top}=world.ladder;if(Math.abs(distance(entry,start.point)+distance(start.point,top)-distance(entry,top))<.01)append(entry,'ladder',1,1,'road-1');
     }
     const escaped=escapePoint(world,{...start,point:points[points.length-1]});
@@ -226,7 +240,7 @@ export function planNavigation(world:NavigationWorld,start:NavigationLocation,ta
   }
   const destination=floorId(target);
   while(current!==destination){
-    const up=current<destination,link=world.links.find(l=>up?l.lower===current:l.upper===current);if(!link)return;
+    const up=current<destination,link=world.links.find(l=>l.entryAllowed!==false&&(up?l.lower===current:l.upper===current));if(!link)return;
     const route=up?link.points:[...link.points].reverse();if(!floor(current,route[0]))return;
     appendLink(link,up?link.points.map((_,i)=>i):link.points.map((_,i)=>i).reverse());
     current=up?link.upper:link.lower;
@@ -241,17 +255,17 @@ export function planNavigation(world:NavigationWorld,start:NavigationLocation,ta
 export function planWorkNavigation(world:NavigationWorld,start:NavigationLocation,approaches:readonly NavigationLocation[]):NavigationPath|undefined {
   for(const target of approaches){
     const route=planNavigation(world,start,target);if(!route)continue;
-    if(route.segments.some(segment=>segment.link&&world.actors.some(actor=>actor.location.surface==='ladder'&&actor.location.link===segment.link)))continue;
+    if(route.segments.some(segment=>segment.link&&world.actors.some(actor=>isNavigationLinkSurface(actor.location.surface)&&actor.location.link===segment.link)))continue;
     return route;
   }
 }
 /** A healthy resident can take a short clear step when long patrols cannot yield. */
 export function planYieldNavigation(world:NavigationWorld,start:NavigationLocation,reserved:readonly NavigationLocation[],reservedRadius=HERO_BODY_RADIUS):NavigationPath|undefined {
-  const reservedLinks=new Set([...(start.surface==='ladder'&&start.link?[start.link]:[]),...reserved.flatMap(location=>location.surface==='ladder'&&location.link?[location.link]:[])]),
+  const reservedLinks=new Set([...(isNavigationLinkSurface(start.surface)&&start.link?[start.link]:[]),...reserved.flatMap(location=>isNavigationLinkSurface(location.surface)&&location.link?[location.link]:[])]),
     occupiedLinks=world.links.filter(link=>reservedLinks.has(link.id)),
     landingReservations:NavigationLocation[]=occupiedLinks.flatMap(link=>link.points.map((point,index)=>({point,surface:(link.lower===0&&index===0?'road':'deck')as NavigationSurface,
       ...(link.lower===0&&index===0?{}:{floor:(link.lower===0?1:index<2?link.lower:link.upper)as TruckFloor})}))),
-    bases:{point:NavigationPoint;floor:number}[]=start.surface==='ladder'
+    bases:{point:NavigationPoint;floor:number}[]=isNavigationLinkSurface(start.surface)
     ?occupiedLinks.filter(link=>link.id===start.link).flatMap(link=>[{point:link.points[0],floor:link.lower},{point:link.points[link.points.length-1],floor:link.upper}])
     :[{point:start.point,floor:floorId(start)}];
   const collectCandidates=(reaches:readonly number[])=>{
@@ -305,7 +319,7 @@ export function circleOverlapsPolygon(point:MotionPoint,radius:number,polygon:re
 /** Swept feet, rather than endpoints alone, stop fast actors crossing a companion. */
 export function blocksActorStep(from:NavigationLocation,to:NavigationLocation,radius:number,actors:readonly NavigationActor[]):NavigationActor|undefined {
   return actors.find(a=>{
-    const same=(to.surface==='ladder'||a.location.surface==='ladder')
+    const same=(isNavigationLinkSurface(to.surface)||isNavigationLinkSurface(a.location.surface))
       ?(to.link!==undefined&&to.link===a.location.link)||floorId(to)===floorId(a.location)
       :floorId(to)===floorId(a.location)&&to.surface===a.location.surface;
     return same&&distanceToSegment(a.location.point,from.point,to.point)<radius+a.radius-.01;

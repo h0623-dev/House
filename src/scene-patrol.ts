@@ -1,7 +1,7 @@
 import {GAME_SPEED_MULTIPLIER} from './game-speed';
 import {WALK_SPEED} from './scene-motion';
-import {blocksActorStep,getPatrolTargets,planNavigation,sampleNavigation,
-  type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationWorld} from './scene-navigation';
+import {blocksActorStep,getPatrolTargets,planNavigation,planYieldNavigation,sampleNavigation,isNavigationLinkSurface,
+  type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationWorld,type NavigationLink} from './scene-navigation';
 import type {TruckFloor} from './truck-layout';
 import type {UnitId} from './units';
 
@@ -11,6 +11,8 @@ export interface PetPatrolState {
   facingBlend:number;blend:number;turnRemaining:number;blockedReason:string|null;radius:number;
   pauseRemaining:number;retryRemaining:number;targetSequence:number;
   turnFrom:1|-1;nextFacing:1|-1;turnHeading:number;worldKey:string;desiredFloor:TruckFloor;desiredSurface?:'deck'|'road';
+  passageLease?:NavigationLink;
+  waitingForPassage?:string;
 }
 const nominalRadius:Readonly<Record<UnitId,number>>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31};
 const finite=(n:number,fallback=0)=>Number.isFinite(n)?n:fallback;
@@ -58,11 +60,12 @@ function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationL
   actors:NavigationActor[]):NavigationPath|undefined{
   const destinationFloor=floorOf(hero),destinationSurface=hero.surface==='road'?'road':'deck',
     sameFloor=state.location.surface===destinationSurface&&(destinationSurface==='road'||floorOf(state.location)===destinationFloor);
-  let candidates=getPatrolTargets({...world,actors},destinationSurface==='road'?0:destinationFloor)
+  const attempt=(floor:TruckFloor|0,following:boolean)=>{
+  let candidates=getPatrolTargets({...world,actors},floor)
     .filter(location=>clearOfActors(location,state.radius,actors,7))
-    .filter(location=>!sameFloor||distance(location.point,state.location.point)>55);
+    .filter(location=>following&&!sameFloor||distance(location.point,state.location.point)>55);
   candidates.sort((a,b)=>{
-    const score=(location:NavigationLocation)=>sameFloor?Math.abs(distance(location.point,state.location.point)-120):distance(location.point,hero.point);
+    const score=(location:NavigationLocation)=>!following||sameFloor?Math.abs(distance(location.point,state.location.point)-120):distance(location.point,hero.point);
     return score(a)-score(b);
   });
   candidates=candidates.slice(0,24);
@@ -70,7 +73,35 @@ function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationL
   const offset=state.targetSequence%candidates.length;state.targetSequence++;
   for(let attempt=0;attempt<candidates.length;attempt++){
     const target=candidates[(offset+attempt)%candidates.length],route=planNavigation({...world,actors},state.location,target);
+    if(route&&state.location.surface!=='ramp'&&route.segments.some(segment=>segment.link&&actors.some(actor=>
+      actor.location.surface==='ramp'&&actor.location.link===segment.link||actor.passageIntent===segment.link)))continue;
     if(route&&route.motion.distance>1)return route;
+  }
+  };
+  const following=attempt(destinationSurface==='road'?0:destinationFloor,true);
+  if(following){delete state.waitingForPassage;return following;}
+  // A shut gate changes which side is available, rather than freezing an animal
+  // until the hero returns. Keep patrolling this real surface without crossing.
+  if(world.actor==='pet'&&!sameFloor&&state.location.surface!=='ramp'){
+    const crossing=actors.filter(actor=>actor.location.surface==='ramp');
+    if(world.petPassageOpen){
+      if(state.waitingForPassage)return;
+      const passage=world.links.find(link=>link.surface==='ramp');
+      if(passage){
+        const reserved:NavigationLocation[]=[{surface:'ramp',floor:passage.upper,link:passage.id,
+          point:[...passage.points[passage.points.length-1]]},...crossing.map(actor=>actor.location)];
+        const radius=Math.max(state.radius,...actors.filter(actor=>actor.id!=='hero').map(actor=>actor.radius));
+        const yieldRoute=planYieldNavigation({...world,actors},state.location,reserved,radius);
+        if(yieldRoute&&yieldRoute.motion.distance>1){state.waitingForPassage=passage.id;return yieldRoute;}
+      }
+      return;
+    }
+    delete state.waitingForPassage;
+    if(crossing.length){
+      const yieldRoute=planYieldNavigation({...world,actors},state.location,crossing.map(actor=>actor.location),Math.max(...crossing.map(actor=>actor.radius)));
+      if(yieldRoute&&yieldRoute.motion.distance>1)return yieldRoute;
+    }
+    return attempt(state.location.surface==='road'?0:floorOf(state.location),false);
   }
 }
 function stop(state:PetPatrolState,delta:number):void{
@@ -84,7 +115,11 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
   if(reducedMotion){stop(state,dt);state.blend=0;return;}
   const actors=actorsFor(world,hero,others),key=geometryKey(world),desiredFloor=floorOf(hero),desiredSurface=hero.surface==='road'?'road':'deck';
   if(key!==state.worldKey||desiredFloor!==state.desiredFloor||desiredSurface!==(state.desiredSurface??'deck')){
-    state.worldKey=key;state.desiredFloor=desiredFloor;state.desiredSurface=desiredSurface;state.route=null;state.elapsed=0;state.retryRemaining=0;state.pauseRemaining=0;
+    // A gate close or a deck expansion cannot discard feet halfway down a ramp.
+    // The scene supplies this animal's immutable physical link lease until exit.
+    const crossing=state.location.surface==='ramp'&&state.route?.segments.some(segment=>segment.link===state.location.link);
+    state.worldKey=key;state.desiredFloor=desiredFloor;state.desiredSurface=desiredSurface;
+    if(!crossing){state.route=null;state.elapsed=0;state.retryRemaining=0;state.pauseRemaining=0;}
   }
   if(state.turnRemaining>0){
     stop(state,dt);state.heading=headingToward(state.heading,state.turnHeading,dt);
@@ -103,10 +138,16 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
   }
   const nextElapsed=Math.min(state.route.motion.duration,state.elapsed+dt*(22*GAME_SPEED_MULTIPLIER/WALK_SPEED));
   const sample=sampleNavigation(state.route,nextElapsed),from=state.location,to=sample.location,travel=distance(from.point,to.point);
-  const locked=to.surface==='ladder'
-    ? actors.find(actor=>actor.location.surface==='ladder'&&actor.location.link===to.link) : undefined;
+  const locked=isNavigationLinkSurface(to.surface)
+    ? actors.find(actor=>isNavigationLinkSurface(actor.location.surface)&&actor.location.link===to.link) : undefined;
   const blocked=locked??blocksActorStep(from,to,state.radius,actors);
-  if(blocked){state.blockedReason=`actor:${blocked.id}`;state.route=null;state.elapsed=0;state.retryRemaining=.45;stop(state,dt);return;}
+  if(blocked){
+    state.blockedReason=`actor:${blocked.id}`;
+    // An admitted animal owns its original exit direction until its feet leave
+    // the bridge. A hero returning to shut the gate cannot reverse this lease.
+    if(state.location.surface!=='ramp'||!state.passageLease){state.route=null;state.elapsed=0;}
+    state.retryRemaining=.45;stop(state,dt);return;
+  }
   if(travel>1e-7){
     const heading=Math.atan2(to.point[1]-from.point[1],to.point[0]-from.point[0]),direction=Math.cos(heading);
     const facing:1|-1=direction>.18?1:direction<-.18?-1:state.facing;
@@ -116,6 +157,10 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
     }
     state.heading=headingToward(state.heading,heading,dt);
   }
+  if(to.surface==='ramp'&&from.surface!=='ramp'){
+    const link=world.links.find(link=>link.id===to.link);
+    if(link)state.passageLease={...link,points:link.points.map(point=>[...point])};
+  }else if(to.surface!=='ramp')delete state.passageLease;
   state.location=copy(to);state.elapsed=nextElapsed;state.distance+=travel;state.speed=travel/dt;
   state.blend+=((state.speed>.05?1:0)-state.blend)*Math.min(1,dt*10);state.blockedReason=null;
   if(nextElapsed>=state.route.motion.duration){state.route=null;state.elapsed=0;state.pauseRemaining=.7+(state.targetSequence%4)*.18;}

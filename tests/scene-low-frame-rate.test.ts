@@ -147,14 +147,18 @@ test('actual Scene uses one physical clock on a phone rendering every 350 ms', a
     });
 
     for (const variant of ['immobile', 'reduced-motion'] as const) await t.test(`${variant} bodies still stop the return and cancel after 16 seconds`, async () => {
-      const scene = freshScene(), blockingLocation = copy(scene.petMotion.get('cat')!.location),
-        observed = observePhysics(scene), run = start(scene);
-      // Retain a real initial patrol foot position, then introduce the stationary
-      // dog there while the hero is on the return ladder and the cat has left.
-      // The retired cottage changes patrol positions: the old hardcoded blocker
-      // would overlap the new cat. This captured, clear point blocks the return aisle.
+      const scene = freshScene(), observed = observePhysics(scene), run = start(scene);
+      // The closed pet gate keeps the cat on the deck, so its old initial feet
+      // can overlap its current body. Introduce the stationary dog on the actual
+      // retained return aisle instead, while the hero is still on the ladder.
+      // Full-radius clearance below rejects any overlapping fixture body.
       for (let frame = 0; frame < 20 && scene.action!.elapsed < scene.action!.walk + scene.action!.work + .3; frame++) run.next();
       assert.equal(scene.currentHeroLocation().surface, 'ladder');
+      const navigation = scene.action!.navigation, [from, to] = navigation.points.slice(1, 3);
+      assert.equal(navigation.surfaces[1], 'deck', 'the blocker uses an actual retained deck return segment');
+      assert.equal(navigation.segments[1].fromFloor, 1); assert.equal(navigation.segments[1].toFloor, 1);
+      const blockingLocation: NavigationLocation = { surface: 'deck', floor: 1,
+        point: [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2] };
       const dog = scene.petMotion.get('dog')!;
       const others = scene.physicalActors().filter(actor => actor.id !== 'dog');
       assert.ok(groundLocation(scene.navigationWorld(dog.radius, others), blockingLocation.point, blockingLocation.floor),

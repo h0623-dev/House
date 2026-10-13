@@ -2,6 +2,9 @@
 .road-controls button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:48px;min-height:48px;padding:4px 5px;border:1px solid #b6a176;border-radius:11px;color:#4c6945;background:#fff6e5ee;box-shadow:0 2px 6px #25351e24}
 .road-controls .icon{width:22px;height:22px}.road-controls small{font-size:9px;font-weight:750;line-height:1.4;white-space:nowrap}
 .road-controls button:focus-visible,.outdoor-card button:focus-visible{outline:3px solid #537a45;outline-offset:2px}
+.road-controls button[aria-pressed="true"]{background:#e7f0d7;border-color:#748c53}
+.pet-passage-summary{display:flex;align-items:center;gap:13px;padding:16px;border:1px solid #c9cfad;border-radius:16px;background:#edf0df;margin-bottom:18px}
+.pet-passage-summary>.icon{width:42px;height:42px;flex-shrink:0}.pet-passage-summary strong,.pet-passage-summary span{display:block}.pet-passage-summary strong{font-size:16px;color:#4a6245}.pet-passage-summary span{margin-top:5px;font-size:13px;color:#6c765e}
 .construction-mode .road-controls,.facility-selected .road-controls{display:none}
 .quick-actions{grid-template-columns:repeat(7,minmax(44px,1fr));gap:1px}
 .quick-action{min-width:44px}.quick-fertilize .control-icon{background:#e4ebc5}

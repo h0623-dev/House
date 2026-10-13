@@ -5,6 +5,7 @@ import { cloneLayoutDirectionFields } from './layout-direction';
 import { cloneShopFields } from './shop';
 import { cloneFarmEconomyFields, reconcileFarmEconomyFood, validateFarmEconomy } from './farm-economy';
 import { cloneRoadsideFields } from './roadside';
+import { clonePetPassageFields } from './pet-passage';
 import { cloneUnitProgressFields } from './units';
 
 /** Optional in older saves. A counter stores only deliveries actually paid for. */
@@ -89,6 +90,7 @@ export function fulfillVillageOrder(state: GameState, expectedId: string): Actio
     ...cloneShopFields(state),
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
+    ...clonePetPassageFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...cloneUnitProgressFields(state),

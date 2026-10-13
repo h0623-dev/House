@@ -4,13 +4,15 @@
 
 ## 이번 테스트 APK
 
-새 설치용 APK 배포 주소: [road-haven-0.27.0-debug.apk](https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.27.0-debug.apk).
+새 설치용 APK 배포 주소: [road-haven-0.28.0-debug.apk](https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.28.0-debug.apk).
 
-0.27.0은 트럭 아래로 내려가 움직이는 도로 공간을 넓히고 작은 벌목장·고철 수거장·씨앗 풀밭·도로 샘터의 현장 채집을 연결합니다. 해당 장소로 걸어가 작업한 뒤 목재 18·고철 9·씨앗 3·물 12를 받고, 각 장소는 현재 속도에서 45·30·30·20초 뒤 다시 채집할 수 있습니다. 직접 수확한 작물은 전체 식량의 일부로 품종별 보관하며 농산물 납품으로 코인·경험치·건설 재료를 받습니다. 자라는 밭에 식량 1·기력 2로 영양을 한 번 주면 수확량이 2 늘고 성장 시간·심은 시점은 유지합니다. 이전 저장의 식량을 임의의 품종으로 바꾸거나 새 보상을 지급하지 않습니다. 기존 씨앗·애완동물·의상·판매 상점, 실제 남녀 의상·동료 편성, 공통 2배 속도와 생산 시각·층·성장 기록은 이어갑니다. 원본 그림과 Android 엔진·APK·콘텐츠 서명 키를 유지합니다. [공식 자료와 게임플레이 설계](research/v027-gameplay-design.md)에 참고 범위를 기록합니다.
+0.28.0은 주인공을 따라가는 가까운 지상 시점과 애완동물 전용 경사로를 추가합니다. 트럭·사다리·도로 이동 중 선택한 확대 배율을 유지해 지상으로 내려갈 때 맵이 자동 축소되지 않습니다. 도로 걷기·현장 채집·복귀는 실제 주인공 위치를 따라가며, 지도 드래그·핀치와 직접 선택하는 전체 보기는 유지합니다. 전용 문을 선택하면 주인공이 문 앞에 걸어가 조작한 뒤 열림·닫힘이 저장됩니다. 동물은 열린 경사로로 도로까지 따라오고 주인공은 기존 사다리를 사용합니다. 문을 닫으면 새 통행을 멈추되 이미 건너는 동물은 끝까지 지나갑니다. 기존 저장에 문 기록이 없으면 닫힌 상태로 읽고 새 자원·경험치를 지급하지 않습니다.
 
-콘텐츠 버전 27은 네이티브 엔진 8–27과 호환됩니다. 기존 0.8–0.26 앱에는 서명된 게임 콘텐츠로 배포하므로 이번 APK를 다시 설치할 필요가 없습니다. 게임 실행 시 새 콘텐츠 확인 → 다운로드 → 파일 검증 → 적용을 진행한 뒤 마을에 들어갑니다. 연결이 없거나 패치를 받지 못하면 검증된 설치 콘텐츠와 저장한 마을을 계속 이용합니다. APK는 새 설치와 기존 0.7 이하 앱의 최초 업그레이드용으로도 제공합니다. 최신 콘텐츠를 옛 엔진에서 실행할 수 있다는 뜻이며, Lv.7/8 데크·Lv.4/5 시설까지 자란 저장을 옛 v0.16 게임 코드로 읽을 수 있다는 뜻은 아닙니다. 자세한 복구 범위는 [콘텐츠 업데이트](CONTENT-UPDATES.md)를 참고하세요.
+넓어진 트럭 아래 도로와 작은 벌목장·고철 수거장·씨앗 풀밭·도로 샘터의 현장 채집은 이어갑니다. 해당 장소로 걸어가 작업한 뒤 목재 18·고철 9·씨앗 3·물 12를 받고, 각 장소는 현재 속도에서 45·30·30·20초 뒤 다시 채집할 수 있습니다. 직접 수확한 작물은 전체 식량의 일부로 품종별 보관하며 농산물 납품으로 코인·경험치·건설 재료를 받습니다. 자라는 밭에 식량 1·기력 2로 영양을 한 번 주면 수확량이 2 늘고 성장 시간·심은 시점은 유지합니다. 이전 저장의 식량을 임의의 품종으로 바꾸거나 새 보상을 지급하지 않습니다. 기존 씨앗·애완동물·의상·판매 상점, 실제 남녀 의상·동료 편성, 공통 2배 속도와 생산 시각·층·성장 기록은 이어갑니다. 원본 그림과 Android 엔진·APK·콘텐츠 서명 키를 유지합니다. [공식 자료와 게임플레이 설계](research/v027-gameplay-design.md)에 참고 범위를 기록합니다.
 
-새 설치용 빌드 경로는 `artifacts/road-haven-0.27.0-debug.apk`이고 Android 버전 코드는 27입니다. 직전 0.26.0 및 기존 테스트 APK와 같은 패키지 ID와 원래 서명 키를 사용합니다. 기존 앱을 삭제하지 않고 새 APK를 열어 업데이트하면 로컬 저장을 유지할 수 있습니다. Android 파일 앱에서 APK를 열고 설치를 승인하면 됩니다. 해당 파일 앱/브라우저의 “알 수 없는 앱 설치” 허용이 필요할 수 있습니다. 이 설정은 기기에서 사용자가 직접 결정합니다.
+콘텐츠 버전 28은 네이티브 엔진 8–28과 호환됩니다. 기존 0.8–0.27 앱에는 서명된 게임 콘텐츠로 배포하므로 이번 APK를 다시 설치할 필요가 없습니다. 게임 실행 시 새 콘텐츠 확인 → 다운로드 → 파일 검증 → 적용을 진행한 뒤 마을에 들어갑니다. 연결이 없거나 패치를 받지 못하면 검증된 설치 콘텐츠와 저장한 마을을 계속 이용합니다. APK는 새 설치와 기존 0.7 이하 앱의 최초 업그레이드용으로도 제공합니다. 최신 콘텐츠를 옛 엔진에서 실행할 수 있다는 뜻이며, Lv.7/8 데크·Lv.4/5 시설까지 자란 저장을 옛 v0.16 게임 코드로 읽을 수 있다는 뜻은 아닙니다. 자세한 복구 범위는 [콘텐츠 업데이트](CONTENT-UPDATES.md)를 참고하세요.
+
+새 설치용 빌드 경로는 `artifacts/road-haven-0.28.0-debug.apk`이고 Android 버전 코드는 28입니다. 직전 0.27.0 및 기존 테스트 APK와 같은 패키지 ID와 원래 서명 키를 사용합니다. 기존 앱을 삭제하지 않고 새 APK를 열어 업데이트하면 로컬 저장을 유지할 수 있습니다. Android 파일 앱에서 APK를 열고 설치를 승인하면 됩니다. 해당 파일 앱/브라우저의 “알 수 없는 앱 설치” 허용이 필요할 수 있습니다. 이 설정은 기기에서 사용자가 직접 결정합니다.
 
 이번 빌드에서 APK 서명·패키지·증가한 버전 코드와 포함된 웹 파일의 바이트 일치는 릴리스 검수에서 확인합니다. 웹 전용 worker·descriptor·manifest는 APK와 Android 콘텐츠 ZIP에 포함하지 않습니다. v0.23에서는 v0.21과 동일한 네이티브 검증 대상 9개 파일에 대해 Java 단위 테스트 19개의 이전 결과를 재사용했고, 당시 콘텐츠 ZIP의 공개 키 서명과 압축 파일은 호스트 JVM에서 새로 검증했습니다. 이번 버전의 실제 검증 결과는 별도로 기록하며 실제 Android 기기 설치·자동 패치 실행 검증과 구별합니다.
 
@@ -43,7 +45,7 @@ PREVIOUS_APK_PATH=artifacts/road-haven-0.19.0-debug.apk \
   bash scripts/build-android.sh debug
 # 이미 생성한 두 APK만 검사할 수도 있습니다.
 node scripts/verify-android-update.mjs artifacts/road-haven-0.19.0-debug.apk \
-  artifacts/road-haven-0.27.0-debug.apk
+  artifacts/road-haven-0.28.0-debug.apk
 ```
 
 ## 정식 서명
@@ -77,10 +79,10 @@ bash scripts/build-android.sh release
 
 ```json
 {
-  "version": "0.27.0",
-  "versionCode": 27,
+  "version": "0.28.0",
+  "versionCode": 28,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://your-download-host.example/road-haven-0.27.0-release.apk",
+  "apkUrl": "https://your-download-host.example/road-haven-0.28.0-release.apk",
   "sha256": "서명된 APK의 64자리 SHA-256 값",
   "notes": "업데이트 내용",
   "publishedAt": "2026-10-09T00:00:00.000Z"
@@ -90,13 +92,13 @@ bash scripts/build-android.sh release
 실제 APK에서 유효한 매니페스트를 생성합니다.
 
 ```bash
-node scripts/create-update-manifest.mjs artifacts/road-haven-0.27.0-release.apk \
-  https://your-download-host.example/road-haven-0.27.0-release.apk 27
+node scripts/create-update-manifest.mjs artifacts/road-haven-0.28.0-release.apk \
+  https://your-download-host.example/road-haven-0.28.0-release.apk 28
 ```
 
 APK를 먼저 업로드한 뒤 고정 주소의 `update.json`을 교체하세요. 버전마다 다른 APK 주소를 권장합니다. 0.8.0 네이티브 업데이터는 파일을 직접 검증한 뒤 설치기에 넘깁니다. Android 설치기도 기존 앱과 서명 일치를 검증합니다. 콘텐츠 업데이트는 APK 서명과 별도의 고정 공개 키를 사용합니다. 동일한 패키지 ID, 동일한 정식 서명 키, 더 큰 `versionCode`를 계속 유지해야 합니다.
 
-공개 GitHub 저장소를 사용할 경우 APK는 GitHub Releases의 `https://github.com/OWNER/REPO/releases/download/v0.27.0/road-haven-0.27.0-release.apk` 같은 주소에 올리고, 고정 매니페스트는 `https://raw.githubusercontent.com/OWNER/REPO/main/releases/update.json` 같은 주소에서 제공할 수 있습니다. `OWNER/REPO`는 실제 소유한 공개 저장소로 바꾸고, 앱의 `VITE_UPDATE_MANIFEST_URL`에는 이 고정 매니페스트 주소를 설정합니다. raw GitHub 응답의 CORS 허용과 실제 기기에서의 접근을 확인하세요. GitHub Actions artifact 주소는 로그인/만료가 있으므로 일반 플레이어용 APK 배포 주소로 쓰지 않습니다. 비공개 저장소에는 앱에 GitHub 토큰을 넣는 대신 별도의 공개 배포 저장소 또는 공개 HTTPS 호스팅을 사용하세요. 위 주소는 설명용이며 현재 앱에 설정된 주소가 아닙니다.
+공개 GitHub 저장소를 사용할 경우 APK는 GitHub Releases의 `https://github.com/OWNER/REPO/releases/download/v0.28.0/road-haven-0.28.0-release.apk` 같은 주소에 올리고, 고정 매니페스트는 `https://raw.githubusercontent.com/OWNER/REPO/main/releases/update.json` 같은 주소에서 제공할 수 있습니다. `OWNER/REPO`는 실제 소유한 공개 저장소로 바꾸고, 앱의 `VITE_UPDATE_MANIFEST_URL`에는 이 고정 매니페스트 주소를 설정합니다. raw GitHub 응답의 CORS 허용과 실제 기기에서의 접근을 확인하세요. GitHub Actions artifact 주소는 로그인/만료가 있으므로 일반 플레이어용 APK 배포 주소로 쓰지 않습니다. 비공개 저장소에는 앱에 GitHub 토큰을 넣는 대신 별도의 공개 배포 저장소 또는 공개 HTTPS 호스팅을 사용하세요. 위 주소는 설명용이며 현재 앱에 설정된 주소가 아닙니다.
 
 ## 매 업데이트 APK 생성
 

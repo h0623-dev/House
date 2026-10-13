@@ -20,26 +20,30 @@ import { getLayoutDirection, type LayoutDirection } from './layout-direction';
 import { type MotionRoute } from './scene-motion';
 import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
 import { fitVillageCamera, getVillageContentBounds, VILLAGE_FACILITY_SIZE } from './village-camera';
+import { framePlayerCamera, keepPlayerVisible } from './player-camera';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
   sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
-  type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld } from './scene-navigation';
+  type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld, type NavigationLink } from './scene-navigation';
 import itemAtlasUrl from './assets/items-anime.png';
 import { layoutProductionBubbles } from './production-bubble-layout';
 import { OUTDOOR_SITES, getOutdoorSite, type OutdoorSiteId } from './outdoor-sites';
 import { getFarmPlotCare } from './farm-economy';
 import { getRoadsideSite } from './roadside';
+import { getPetPassage, getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
+import { drawPetPassage } from './pet-passage-art';
+import { isNavigationLinkSurface } from './scene-navigation';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
+type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'pet-gate' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number; siteId?:OutdoorSiteId };
-type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade';
+type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade' | 'pet-gate';
 type FarmAction = 'plant' | 'water' | 'fertilize' | 'harvest';
 type PlanningMode = 'catalog' | 'placement' | 'expansion';
 type WorldBounds = { left: number; top: number; right: number; bottom: number };
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'fertilize' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; outdoorSiteId?:OutdoorSiteId; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; outdoorSiteId?:OutdoorSiteId; stayAtTarget?:boolean; gaitOffset?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
 const CHORE_STALL_TIMEOUT=16;
 // Residents fit comfortably beside the truck's facilities and planters.
 // Compact painted residents sit between the crops and miniature buildings.
@@ -82,8 +86,14 @@ export class Scene {
   private blockedReason: string | null = null;
   private walkEventState = '';
   private petMotion = new Map<UnitId,PetPatrolState>();
-  private petYields = new Map<UnitId,{route:NavigationPath;reserved:NavigationLocation[];reservedRadius:number}>();
+  private petYields = new Map<UnitId,{route:NavigationPath;reserved:NavigationLocation[];reservedRadius:number;passage?:NavigationLink;passageOwner?:UnitId}>();
   private placementRelocationSequence = 0;
+  private petGateClosing = false;
+  private petGatePendingOpen: boolean | null = null;
+  private petGateWaitElapsed = 0;
+  private petPassageEventState = '';
+  private petPassagePaint: { drawn: boolean; painted: boolean } = { drawn: false, painted: false };
+  private petPassageLeasedPaint: { owners: UnitId[]; points: Point[]; drawn: boolean; painted: boolean }[] = [];
   private zone: 'home' | 'grove' = 'home';
   private selectedPlotId: number | null = null;
   private farmFocus = false;
@@ -97,6 +107,7 @@ export class Scene {
   private mapMoveMode = false;
   private cameraViewport: Point = [920, 560];
   private manualViewport: Point | null = null;
+  private playerCameraFollowing = false;
   private pinch = new MapPinchGesture();
   private cancelledGesturePointers = new Set<number>();
   private pendingFarmTouch: { pointerId: number; point: Point; timer: number } | null = null;
@@ -148,21 +159,29 @@ export class Scene {
         if (walking.elapsed >= walking.navigation.motion.duration) { this.freeWalk = null; this.publishWalking(); }
       }
       if (this.action) {
-        const action=this.action,nextElapsed=Math.min(action.duration,action.elapsed+delta),nextLocation=nextElapsed<action.walk?sampleNavigation(action.navigation,nextElapsed).location:
+        const action=this.action,waitingForPets=action.kind==='pet-gate'&&this.petGateClosing&&this.petsOnPassage().length>0;
+        let nextElapsed=Math.min(action.duration,action.elapsed+delta);
+        if(waitingForPets&&nextElapsed>=action.walk){nextElapsed=action.walk;this.petGateWaitElapsed+=delta;}
+        const nextLocation=nextElapsed<action.walk?sampleNavigation(action.navigation,nextElapsed).location:
           nextElapsed>action.walk+action.work?sampleNavigation(action.navigation,nextElapsed-action.walk-action.work,true).location:action.navigation.target;
         const blocker=this.stepBlocker(this.currentHeroLocation(),nextLocation);
         this.blockedReason=blocker?`actor:${blocker.id}`:null;
         if(blocker){
           action.stalled+=delta;
-          if(action.stalled-action.yieldAt>=.3){action.yieldAt=action.stalled;this.tryPetYield(blocker,[nextLocation,nextElapsed>action.walk+action.work?action.navigation.returnLocation:action.navigation.target]);}
+          if(action.stalled-action.yieldAt>=.3){
+            action.yieldAt=action.stalled;
+            this.tryPetYield(blocker,[nextLocation,nextElapsed>action.walk+action.work?action.navigation.returnLocation:action.navigation.target]);
+            if(action.kind==='pet-gate'&&action.elapsed<action.walk)this.reroutePetGateVisit(action);
+          }
         }else{action.stalled=0;action.yieldAt=0;action.elapsed=nextElapsed;this.followFloor(nextLocation.floor??1);}
-        if(action.stalled>=CHORE_STALL_TIMEOUT){
+        if(action.stalled>=CHORE_STALL_TIMEOUT||this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT){
           const retained=this.currentHeroLocation();this.heroLocation={...retained,point:[...retained.point]};this.action=null;this.zone='home';
-          action.reject(new Error('동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
+          action.reject(new Error(this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT?'동물이 통로에 있어 문을 닫지 않았어요. 친구가 통로를 벗어난 뒤 다시 해 주세요.':'동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
         }else{
           if (action.kind === 'chop' && action.elapsed >= action.walk + action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
           if (action.elapsed >= action.duration) {
-            this.heroLocation = { ...action.navigation.returnLocation, point: [...action.navigation.returnLocation.point] };
+            const destination=action.stayAtTarget?action.navigation.target:action.navigation.returnLocation;
+            this.heroLocation = { ...destination, point: [...destination.point] };
             this.action = null; this.zone = 'home'; action.resolve();
           }
         }
@@ -283,8 +302,9 @@ export class Scene {
     const workTree = candidates.find(item => item.kind === 'grove-work');
     const slots = candidates.filter(item => item.kind === 'build-slot').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
-    const roadEntry=candidates.find(item=>item.kind==='road-entry'),outdoorSite=candidates.find(item=>item.kind==='outdoor-site'),
+    const roadEntry=candidates.find(item=>item.kind==='road-entry'),petGate=candidates.find(item=>item.kind==='pet-gate'),outdoorSite=candidates.find(item=>item.kind==='outdoor-site'),
       outdoors=this.currentHeroLocation().surface==='road',world=this.navigationWorld();
+    if(petGate&&!this.constructionMode){this.focus('pet-gate');this.onSelect('pet-gate');return;}
     if(roadEntry&&!this.constructionMode){
       this.walkTo(outdoors?{surface:'deck',floor:1,point:[...world.ladder.entry]}:{surface:'road',point:[...world.ladder.bottom]});return;
     }
@@ -326,6 +346,7 @@ export class Scene {
 
   setState(state: GameState) {
     this.state = state;
+    if(this.petGatePendingOpen!==null&&this.action?.kind!=='pet-gate')this.clearPetPassageGateOperation();
     const team=getSelectedTeam(state);
     for(const id of this.petMotion.keys())if(!team.includes(id)){this.petMotion.delete(id);this.petYields.delete(id);}
     if(this.activeFloor>getTruckFloorCount(state))this.activeFloor=1;
@@ -441,7 +462,7 @@ export class Scene {
     const actors=this.physicalActors(),worldFor=(radius:number,occupants:NavigationActor[])=>createNavigationWorld(nextState.deckLevel,nextState.plots.length,
       getSettlement(nextState).buildings.map(building=>building.slot),
       {floors:Array.from({length:getTruckFloorCount(nextState)},(_,i)=>(i+1)as TruckFloor),activeFloor:this.activeFloor,
-        radius,actors:occupants});
+        radius,actors:occupants,actor:'pet',petPassageOpen:getPetPassage(nextState).open&&!this.petGateClosing});
     const previous=this.navigationWorld().obstacles,
       obstacleKey=(obstacle:NavigationWorld['obstacles'][number])=>JSON.stringify([obstacle.surface,obstacle.floor,obstacle.kind,obstacle.bounds]),
       previousKeys=new Set(previous.map(obstacleKey)),
@@ -465,26 +486,33 @@ export class Scene {
   private physicalActors():NavigationActor[] {
     const hero:NavigationActor={id:'hero',location:this.currentHeroLocation(),radius:HERO_BODY_RADIUS};
     const team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
-    return[hero,...team.flatMap(id=>{const motion=this.petMotion.get(id);return motion?[{id,location:{...motion.location,point:[...motion.location.point]as Point},radius:motion.radius}]:[];})];
+    return[hero,...team.flatMap(id=>{const motion=this.petMotion.get(id),route=motion?.route,
+      approaching=motion&&route&&motion.location.surface===route.start.surface&&(motion.location.floor??1)===(route.start.floor??1),
+      reserved=[...this.petYields.values()].find(yielding=>yielding.passageOwner===id&&yielding.passage&&motion&&this.holdsPetPassageIntent(motion,yielding.passage)),
+      passageIntent=(approaching?route.segments.find((_,index)=>route.surfaces[index]==='ramp')?.link:undefined)??reserved?.passage?.id;
+      return motion?[{id,location:{...motion.location,point:[...motion.location.point]as Point},radius:motion.radius,
+        ...(passageIntent?{passageIntent}:{})}]:[];})];
   }
   private stepBlocker(from:NavigationLocation,to:NavigationLocation) {
     const actors=this.physicalActors().filter(actor=>actor.id!=='hero');
-    return (to.surface==='ladder'?actors.find(a=>a.location.surface==='ladder'&&a.location.link===to.link):undefined)
+    return (isNavigationLinkSurface(to.surface)?actors.find(a=>isNavigationLinkSurface(a.location.surface)&&a.location.link===to.link):undefined)
       ??blocksActorStep(from,to,HERO_BODY_RADIUS,actors);
   }
-  private tryPetYield(blocker:NavigationActor,reserved:NavigationLocation[],reservedRadius=HERO_BODY_RADIUS,requested=new Set<UnitId>()) {
+  private tryPetYield(blocker:NavigationActor,reserved:NavigationLocation[],reservedRadius=HERO_BODY_RADIUS,requested=new Set<UnitId>(),passage?:NavigationLink,passageOwner?:UnitId) {
     const id=blocker.id as UnitId,motion=this.petMotion.get(id),roster=getUnitRoster(this.state??{});
     if(!motion||requested.has(id)||this.petYields.has(id)||this.reducedMotion||roster[id].health<=0)return;
+    if(motion.location.surface==='ramp'&&motion.passageLease)return;
     requested.add(id);
-    const ownsLink=motion.location.surface==='ladder'&&reserved.some(location=>location.surface==='ladder'&&location.link===motion.location.link);
-    if(!ownsLink&&motion.blockedReason!=='no-clear-patrol-route'&&!motion.blockedReason?.startsWith('actor:'))return;
-    const actors=this.physicalActors().filter(actor=>actor.id!==id),world=this.navigationWorld(motion.radius,actors),
+    const ownsLink=isNavigationLinkSurface(motion.location.surface)&&reserved.some(location=>isNavigationLinkSurface(location.surface)&&location.link===motion.location.link);
+    if(passage&&isNavigationLinkSurface(motion.location.surface))return;
+    if(!ownsLink&&!passage&&motion.blockedReason!=='no-clear-patrol-route'&&!motion.blockedReason?.startsWith('actor:'))return;
+    const actors=this.physicalActors().filter(actor=>actor.id!==id),world=this.reservePetPassage(this.petNavigationWorld(motion.radius,actors,motion),passage),
       route=planYieldNavigation(world,motion.location,reserved,reservedRadius);
     if(!route){
       // An occupied landing can prevent the first exit route from existing.
       // Clear its actual companion body before accepting any movement through it.
-      const links=world.links.filter(link=>motion.location.surface==='ladder'&&motion.location.link===link.id
-        ||reserved.some(location=>location.surface==='ladder'&&location.link===link.id));
+      const links=world.links.filter(link=>isNavigationLinkSurface(motion.location.surface)&&motion.location.link===link.id
+        ||reserved.some(location=>isNavigationLinkSurface(location.surface)&&location.link===link.id));
       for(const actor of actors){
         if(actor.id==='hero'||requested.has(actor.id as UnitId)||roster[actor.id as UnitId].health<=0)continue;
         if(links.some(link=>((actor.location.floor??1)===link.lower||(actor.location.floor??1)===link.upper)
@@ -494,21 +522,31 @@ export class Scene {
       return;
     }
     motion.route=route;motion.elapsed=0;motion.retryRemaining=0;motion.pauseRemaining=0;motion.blockedReason=null;
-    this.petYields.set(id,{route,reserved:reserved.map(location=>({...location,point:[...location.point]})),reservedRadius});
+    if(passage)motion.worldKey=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
+    this.petYields.set(id,{route,reserved:reserved.map(location=>({...location,point:[...location.point]})),reservedRadius,
+      ...(passage?{passage:{...passage,points:passage.points.map(point=>[...point])},...(passageOwner?{passageOwner}:{})}:{})});
   }
   private followFloor(floor:TruckFloor) {
-    if(floor===this.activeFloor)return;this.activeFloor=floor;this.renderFloor=floor;this.manualViewport=null;this.mapPan=[0,0];this.mapZoom=1;
+    if(floor===this.activeFloor)return;this.activeFloor=floor;this.renderFloor=floor;this.manualViewport=null;this.mapPan=[0,0];
     this.canvas.dispatchEvent(new CustomEvent('scenefloorchange',{detail:{floor,following:true}}));
   }
   /** Only an explicit new-game reset discards the session's retained position. */
   resetPosition() {
     this.stopWalking(); this.heroLocation=defaultHeroLocation();this.gaitDistance=0;this.heroFacing=1;this.petMotion.clear();this.petYields.clear();this.activeFloor=1;
+    this.clearPetPassageGateOperation();
     this.publishWalking();
   }
   resetMapView() {
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.villageOverview = false;
     this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
+    this.render();
+  }
+  /** Resume the resident's viewpoint without discarding the player's zoom. */
+  resumePlayerCamera() {
+    this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
+    this.followFloor(this.currentHeroLocation().floor??1);
+    this.manualViewport=null;this.mapPan=[0,0];this.villageOverview=false;this.zone='home';this.cameraFocusRequested=true;
     this.render();
   }
   /** Explicit overview fits the complete selected deck and cab; no actor moves. */
@@ -528,10 +566,89 @@ export class Scene {
   focusOutdoorSite(id:OutdoorSiteId) {
     const site=getOutdoorSite(id);if(!site||this.action)return;
     if(this.activeFloor!==1)this.setActiveFloor(1);
-    this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
-    this.mapPan=[0,0];this.mapZoom=1;this.manualViewport=[640,420];
-    this.camera={x:site.point[0],y:site.point[1]-42,zoom:1};this.cameraFocusRequested=false;
-    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange',{detail:{zoom:this.mapZoom}}));this.render();
+    // The information sheet already previews the place. Travel and work keep
+    // the actual resident in view, rather than fitting a second, wider map.
+    this.resumePlayerCamera();
+  }
+  /** Rewards belong to the controller and can commit only after actual work finishes. */
+  playPetPassageGate(open: boolean): Promise<void> {
+    if(!this.state||this.disposed||this.suspended)return Promise.reject(new Error('게임 화면을 연 뒤 동물 통로 문을 조작해 주세요.'));
+    if(typeof open!=='boolean'||this.action||this.petGatePendingOpen!==null)return Promise.reject(new Error('진행 중인 행동을 마친 뒤 문을 조작해 주세요.'));
+    if(getPetPassage(this.state).open===open)return Promise.reject(new Error(open?'동물 통로 문이 이미 열려 있어요.':'동물 통로 문이 이미 닫혀 있어요.'));
+    const crossing=this.petsOnPassage(),roster=getUnitRoster(this.state);
+    if(!open&&crossing.some(pet=>this.reducedMotion||roster[pet.id].health<=0))
+      return Promise.reject(new Error('통로의 동물이 움직일 수 없어 문을 닫지 않았어요. 친구가 통로를 벗어난 뒤 다시 해 주세요.'));
+    this.stopWalking();this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
+    const approaches=getPetPassageGeometry(this.state.deckLevel).heroApproaches
+      .map(point=>({surface:'deck' as const,floor:1 as const,point:[...point]as Point}));
+    const navigation=planWorkNavigation(this.navigationWorld(),this.heroLocation,approaches)
+      ??planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
+    if(!navigation)return Promise.reject(new Error('동물 통로 문으로 가는 길이 막혔어요. 빈 길로 이동하거나 동료를 회복시켜 주세요.'));
+    this.petGateClosing=!open;this.petGatePendingOpen=open;this.petGateWaitElapsed=0;
+    this.zone='home';this.resumePlayerCamera();this.lastFrame=performance.now();
+    const walk=navigation.motion.duration,work=realDuration(1.4);
+    return new Promise((resolve,reject)=>{
+      this.action={kind:'pet-gate',elapsed:0,duration:walk+work,walk,work,path:navigation.points,route:navigation.motion,navigation,
+        plotIndex:0,cropId:'carrot',stayAtTarget:true,stalled:0,yieldAt:0,resolve,
+        reject:reason=>{this.clearPetPassageGateOperation();reject(reason);}};
+      this.render();
+    });
+  }
+  /** The controller calls this in its finally path; setState also clears a finished operation. */
+  clearPetPassageGateOperation() {
+    this.petGateClosing=false;this.petGatePendingOpen=null;this.petGateWaitElapsed=0;
+  }
+  private reroutePetGateVisit(action:Chore) {
+    const retained=this.currentHeroLocation(),approaches=getPetPassageGeometry(this.state?.deckLevel??1).heroApproaches
+      .map(point=>({surface:'deck' as const,floor:1 as const,point:[...point]as Point}));
+    const navigation=planWorkNavigation(this.navigationWorld(),retained,approaches);
+    if(!navigation)return;
+    action.gaitOffset=(action.gaitOffset??0)+sampleNavigation(action.navigation,action.elapsed).distance;
+    action.navigation=navigation;action.route=navigation.motion;action.path=navigation.points;
+    action.walk=navigation.motion.duration;action.duration=action.walk+action.work;action.elapsed=0;
+  }
+  private petsOnPassage() {
+    return [...this.petMotion.values()].filter(pet=>pet.location.surface==='ramp'&&pet.location.link===PET_PASSAGE_LINK_ID);
+  }
+  private activePetPassageLeases() {
+    const current=getPetPassageGeometry(this.state?.deckLevel??1).points;
+    const paths=new Map<string,{owners:UnitId[];points:Point[]}>();
+    for(const pet of this.petsOnPassage()){
+      const points=pet.passageLease?.points;if(!points||points.length<3)continue;
+      if(points.length===current.length&&points.every((point,index)=>Math.hypot(point[0]-current[index][0],point[1]-current[index][1])<1e-7))continue;
+      const key=JSON.stringify(points),existing=paths.get(key);
+      if(existing)existing.owners.push(pet.id);else paths.set(key,{owners:[pet.id],points:points.map(point=>[...point])});
+    }
+    return [...paths.values()];
+  }
+  getPetPassageSceneState() {
+    const geometry=getPetPassageGeometry(this.state?.deckLevel??1),open=getPetPassage(this.state??{}).open;
+    const point:Point=[geometry.hinge[0],geometry.hinge[1]-16],halfX=Math.max(43,24.5/this.scale),halfY=Math.max(44.5,24.5/this.scale);
+    const worldBounds:[number,number,number,number]=[point[0]-halfX,point[1]-halfY,point[0]+halfX,point[1]+halfY];
+    const gateBounds=worldBounds.map((value,index)=>index%2?this.dy+value*this.scale:this.dx+value*this.scale);
+    const activeCrossings=this.petsOnPassage().map(pet=>({id:pet.id,location:{...pet.location,point:[...pet.location.point]},lease:pet.passageLease??null}));
+    const leasedPaths=this.activePetPassageLeases().map(path=>{
+      const painted=this.petPassageLeasedPaint?.find(paint=>JSON.stringify(paint.points)===JSON.stringify(path.points));
+      return {...path,id:PET_PASSAGE_LINK_ID,surface:'ramp',entryAllowed:false,open:true,
+        drawn:painted?.drawn??false,painted:painted?.painted??false};
+    });
+    const canInteract=!!this.state&&!this.state.expedition&&!this.action&&!this.suspended&&!this.disposed&&!this.constructionMode&&!this.planningMode;
+    return {drawn:this.petPassagePaint?.drawn??false,painted:this.petPassagePaint?.painted??false,open,
+      closing:this.petGateClosing??false,closingPending:this.petGateClosing??false,pendingTarget:this.petGatePendingOpen??null,
+      operating:this.action?.kind==='pet-gate',canInteract,activeCrossings,waitingPets:activeCrossings.map(pet=>pet.id),
+      geometry,gateBounds,gate:{visible:this.activeFloor===1,x:this.dx+point[0]*this.scale,y:this.dy+point[1]*this.scale,
+        worldPoint:point,worldBounds,bounds:gateBounds,hit:'pet-gate' as const},
+      leasedPaths,paths:[{id:PET_PASSAGE_LINK_ID,surface:'ramp',points:geometry.points,entryAllowed:open&&!this.petGateClosing},...leasedPaths],
+      pets:[...this.petMotion.values()].map(pet=>({id:pet.id,location:{...pet.location,point:[...pet.location.point]},
+        passageLease:pet.passageLease??null,route:pet.route?{points:pet.route.points,surfaces:pet.route.surfaces,segments:pet.route.segments}:null}))};
+  }
+  private publishPetPassage() {
+    const detail=this.getPetPassageSceneState();
+    this.canvas.dataset.petPassage=JSON.stringify(detail);
+    const eventState=JSON.stringify([detail.open,detail.closingPending,detail.operating,detail.canInteract,detail.waitingPets]);
+    if(eventState!==this.petPassageEventState){
+      this.petPassageEventState=eventState;this.canvas.dispatchEvent(new CustomEvent('scenepetpassagechange',{detail}));
+    }
   }
   /** Rewards belong to the controller and can commit only after actual work finishes. */
   playOutdoorAction(kind:'chop'|'gather',id:OutdoorSiteId):Promise<void> {
@@ -617,7 +734,9 @@ export class Scene {
     this.cancelCameraGesture();
     this.endFarmStroke(false);
     this.endMapGesture(false);
-    this.action?.resolve(); this.action = null;
+    if(this.action?.kind==='pet-gate')this.action.reject(new Error('게임 화면을 닫아 문 조작을 멈췄어요.'));
+    else this.action?.resolve();
+    this.action = null;this.clearPetPassageGateOperation();
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
     this.canvas.removeEventListener('pointerdown', this.pointerDown);
@@ -690,6 +809,8 @@ export class Scene {
     const geometry = JSON.stringify({ scale: round(this.scale), dx: round(this.dx), dy: round(this.dy), zone: this.zone,
       farmMode: this.farmMode, constructionMode: this.constructionMode, mapZoom: this.mapZoom,
       mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null,
+      playerFollowing:this.playerCameraFollowing,cameraCenter:{x:round(this.camera.x),y:round(this.camera.y)},
+      cameraViewport:{width:round(this.cameraViewport[0]),height:round(this.cameraViewport[1])},
       planningMode: this.planningMode, planningLevel: this.planningLevel, expansionPreview: this.expansionPreview,
       activeFloor:this.activeFloor,floorCount:this.state?getTruckFloorCount(this.state):1,houseMoveMode:false,
       selectedFloor:this.activeFloor,visibleFloors:[this.activeFloor],floorHeight:FLOOR_HEIGHT,
@@ -823,6 +944,56 @@ export class Scene {
       {floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>(i+1)as TruckFloor),activeFloor:this.activeFloor,
         radius,actors});
   }
+  private petNavigationWorld(radius:number,actors:NavigationActor[],motion?:PetPatrolState): NavigationWorld {
+    return createNavigationWorld(this.state?.deckLevel??1,this.state?.plots.length??3,
+      this.state?getSettlement(this.state).buildings.map(building=>building.slot):[],
+      {floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>(i+1)as TruckFloor),activeFloor:this.activeFloor,
+        radius,actors,actor:'pet',petPassageOpen:getPetPassage(this.state??{}).open&&!this.petGateClosing,petPassageLease:motion?.passageLease});
+  }
+  private reservePetPassage(world:NavigationWorld,passage?:NavigationLink): NavigationWorld {
+    return passage?{...world,links:[...world.links.filter(link=>link.id!==passage.id),
+      {...passage,points:passage.points.map(point=>[...point]),entryAllowed:false}]}:world;
+  }
+  /** Admitted paws own their whole physical corridor until the real exit. */
+  private requestPetPassageClearance(owner:PetPatrolState) {
+    const passage=owner.passageLease;
+    if(owner.location.surface!=='ramp'||!passage)return;
+    const reserved:NavigationLocation[]=[{...owner.location,point:[...owner.location.point]},
+      ...passage.points.map((point,index)=>({point:[...point]as Point,surface:index===0?'road' as const:'deck' as const,
+        ...(index===0?{}:{floor:passage.upper})})),...(owner.route?[owner.route.target]:[])];
+    for(const actor of this.physicalActors()){
+      if(actor.id==='hero'||actor.id===owner.id||isNavigationLinkSurface(actor.location.surface))continue;
+      const onDeck=actor.location.surface==='deck'&&(actor.location.floor??1)===passage.upper;
+      const clearance=onDeck?Math.min(...passage.points.slice(1).map((to,index)=>distanceToSegment(actor.location.point,passage.points[index],to)))
+        :actor.location.surface==='road'?Math.hypot(actor.location.point[0]-passage.points[0][0],actor.location.point[1]-passage.points[0][1]):Infinity;
+      if(clearance<owner.radius+actor.radius+2)
+        this.tryPetYield(actor,reserved,owner.radius,new Set<UnitId>(),passage,owner.id);
+    }
+  }
+  private holdsPetPassageIntent(owner:PetPatrolState,passage:NavigationLink) {
+    if(owner.location.surface==='ramp'&&owner.passageLease?.id===passage.id)return true;
+    if(!getPetPassage(this.state??{}).open||this.petGateClosing)return false;
+    return owner.waitingForPassage===passage.id||!!(owner.route&&owner.location.surface===owner.route.start.surface
+      &&(owner.location.floor??1)===(owner.route.start.floor??1)&&owner.route.segments.some(segment=>segment.link===passage.id));
+  }
+  /** A queued entrant must be able to reach a landing before it can own a bridge. */
+  private requestPetPassageEntryClearance(waiter:PetPatrolState) {
+    if(!waiter.waitingForPassage||waiter.route||this.petGateClosing||!getPetPassage(this.state??{}).open)return;
+    const actors=this.physicalActors(),passage=this.petNavigationWorld(waiter.radius,actors,waiter).links.find(link=>link.id===waiter.waitingForPassage);
+    if(!passage||actors.some(actor=>actor.id!==waiter.id&&(actor.passageIntent===passage.id
+      ||actor.location.surface==='ramp'&&actor.location.link===passage.id)))return;
+    const onRoad=waiter.location.surface==='road',hero=this.currentHeroLocation();
+    if(!onRoad&&(waiter.location.surface!=='deck'||(waiter.location.floor??1)!==passage.upper)
+      ||(onRoad?hero.surface==='road':hero.surface!=='road'))return;
+    const landing=onRoad?passage.points[passage.points.length-1]:passage.points[0],
+      reserved:NavigationLocation[]=[{surface:'ramp',floor:passage.upper,link:passage.id,point:[...landing]}];
+    for(const actor of actors){
+      if(actor.id==='hero'||actor.id===waiter.id||isNavigationLinkSurface(actor.location.surface))continue;
+      const opposite=onRoad?actor.location.surface==='deck'&&(actor.location.floor??1)===passage.upper:actor.location.surface==='road';
+      if(opposite&&Math.hypot(actor.location.point[0]-landing[0],actor.location.point[1]-landing[1])<waiter.radius+actor.radius+2)
+        this.tryPetYield(actor,reserved,waiter.radius,new Set<UnitId>(),passage,waiter.id);
+    }
+  }
   private choreWorld() {
     const roster=getUnitRoster(this.state??{});
     return this.navigationWorld(HERO_BODY_RADIUS,this.physicalActors().filter(actor=>actor.id!=='hero'&&(this.reducedMotion||roster[actor.id as UnitId].health<=0)));
@@ -830,17 +1001,26 @@ export class Scene {
   private ensurePets() {
     const team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
     team.forEach((id,index)=>{if(this.petMotion.has(id))return;const scale=this.petScale(id),radius=getPetGroundRadius(id,scale),actors=this.physicalActors();
-      const motion=createPetPatrol(id,this.navigationWorld(radius,actors),this.currentHeroLocation(),actors,index,scale);if(motion)this.petMotion.set(id,motion);});
+      const motion=createPetPatrol(id,this.petNavigationWorld(radius,actors),this.currentHeroLocation(),actors,index,scale);if(motion)this.petMotion.set(id,motion);});
   }
   private advancePets(delta:number) {
     this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
     for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
       if(roster[id].health<=0){motion.speed=0;motion.blend=0;continue;}
-      const actors=this.physicalActors().filter(actor=>actor.id!==id);
-      const world=this.navigationWorld(motion.radius,actors),hero=this.currentHeroLocation(),yielding=this.petYields.get(id);
+      this.requestPetPassageEntryClearance(motion);
+      this.requestPetPassageClearance(motion);
+      const actors=this.physicalActors().filter(actor=>actor.id!==id),hero=this.currentHeroLocation(),yielding=this.petYields.get(id);
+      const world=this.reservePetPassage(this.petNavigationWorld(motion.radius,actors,motion),yielding?.passage);
       if(yielding){
         const target=yielding.route.target;
         if(!motion.route&&motion.location.surface===target.surface&&motion.location.floor===target.floor&&Math.hypot(motion.location.point[0]-target.point[0],motion.location.point[1]-target.point[1])<.1){
+          const passageOwner=yielding.passageOwner?this.petMotion.get(yielding.passageOwner):undefined;
+          if(yielding.passage&&passageOwner&&this.holdsPetPassageIntent(passageOwner,yielding.passage)){
+            // Wait naturally outside the whole reserved corridor. Releasing a
+            // yield here would send eager followers back to the occupied entry.
+            motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));motion.pauseRemaining=.35;
+            continue;
+          }
           this.petYields.delete(id);
         }else{
           // An explicit corridor exit has priority until its actual feet arrive.
@@ -859,13 +1039,14 @@ export class Scene {
         }
       }
       stepPetPatrol(motion,world,hero,actors,delta,{reducedMotion:this.reducedMotion});
-      if(this.petYields.has(id)||motion.location.surface==='ladder'
+      this.requestPetPassageClearance(motion);
+      if(this.petYields.has(id)||isNavigationLinkSurface(motion.location.surface)
         ||motion.blockedReason!=='no-clear-patrol-route'&&!motion.blockedReason?.startsWith('actor:'))continue;
       // A resident trying to follow an occupied stair must clear its own landing
       // before the current climber reaches it, without replacing that climber's exit.
       for(const actor of actors){
         const owner=this.petMotion.get(actor.id as UnitId),lease=this.petYields.get(actor.id as UnitId);
-        if(!owner||!lease||roster[owner.id].health<=0||owner.location.surface!=='ladder'
+        if(!owner||!lease||roster[owner.id].health<=0||!isNavigationLinkSurface(owner.location.surface)
           ||motion.blockedReason!=='no-clear-patrol-route'&&motion.blockedReason!==`actor:${owner.id}`)continue;
         const link=world.links.find(link=>link.id===owner.location.link),floor=motion.location.surface==='road'?0:motion.location.floor??1,
           entry=link&&(floor===link.lower?link.points[0]:floor===link.upper?link.points[link.points.length-1]:undefined);
@@ -883,7 +1064,7 @@ export class Scene {
         pose:roster[id].health<=0?'down':motion.speed>.05&&!motion.turnRemaining?'walk':'idle',
         gait:{distance:motion.distance,speed:motion.speed,heading:motion.heading,blend:motion.blend,facingBlend:motion.facingBlend,reducedMotion:this.reducedMotion}};
       if(visible&&(onDeck?location.surface==='deck':location.surface!=='deck')){drawCompanion(this.ctx,options);this.hits.push({kind:'pet',x,y:y-14,radius:24});this.pulse('pet',x,y-15,26);}
-      telemetry.push({id,x,y,visible,scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,
+      telemetry.push({id,x,y,visible,scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,passageLease:motion.passageLease??null,waitingForPassage:motion.waitingForPassage??null,
         body:{x,y,radius:motion.radius,floor:location.floor??1,surface:location.surface,link:location.link??null},blockedReason:motion.blockedReason,
         facing:options.facing,pose:options.pose,turnRemaining:motion.turnRemaining,gait:options.gait,sample:sampleCompanionGait(id,options.gait!,options.scale),contacts:companionPawContacts(options)??null});
     }
@@ -902,9 +1083,9 @@ export class Scene {
       ??planNavigation(this.choreWorld(),this.heroLocation,target);
     if(!navigation)return;
     if(navigation.motion.duration<.001){this.stopWalking();return;}
-    if(target.surface==='road'||this.heroLocation.surface==='road'){
-      this.manualViewport=null;this.mapPan=[0,0];this.villageOverview=false;
-    }else this.holdCamera();
+    // A ground tap resumes close follow on every surface; magnification belongs
+    // to the player and is kept through deck, ladder and road transitions.
+    this.manualViewport=null;this.mapPan=[0,0];this.villageOverview=false;this.zone='home';
     this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0};
     this.lastFrame=performance.now();this.publishWalking();this.render();
   }
@@ -929,12 +1110,14 @@ export class Scene {
   private publishAction() {
     const action = this.action, hero = this.heroState();
     const round = (value: number) => Math.round(value * 1000) / 1000;
-    const phase = !action ? 'idle' : action.elapsed < action.walk ? 'outbound'
+    const waitingForPets=action?.kind==='pet-gate'&&this.petGateClosing&&action.elapsed>=action.walk&&this.petsOnPassage().length>0;
+    const phase = !action ? 'idle' : action.elapsed < action.walk ? 'outbound' : waitingForPets?'waiting'
       : action.elapsed < action.walk + action.work ? 'working' : 'returning';
     // Read-only scene telemetry also makes pauses, stairs and completion observable.
     this.canvas.dataset.sceneAction = JSON.stringify({ kind: action?.kind ?? null, phase,
       elapsed: round(action?.elapsed ?? 0), total: round(action?.duration ?? 0),
       stalled:round(action?.stalled??0),stallLimit:CHORE_STALL_TIMEOUT,
+      petGateClosing:this.petGateClosing??false,petGateWaitElapsed:round(this.petGateWaitElapsed??0),waitingPets:waitingForPets?this.petsOnPassage().map(pet=>pet.id):[],
       walk: round(action?.walk ?? 0), work: round(action?.work ?? 0),
       from: action ? { x: action.navigation.start.point[0], y: action.navigation.start.point[1], surface: action.navigation.start.surface, floor:action.navigation.start.floor??1 } : null,
       returnPoint: action ? { x: action.navigation.returnLocation.point[0], y: action.navigation.returnLocation.point[1], surface: action.navigation.returnLocation.surface, floor:action.navigation.returnLocation.floor??1 } : null,
@@ -969,13 +1152,13 @@ export class Scene {
     }
     if (action.elapsed < action.walk) {
       const motion = sampleNavigation(action.navigation, action.elapsed);
-      return { ...motion, time: motion.distance / 86 };
+      return { ...motion, time: ((action.gaitOffset??0)+motion.distance) / 86 };
     }
     if (action.elapsed > action.walk + action.work) {
       const motion = sampleNavigation(action.navigation, action.elapsed - action.walk - action.work, true);
       return { ...motion, time: motion.distance / 86 };
     }
-    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather' };
+    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'idle':'gather' };
     return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
       progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
@@ -1095,15 +1278,12 @@ export class Scene {
       const village=fitVillageCamera(bounds,availableWidth,availableHeight);
       viewWidth=village.width;viewHeight=village.height;target={x:village.x,y:village.y,zoom:village.zoom};
     }
-    const resident=this.currentHeroLocation(),outdoorWalk=this.freeWalk&&
-      (this.freeWalk.navigation.target.surface==='road'||this.freeWalk.navigation.start.surface==='road');
-    if(this.activeFloor===1&&!this.action&&!showFarm&&!this.planningMode&&!this.constructionMode&&!this.villageOverview
-      &&(resident.surface==='road'||outdoorWalk)){
-      const point=resident.point,destination=this.freeWalk?.navigation.target.point??point,
-        direction:Point=[destination[0]-point[0],destination[1]-point[1]],length=Math.hypot(...direction),
-        lookAhead=length?Math.min(70,length)/length:0,scale=Math.min(.9,availableWidth/560,availableHeight/360);
-      viewWidth=availableWidth/scale;viewHeight=availableHeight/scale;
-      target={x:point[0]+direction[0]*lookAhead,y:point[1]-35+direction[1]*lookAhead,zoom:1};
+    const resident=this.currentHeroLocation(),residentVisible=(resident.floor??1)===this.activeFloor;
+    const playerView=residentVisible&&!showFarm&&!this.planningMode&&!this.constructionMode&&!this.villageOverview
+      &&this.action?.kind!=='expand'&&(this.freeWalk!==null||this.action!==null||this.zone==='home'&&this.selectedFacilityId===null);
+    if(playerView){
+      const player=framePlayerCamera(resident.point,availableWidth,availableHeight);
+      viewWidth=player.width;viewHeight=player.height;target={x:player.x,y:player.y,zoom:player.zoom};
     }
     const planning = this.planningBounds();
     if (planning) {
@@ -1114,6 +1294,7 @@ export class Scene {
     // Keep the viewport as well as the camera fixed after a manual move. An action
     // starting or ending must not silently change the map's scale under the finger.
     if (this.manualViewport) [viewWidth, viewHeight] = this.manualViewport;
+    this.playerCameraFollowing=playerView&&!this.manualViewport&&!this.pinch.active;
     this.cameraViewport = [viewWidth, viewHeight];
     // One user-controlled magnification works on the truck, farm, grove and during chores.
     const road=this.activeFloor===1?getRoadBounds(this.state?.deckLevel??1):null;
@@ -1127,11 +1308,17 @@ export class Scene {
       this.camera = { ...target }; this.cameraFocusRequested = false;
     }
     if (!this.manualViewport && !this.pinch.active) {
-      this.camera.x += (target.x - this.camera.x) * blend;
-      this.camera.y += (target.y - this.camera.y) * blend;
-      this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
+      const movementBlend=playerView?(this.reducedMotion ? .6 : .32):blend;
+      this.camera.x += (target.x - this.camera.x) * movementBlend;
+      this.camera.y += (target.y - this.camera.y) * movementBlend;
+      if(playerView)this.camera.zoom=target.zoom;
+      else this.camera.zoom += (target.zoom - this.camera.zoom) * blend;
     }
     this.scale = Math.min(availableWidth / viewWidth, availableHeight / viewHeight) * this.camera.zoom;
+    if(this.playerCameraFollowing){
+      const visible=keepPlayerVisible(this.camera,resident.point,availableWidth,availableHeight,this.scale);
+      this.camera.x=visible.x;this.camera.y=visible.y;
+    }
     this.dx = insets.left + availableWidth / 2 - this.camera.x * this.scale;
     this.dy = safeTop + availableHeight / 2 - this.camera.y * this.scale;
   }
@@ -1147,6 +1334,8 @@ export class Scene {
     c.translate(this.dx, this.dy); c.scale(this.scale, this.scale);
     this.hits = [];
     this.layoutPaintGeometry=[];this.productionItems=[];
+    this.petPassagePaint={drawn:false,painted:false};
+    this.petPassageLeasedPaint=[];
     this.heroDrawn = false;
     this.environment();
     const cutaway=this.activeFloor===1&&this.roadUnderTruck();
@@ -1158,6 +1347,8 @@ export class Scene {
     this.foreground();
     if(this.activeFloor===1)this.loggingGrove();
     if(this.activeFloor===1)this.outdoorSites();
+    if(this.activeFloor===1)this.petPassage();
+    this.drawPets(true);
     this.drawPets(false);
     if(this.freeWalk&&(this.freeWalk.navigation.target.floor??1)===this.activeFloor){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
     if(cutaway&&this.currentHeroLocation().surface==='road'){
@@ -1172,6 +1363,7 @@ export class Scene {
     this.publishGeometry();
     this.publishAction();
     this.publishWalking();
+    this.publishPetPassage();
     this.canvas.dataset.sceneHits=JSON.stringify(this.hits.map(hit=>({...hit})));
     this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway,truckOpacity:cutaway?.42:1,
       roadActorLayer:cutaway&&this.currentHeroLocation().surface==='road'&&this.heroDrawn?'above-cutaway-truck':'normal-world-order',
@@ -1252,7 +1444,7 @@ export class Scene {
     const floorArt={project:(u:number,v:number,z:number)=>this.rawP(u,v,z),bounds:{left,end,back,front:deckFront},
       floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>({id:(i+1)as TruckFloor,z:94+i*FLOOR_HEIGHT})),selectedFloor:this.activeFloor,
       stairways:Array.from({length:(this.state?getTruckFloorCount(this.state):1)-1},(_,i)=>{const stair=getFloorStairs(this.state?.deckLevel??1,(i+2)as 2|3);return{from:stair.lowerFloor,to:stair.upperFloor,top:stair.top,bottom:stair.bottom,reserved:stair.reserved};}),
-      railGaps:this.activeFloor===1?[{edge:'front' as const,from:-270,to:-180}]:[],night:skyNightAmount(this.state?.minutes??660)};
+      railGaps:this.activeFloor===1?[{edge:'front' as const,from:-270,to:-180},{edge:'left' as const,from:-52,to:52}]:[],night:skyNightAmount(this.state?.minutes??660)};
     drawTruckFloor(this.ctx,{...floorArt,pass:'structure'});
     if(this.activeFloor===1){
     this.renderFloor=1;
@@ -1281,8 +1473,6 @@ export class Scene {
     drawTruckFloor(this.ctx,{...floorArt,pass:'back'});
     this.expansionDeck();
     this.bunting(); this.settlement();if(this.activeFloor===1)this.farm();
-    if (this.heroOnDeck()) this.hero();
-    this.drawPets(true);
     if(this.activeFloor===1){this.renderFloor=1;this.cabin();this.renderFloor=this.activeFloor;}
     drawTruckFloor(this.ctx,{...floorArt,pass:'front'});
     this.flowerPot(left + 25, deckFront - 21, 95, '#e5a082');
@@ -1474,7 +1664,6 @@ export class Scene {
       const direction=this.state?getLayoutDirection(this.state,{kind:'plot',id:plot.id}):0;
       const mid = this.p(u + 35, v + 36, 112);
       // A resident behind a planter belongs behind its wood and leaves as well.
-      if (!this.heroDrawn && this.heroOnDeck() && this.heroState().point[1] <= mid[1] + 31) this.hero();
       // Every bed edge uses the same projection as the truck and collision box.
       // Painted wood/soil textures remain, without the atlas's tilted base.
       this.drawAlignedPlanter(u,v,direction,plot.id);
@@ -1641,7 +1830,7 @@ export class Scene {
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
       const cropName = CROPS[this.action.cropId].name;
-      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', fertilize:'흙에 영양을 나눠요', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요' };
+      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', fertilize:'흙에 영양을 나눠요', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'친구가 지나가길 기다려요':this.petGatePendingOpen?'동물 문을 열어요':'동물 문을 닫아요' };
       const label = labels[this.action.kind];
       const top = y - 128 * WORLD_HERO_SCALE - 32;
       this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
@@ -1659,6 +1848,22 @@ export class Scene {
     this.label(road?'↑':'↓',x,y+6*pixel,26*pixel,'#526d45',700);
     this.label(road?'트럭으로':'도로로',x,y+35*pixel,10*pixel,'#435b3e',800);
     this.hits.push({kind:'road-entry',x,y,radius:0,bounds:[x-23*pixel,y-22*pixel,x+23*pixel,y+22*pixel]});
+  }
+
+  private petPassage() {
+    for(const path of this.activePetPassageLeases()){
+      const leased=drawPetPassage(this.ctx,this.state?.deckLevel??1,true,{points:path.points});
+      this.petPassageLeasedPaint.push({...path,drawn:leased.drawn,painted:leased.painted});
+    }
+    const art=drawPetPassage(this.ctx,this.state?.deckLevel??1,getPetPassage(this.state??{}).open);
+    this.petPassagePaint={drawn:art.drawn,painted:art.painted};
+    const detail=this.getPetPassageSceneState(),[x,y]=detail.gate.worldPoint,bounds=detail.gate.worldBounds;
+    this.hits.push({kind:'pet-gate',x,y,radius:0,bounds});
+    const pixel=1/this.scale;
+    this.round(x-24*pixel,y-24*pixel,48*pixel,48*pixel,13*pixel,this.petGateClosing?'#e2e9d7f2':'#fff8e5ef','#a89669');
+    this.label(this.petGateClosing?'…':art.open?'열림':'닫힘',x,y+5*pixel,11*pixel,'#526d45',800);
+    this.label('동물 문',x,y+36*pixel,10*pixel,'#435b3e',800);
+    this.pulse('pet-gate',x,y,26*pixel);
   }
 
   private outdoorSites() {
