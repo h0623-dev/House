@@ -1,4 +1,5 @@
 import { COMPANIONS, COMPANION_IDS, MAX_COMPANION_XP, cloneCompanions, getCompanionLevel, getCompanions, type CompanionProgress, type CompanionRoster } from './companions';
+import type { ShopProgress } from './shop';
 
 export const UNIT_IDS = ['dog', 'cat', 'rabbit', 'fox', 'boar', 'owl'] as const;
 export type UnitId = typeof UNIT_IDS[number];
@@ -15,6 +16,7 @@ export interface UnitProgressState {
   animalReserve?: AnimalReserve;
   companionTeam?: UnitId[];
   maxCompanionTeamSize?: number;
+  shop?: ShopProgress;
 }
 export const UNITS = {
   dog: { id: 'dog', name: COMPANIONS.dog.name, role: 'frontguard', roleLabel: '앞줄 수호', unlockDeck: 1, baseMaxHealth: 120, healthPerLevel: 8, skillId: 'dash', skillLabel: '보리 돌진', skillDescription: '집중 공격 · 보호', attackInterval: 2.3, attackDamage: 5, damagePerLevel: .8 },
@@ -38,15 +40,15 @@ export function validateAnimalReserve(value: unknown): value is AnimalReserve {
 export function validateReserveHealth(value: unknown): value is ReserveHealth {
   return record(value) && Object.keys(value).length === RESERVE_UNIT_IDS.length && RESERVE_UNIT_IDS.every(id => percentage(value[id]));
 }
-export function validateCompanionTeam(value: unknown, state: Pick<UnitProgressState, 'deckLevel'>): value is UnitId[] {
+export function validateCompanionTeam(value: unknown, state: Pick<UnitProgressState, 'deckLevel' | 'shop'>): value is UnitId[] {
   return Array.isArray(value) && value.length >= 1 && value.length <= 3 && new Set(value).size === value.length
-    && value.every(id => isUnitId(id) && UNITS[id].unlockDeck <= state.deckLevel);
+    && value.every(id => isUnitId(id) && getUnlockedUnitIds(state).includes(id));
 }
 export function getUnitRoster(state: Pick<UnitProgressState, 'companions' | 'animalReserve'>): UnitRoster {
   const legacy = getCompanions(state);
   return { ...legacy, ...Object.fromEntries(RESERVE_UNIT_IDS.map(id => [id, state.animalReserve ? { ...state.animalReserve[id] } : { health: 100, xp: 0 }])) } as UnitRoster;
 }
-export function getUnlockedUnitIds(state: Pick<UnitProgressState, 'deckLevel'>): UnitId[] { return UNIT_IDS.filter(id => UNITS[id].unlockDeck <= state.deckLevel); }
+export function getUnlockedUnitIds(state: Pick<UnitProgressState, 'deckLevel' | 'shop'>): UnitId[] { return UNIT_IDS.filter(id => UNITS[id].unlockDeck <= state.deckLevel || state.shop?.adoptedPets.includes(id)); }
 export function getSelectedTeam(state: UnitProgressState): UnitId[] { return state.companionTeam ? [...state.companionTeam] : [...COMPANION_IDS]; }
 export function getReadyTeam(state: UnitProgressState): UnitId[] {
   const roster = getUnitRoster(state), unlocked = getUnlockedUnitIds(state);

@@ -4,6 +4,7 @@ import { realDuration } from './game-speed';
 import { getLegacySettlement, validateSettlement, validateFacilityHistory, validateTruckLayout, type Settlement, type FacilityHistory } from './settlement';
 import { cloneTruckLayoutFields, type TruckLayout } from './truck-layout';
 import { cloneLayoutDirectionFields, validateLayoutDirections, type LayoutDirections } from './layout-direction';
+import { cloneShopFields, validateShopProgress, type ShopProgress } from './shop';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 import { COMPANION_IDS, MAX_COMPANION_XP, getCompanions, isCompanionId, validateCompanionHealth, validateCompanions, type CompanionHealth, type CompanionId, type CompanionRoster } from './companions';
@@ -56,6 +57,8 @@ export interface GameState {
   truckLayout?: TruckLayout;
   /** Deck-aligned facing directions; older saves keep their existing appearance. */
   layoutDirections?: LayoutDirections;
+  /** Optional legacy-safe game-coin purchases; absent old saves receive no grants. */
+  shop?: ShopProgress;
   /** Lifetime construction records stay separate from legacy settlement schemas. */
   facilityHistory?: FacilityHistory;
   /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
@@ -149,6 +152,7 @@ function copy(state: GameState): GameState {
     ...(state.settlement ? { settlement: getLegacySettlement(state) } : {}),
     ...cloneTruckLayoutFields(state),
     ...cloneLayoutDirectionFields(state),
+    ...cloneShopFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
@@ -613,7 +617,7 @@ const isInteger = (value: unknown, min: number, max: number): value is number =>
 const isText = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
 const validAnimalParticipants = (value: unknown): value is CompanionId[] => Array.isArray(value) && value.length >= 1
   && value.length <= COMPANION_IDS.length && new Set(value).size === value.length && value.every(isCompanionId);
-const validUnitParticipants = (value: unknown, state: Pick<GameState, 'deckLevel'>): value is UnitId[] => validateCompanionTeam(value, state);
+const validUnitParticipants = (value: unknown, state: Pick<GameState, 'deckLevel' | 'shop'>): value is UnitId[] => validateCompanionTeam(value, state);
 
 /** Save files are untrusted input: reject damaged states instead of inventing resources. */
 function validateSave(value: unknown): value is GameState {
@@ -633,7 +637,8 @@ function validateSave(value: unknown): value is GameState {
   if (Object.hasOwn(value, 'truckLayout') && !validateTruckLayout(value.truckLayout, value as unknown as GameState)) return false;
   if (Object.hasOwn(value, 'companions') && !validateCompanions(value.companions)) return false;
   if (Object.hasOwn(value, 'animalReserve') && !validateAnimalReserve(value.animalReserve)) return false;
-  if (Object.hasOwn(value, 'companionTeam') && !validateCompanionTeam(value.companionTeam, { deckLevel: value.deckLevel })) return false;
+  if (Object.hasOwn(value, 'shop') && !validateShopProgress(value.shop)) return false;
+  if (Object.hasOwn(value, 'companionTeam') && !validateCompanionTeam(value.companionTeam, value as unknown as GameState)) return false;
   if (Object.hasOwn(value, 'maxCompanionTeamSize') && (!isInteger(value.maxCompanionTeamSize, 1, 3)
     || value.maxCompanionTeamSize < getSelectedTeam(value as unknown as GameState).length)) return false;
   if (!Array.isArray(value.plots) || value.plots.length < value.deckLevel + 2 || value.plots.length > getFarmCapacity({ deckLevel: value.deckLevel })) return false;
@@ -657,8 +662,8 @@ function validateSave(value: unknown): value is GameState {
     if (Object.hasOwn(value.expedition, 'unitParty')) {
       if (value.expedition.unitParty !== true || Object.hasOwn(value.expedition, 'animalParty') || Object.hasOwn(value.expedition, 'participantIds')
         || !validateCompanions(value.companions) || !validateAnimalReserve(value.animalReserve)
-        || !validUnitParticipants(value.expedition.unitParticipantIds, { deckLevel: value.deckLevel })
-        || !validateCompanionTeam(value.companionTeam, { deckLevel: value.deckLevel })) return false;
+        || !validUnitParticipants(value.expedition.unitParticipantIds, value as unknown as GameState)
+        || !validateCompanionTeam(value.companionTeam, value as unknown as GameState)) return false;
       if (Object.hasOwn(value.expedition, 'unitBattleBonuses') && !validateUnitBattleBonuses(value.expedition.unitBattleBonuses)) return false;
       const roster = getUnitRoster(value as unknown as GameState);
       if (value.expedition.unitParticipantIds.some(id => roster[id].health <= 0 || !(value.companionTeam as UnitId[]).includes(id))) return false;

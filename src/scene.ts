@@ -2,6 +2,7 @@ import { formatGameDuration, gameMinutesToSeconds } from './game-time';
 import { GAME_SPEED_MULTIPLIER, realDuration } from './game-speed';
 import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, type GameState, type Plot } from './game';
 import { drawHero, type HeroPose } from './actors';
+import { getEquippedOutfit } from './shop';
 import { drawZombie } from './creatures';
 import { drawCompanion, companionPawContacts, sampleCompanionGait, type CompanionOptions } from './companion-art';
 import { drawTruckFloor, drawTruckStairway } from './truck-floor-art';
@@ -1201,7 +1202,6 @@ export class Scene {
     this.expansionDeck();
     this.bunting(); this.settlement();if(this.activeFloor===1)this.farm();
     if (this.heroOnDeck()) this.hero();
-    drawWorldSprite(this.ctx, 'crate', ...this.p(-207, -53, 96), 26, 27);
     this.drawPets(true);
     if(this.activeFloor===1){this.renderFloor=1;this.cabin();this.renderFloor=this.activeFloor;}
     drawTruckFloor(this.ctx,{...floorArt,pass:'front'});
@@ -1542,7 +1542,9 @@ export class Scene {
     const hero = this.heroState(), [x, y] = hero.point;
     let progress = hero.progress;
     if (hero.pose === 'chop') progress = (progress * 3) % 1;
-    drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: hero.time, progress, climbing: hero.climbing });
+    const outfit=this.state?getEquippedOutfit(this.state):'default';
+    const drawn=drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: hero.time, progress, climbing: hero.climbing,outfit });
+    this.canvas.dataset.survivorOutfit=JSON.stringify({...drawn,pose:hero.pose,facing:hero.facing,floor:this.currentHeroLocation().floor??1,activeFloor:this.activeFloor,scale:WORLD_HERO_SCALE,x,y});
     this.hits.push({ kind: 'character', x, y: y - 64 * WORLD_HERO_SCALE, radius: 60 * WORLD_HERO_SCALE });
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
@@ -1576,7 +1578,6 @@ export class Scene {
     }
     drawWorldSprite(c, 'stump', 183, 629, 70, 49);
     // A separate roadside supply pile gives the gathering motion a visible target.
-    drawWorldSprite(c, 'crate', 184, 576, 43, 39);
     this.line([[173, 568], [184, 564], [191, 568]], '#809087', 3);
     this.sprig(197, 579, .45);
     this.line([[69, 629], [69, 650]], '#8a693d', 3);

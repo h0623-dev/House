@@ -1,0 +1,111 @@
+import { chromium } from '@playwright/test';
+import strictAssert from 'node:assert/strict';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { captureExecutionInputs } from './release-execution-inputs.mjs';
+
+// Actual domain-validated fixtures and native mobile touch. No clock, game-call,
+// battle-state, currency, or HP/XP writes after the browser starts.
+const version=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8')).version;
+const baseUrl=process.env.TEST_BASE_URL??'http://127.0.0.1:5173/';
+const snapshotId=process.env.TEST_SNAPSHOT_ID??'mutable-development-diagnostic';
+const finalSnapshot=process.env.TEST_FINAL_SNAPSHOT==='1',diagnosticOnly=process.env.TEST_SHOP_DIAGNOSTIC==='1';
+if(finalSnapshot===diagnosticOnly)throw Error('Choose exactly one final immutable snapshot or mutable development diagnostic.');
+const executionInputs=await captureExecutionInputs(import.meta.url,{snapshotId,finalSnapshot});
+const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+let assertionsExecuted=0;
+const assert=new Proxy(strictAssert,{get(target,key){const fn=Reflect.get(target,key);return typeof fn==='function'?(...args)=>{assertionsExecuted++;return fn(...args);}:fn;}});
+const receipt={version,baseUrl,snapshotId,finalSnapshot,diagnosticOnly,executionInputs,status:'running',startedAt:new Date().toISOString(),
+ scope:'Chromium mobile emulation, trusted native touch and natural RAF. Explicit unearned resources; no physical-phone, paid-money or earned-progress claim.',
+ fixtures:[],inputs:[],guards:[],transactions:[],outfits:[],pets:[],crateRemovals:[],screenshots:[],errors:[],failedAssets:[],httpIdentity:[]};
+let browser,context,page,currentCase='preflight';
+const stable=s=>{const copy=structuredClone(s);delete copy.lastSaved;return copy;};
+const nonClock=s=>{const copy=stable(s);for(const key of['day','minutes','totalMinutes'])delete copy[key];return copy;};
+const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('road-haven-save-v1')));
+function domain(operation,input={},item='',quantity=1){
+ const script=`import {createGame,saveGame,loadGame,performAction,setCompanionTeam,beginHunt} from './src/game.ts';import {getShop,buyShopSeed,buyShopPet,buyShopOutfit,equipShopOutfit,sellShopResource} from './src/shop.ts';import {GAME_SPEED_MULTIPLIER} from './src/game-speed.ts';const operation=process.argv[1],s=JSON.parse(process.argv[2]),item=process.argv[3],quantity=Number(process.argv[4]);let raw;const store={getItem:()=>raw??null,setItem:(k,v)=>raw=v};if(operation==='fresh'){const state=createGame('male','상점 검수');state.resources.food=1000;console.log(JSON.stringify(state));}else if(operation==='validate'){const accepted=saveGame(s,store),loaded=loadGame(store);console.log(JSON.stringify({accepted,loaded,shop:getShop(s),speed:GAME_SPEED_MULTIPLIER}));}else if(operation==='team')console.log(JSON.stringify(setCompanionTeam(s,JSON.parse(item))));else if(operation==='hunt')console.log(JSON.stringify(beginHunt(s,1)));else if(operation==='plant')console.log(JSON.stringify(performAction(s,'plant',3,'corn',{advanceClock:false})));else{const fn={seed:buyShopSeed,pet:buyShopPet,outfit:buyShopOutfit,equip:equipShopOutfit,sale:sellShopResource}[operation];console.log(JSON.stringify(fn(s,item,quantity)));}`;
+ const result=spawnSync(process.execPath,['--import','tsx','--input-type=module','-e',script,operation,JSON.stringify(input),item,String(quantity)],{encoding:'utf8'});
+ assert.equal(result.status,0,'actual TypeScript domain executes');return JSON.parse(result.stdout);
+}
+async function fixture(legacy=false){
+ let input=domain('fresh'),provenance={kind:'actual-createGame',earned:false,declaration:'Only food is explicitly set to 1000 unearned test resources. Coins are never granted; every browser coin comes from native confirmed resource sales.'};
+ if(legacy){const path='artifacts/truck-floors-v0.21.0-paid-save.json',bytes=await readFile(path),previous=JSON.parse(bytes);assert.equal(sha(bytes),'6d215de7d0c98fe03a837fc96db38343790b158a8250a965a0fb4a690225bbc3');assert.equal(previous.sha256OfSave,sha(JSON.stringify(previous.save)));input=structuredClone(previous.save);input.resources.food=1000;provenance={kind:'previous-paid-three-floor-fixture',path,sha256:sha(bytes),earned:false,declaration:'Actual previously validated paid-floor save; only food is declared 1000 unearned resources. Preserves crops, pending production, floors, animal HP/XP and earned units.'};}
+ const checked=domain('validate',input);assert.equal(checked.accepted,true);assert.deepEqual(stable(checked.loaded),stable(input));assert.equal(checked.speed,2);assert.equal(checked.shop.coins,0);assert.equal(Object.hasOwn(input,'shop'),false,'old save has no fabricated wallet');return{save:checked.loaded,provenance};
+}
+async function frame(){return page.locator('#world').evaluate(canvas=>({geometry:JSON.parse(canvas.dataset.sceneGeometry),movement:JSON.parse(canvas.dataset.freeMovement),hits:JSON.parse(canvas.dataset.sceneHits),outfit:JSON.parse(canvas.dataset.survivorOutfit),rect:canvas.getBoundingClientRect().toJSON()}));}
+async function touch(locator){
+ await locator.scrollIntoViewIfNeeded();await locator.evaluate(async element=>{const animations=[];for(let node=element;node;node=node.parentElement)animations.push(...node.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity));await Promise.all(animations.map(a=>a.finished.catch(()=>{})));});const box=await locator.boundingBox();assert.ok(box&&box.width>=44&&box.height>=44,`entire actionable control is at least 44px: ${JSON.stringify(box)}`);
+ const client={x:box.x+box.width/2,y:box.y+box.height/2};assert.equal(await locator.evaluate((button,p)=>document.elementFromPoint(p.x,p.y)?.closest('button')===button,client),true,'actual native finger reaches intended control');
+ assert.ok(box.x>=-1&&box.y>=-1&&box.x+box.width<=page.viewportSize().width+1&&box.y+box.height<=page.viewportSize().height+1,'whole actionable control fits viewport after real scrolling');
+ receipt.inputs.push({case:currentCase,kind:'native-touchscreen-tap',client,bounds:box,label:await locator.getAttribute('aria-label')??await locator.innerText()});await page.touchscreen.tap(client.x,client.y);
+}
+async function closeModal(){if(await page.locator('#modal-root').isVisible())await touch(page.locator('#modal-root [data-close]').first());}
+async function pauseAndSave(){
+ await closeModal();await touch(page.locator('[data-open="menu"]'));await touch(page.locator('#modal-root [data-open="settings"]'));
+ if(await page.locator('.time-button').getAttribute('aria-label')!=='시간 계속')await touch(page.locator('#modal-root [data-pause]'));
+ await touch(page.locator('#modal-root [data-save]'));await closeModal();assert.equal(await page.locator('.time-button').getAttribute('aria-label'),'시간 계속');
+}
+async function settled(){
+ await page.evaluate(()=>{window.__shopLast=null;window.__shopStable=0;});await page.waitForFunction(()=>{const d=document.querySelector('#world')?.dataset;if(!d?.sceneGeometry||!d.freeMovement)return false;const g=JSON.parse(d.sceneGeometry),m=JSON.parse(d.freeMovement),last=window.__shopLast;if(last?.at===m.frameAt)return false;window.__shopLast={at:m.frameAt,dx:g.dx,dy:g.dy,scale:g.scale};window.__shopStable=last&&Math.abs(g.dx-last.dx)<.25&&Math.abs(g.dy-last.dy)<.25&&Math.abs(g.scale-last.scale)<.0005?window.__shopStable+1:0;return window.__shopStable>=3;},null,{timeout:5000});
+}
+async function shot(label){await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});const path=`artifacts/v${version}-shop-${diagnosticOnly?'diagnostic-':''}${String(receipt.screenshots.length+1).padStart(2,'0')}-${label}.png`;await page.screenshot({path,fullPage:true});const bytes=await readFile(path);receipt.screenshots.push({path,bytes:bytes.length,sha256:sha(bytes)});}
+async function begin(width,height,input){
+ currentCase=`${width}x${height}`;context=await browser.newContext({viewport:{width,height},isMobile:true,hasTouch:true,deviceScaleFactor:2,reducedMotion:width===390?'no-preference':'reduce'});
+ await context.addInitScript(save=>{if(sessionStorage.getItem('shop-fixture-installed'))return;save.lastSaved=Date.now();localStorage.setItem('road-haven-save-v1',JSON.stringify(save));sessionStorage.setItem('shop-fixture-installed','true');},input.save);
+ page=await context.newPage();page.on('pageerror',error=>receipt.errors.push({case:currentCase,message:error.message}));page.on('response',r=>{if(r.status()>=400&&['script','stylesheet','image','font'].includes(r.request().resourceType()))receipt.failedAssets.push({case:currentCase,status:r.status(),url:r.url()});});
+ await page.goto(baseUrl,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.querySelector('#world')?.dataset.freeMovement&&!document.querySelector('[data-startup-patch]')&&!document.querySelector('#app')?.inert,null,{timeout:15000});await pauseAndSave();await settled();
+ const loaded=await saved();assert.deepEqual(nonClock(loaded),nonClock(input.save),'startup preserves entire non-clock save including pending timestamps and animal HP/XP');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no horizontal page overflow');receipt.fixtures.push({viewport:{width,height},...input,loaded});
+ const f=await frame();assert.equal(f.hits.some(h=>h.kind==='crate'),false);assert.equal(f.movement.world.obstacles.some(o=>o.kind==='crate'),false,'removed crate has no physical collision');receipt.crateRemovals.push({case:currentCase,frame:f});await shot(`${width}-crate-removed`);
+}
+async function shop(tab='seeds'){
+ if(!await page.locator('[data-shop-tab]').first().isVisible()){await closeModal();await touch(page.locator('.game-nav [data-nav="shop"]'));}
+ await touch(page.locator(`.shop-tabs [data-shop-tab="${tab}"]`));assert.equal(await page.locator(`.shop-tabs [data-shop-tab="${tab}"]`).getAttribute('aria-pressed'),'true');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+}
+async function qty(quantity){await touch(page.locator(`[data-shop-qty="${quantity}"]`));assert.equal(await page.locator(`[data-shop-qty="${quantity}"]`).getAttribute('aria-pressed'),'true');}
+async function preview(kind,item,quantity=1){await shop({seed:'seeds',pet:'pets',outfit:'outfits',sale:'sell'}[kind]);if(kind==='sale'||kind==='seed')await qty(quantity);await touch(page.locator(`[data-shop-buy-kind="${kind}"][data-shop-item="${item}"]`));}
+async function transaction(kind,item,quantity=1){
+ const before=await saved(),expected=domain(kind,before,item,quantity);assert.equal(expected.ok,true);await preview(kind,item,quantity);
+ await touch(page.locator(`[data-shop-confirm-kind="${kind}"][data-shop-item="${item}"][data-shop-quantity="${quantity}"]`));const after=await saved();assert.deepEqual(stable(after),stable(expected.state),'native confirmation commits exactly one actual domain transition');receipt.transactions.push({case:currentCase,kind,item,quantity,before,after});return after;
+}
+async function guardsAndSeed(){
+ const before=await saved();for(const tab of['seeds','pets','outfits','sell']){await shop(tab);if(page.viewportSize().width===390)await shot(`390-shop-${tab}`);}
+ await shop('pets');for(const id of['dog','cat']){assert.equal(await page.locator(`[data-shop-buy-kind="pet"][data-shop-item="${id}"]`).count(),0,'free existing pet has no repeat purchase');assert.equal(await page.locator(`[data-shop-product="${id}"] [data-open="pet"]`).count(),1,'existing pet offers genuine formation');}
+ for(const[kind,item]of[['outfit','garden'],['seed','corn']]){await preview(kind,item);assert.equal(await page.locator(`[data-shop-confirm-kind="${kind}"]`).isDisabled(),true,'zero coins prevent actual purchase');await touch(page.locator('[data-shop-confirm-kind]'));assert.deepEqual(stable(await saved()),stable(before),'native disabled confirmation never charges or grants');await touch(page.locator('[data-shop-back]'));}
+ await shop('seeds');assert.equal(await page.locator('[data-shop-buy-kind="seed"]').count(),6,'six actual seed varieties available');
+ await shop('sell');for(const quantity of[1,5,10])await qty(quantity);await preview('sale','food',10);await touch(page.locator('[data-shop-back]'));assert.deepEqual(stable(await saved()),stable(before),'native cancel and all previews grant no coins or goods');receipt.guards.push({case:currentCase,kind:'zero-coins-disabled-confirmation-existing-pets-cancelled-sale',before,after:await saved()});
+ await transaction('sale','food',10);await transaction('seed','corn',5);await shot(`${page.viewportSize().width}-seeds-purchased`);
+}
+async function outfitPaint(expected){
+ await closeModal();await settled();const f=await frame(),paint=f.outfit;assert.equal(paint.outfit,expected);assert.equal(paint.gender,(await saved()).gender);assert.equal(paint.imageReady,true,'actual character atlas decoded before outfit verification');
+ if(expected!=='default'){assert.ok(paint.layers.length>=2,'actual canvas contains hat and body clothing layers');assert.ok(paint.layers.every(layer=>layer.paths>0),'layers recorded after actual Canvas Path2D draws');}else assert.deepEqual(paint.layers,[],'default clothing has no purchased overlays');
+ const portrait=await page.locator('#profile [data-outfit]').getAttribute('data-outfit');assert.equal(portrait,expected,'actual portrait follows selected equipped clothing');receipt.outfits.push({case:currentCase,paint,portrait,frame:f});await shot(`390-${paint.gender}-${expected}`);
+}
+async function outfitAndAdoption(){
+ // Funding is entirely visible native confirmed sales of declared unearned food.
+ for(let i=0;i<8;i++)await transaction('sale','food',10);
+ for(const id of['garden','road','explorer']){await transaction('outfit',id);await shop('outfits');assert.equal(await page.locator(`[data-shop-buy-kind="outfit"][data-shop-item="${id}"]`).count(),0,'owned outfit cannot be purchased twice');const before=await saved(),expected=domain('equip',before,id);await touch(page.locator(`[data-shop-equip="${id}"]`));assert.deepEqual(stable(await saved()),stable(expected.state));receipt.transactions.push({case:currentCase,kind:'equip',item:id,before,after:await saved()});await outfitPaint(id);}
+ const beforeGender=await saved();await touch(page.locator('[data-open="character"]'));await touch(page.locator('[data-gender="female"]'));await touch(page.locator('[data-start]'));
+ assert.deepEqual(stable(await saved()),stable({...beforeGender,gender:'female'}),'gender change preserves shared wardrobe and independent male clothing');receipt.transactions.push({case:currentCase,kind:'gender',item:'female',before:beforeGender,after:await saved()});await outfitPaint('default');
+ await shop('outfits');const beforeEquip=await saved(),equip=domain('equip',beforeEquip,'garden');await touch(page.locator('[data-shop-equip="garden"]'));assert.deepEqual(stable(await saved()),stable(equip.state),'shared owned outfit equips second gender without repayment');receipt.transactions.push({case:currentCase,kind:'equip',item:'garden',before:beforeEquip,after:await saved()});await outfitPaint('garden');
+ const adopted=await transaction('pet','rabbit');assert.equal(adopted.deckLevel,1,'early adoption happens before normal deck unlock');await shop('pets');assert.equal(await page.locator('[data-shop-buy-kind="pet"][data-shop-item="rabbit"]').count(),0,'owned adopted pet cannot be purchased twice');
+ await touch(page.locator('#modal-root [data-shop-product="rabbit"] [data-open="pet"]'));assert.equal(await page.locator('[data-team-toggle="rabbit"]').isDisabled(),false,'paid early pet is genuinely available for formation');const before=await saved(),expected=domain('team',before,JSON.stringify(['dog','cat','rabbit']));assert.equal(expected.ok,true);await touch(page.locator('[data-team-toggle="rabbit"]'));assert.deepEqual(stable(await saved()),stable(expected.state),'native formation persists actual acquired animal without HP/XP grants');receipt.pets.push({case:currentCase,adopted,formation:await saved()});await closeModal();
+}
+async function boughtSeedPlant(){
+ await touch(page.locator('[data-nav="farm"]'));await touch(page.locator('#farm-tray [data-quick="plant"]'));await touch(page.locator('[data-select-seed="corn"]'));await settled();
+ const before=await saved(),expected=domain('plant',before);assert.equal(expected.ok,true);const f=await frame(),hit=f.hits.find(h=>h.kind==='farm'&&h.plotId===3);assert.ok(hit,'actual empty farm exists');const client={x:f.rect.x+f.geometry.dx+hit.x*f.geometry.scale,y:f.rect.y+f.geometry.dy+hit.y*f.geometry.scale};assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.id==='world',client),true,'real empty plot touch reaches map');
+ await page.locator('#world').evaluate(canvas=>{window.__shopPlant=[];window.__shopPlantObserver=new MutationObserver(()=>{const action=JSON.parse(canvas.dataset.sceneAction),outfit=JSON.parse(canvas.dataset.survivorOutfit);if(action.kind==='plant'&&action.phase==='working')window.__shopPlant.push({at:performance.now(),action,outfit});});window.__shopPlantObserver.observe(canvas,{attributes:true,attributeFilter:['data-scene-action','data-survivor-outfit']});});
+ receipt.inputs.push({case:currentCase,kind:'native-map-plant',client,hit});const started=Date.now();await page.touchscreen.tap(client.x,client.y);await page.waitForFunction(()=>JSON.parse(localStorage.getItem('road-haven-save-v1')).plots.find(p=>p.id===3)?.plantedAt!==null,null,{timeout:16000});assert.deepEqual(stable(await saved()),stable(expected.state),'actual bought seed enters ordinary animated planting exactly once at unchanged 2× pace');
+ const work=await page.evaluate(()=>{window.__shopPlantObserver.disconnect();return window.__shopPlant;});assert.ok(work.some(f=>f.outfit.pose==='sow'&&f.outfit.outfit==='garden'&&f.outfit.layers.length>=2),'owned clothing is actually drawn during ordinary seed-sowing animation');assert.ok(work.every(f=>f.action.work===.75),'actual original1.5sec sowing work retains shared2× speed');receipt.transactions.push({case:currentCase,kind:'plant',item:'corn',before,after:await saved(),elapsedMs:Date.now()-started,work});await page.waitForFunction(()=>!document.querySelector('#app')?.hasAttribute('aria-busy'),null,{timeout:16000});await touch(page.locator('[data-plant-cancel]'));await shot('390-bought-corn-planted');
+}
+async function reloadAndBattle(full){
+ await closeModal();const before=await saved();await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.querySelector('#world')?.dataset.freeMovement&&!document.querySelector('[data-startup-patch]'),null,{timeout:15000});await pauseAndSave();assert.deepEqual(nonClock(await saved()),nonClock(before),'reload preserves exact shopping, clothing, pet roster, crops and production timestamps');receipt.fixtures.at(-1).reload={before,after:await saved()};
+ if(!full)return;await outfitPaint('garden');await touch(page.locator('[data-nav="hunt"]'));const state=await saved(),expected=domain('hunt',state);assert.equal(expected.ok,true);await touch(page.locator('[data-start-hunt]'));await page.waitForFunction(()=>document.querySelector('.battle-screen canvas')?.dataset.battleActors&&document.querySelector('.battle-screen canvas')?.dataset.battleArtReady==='true',null,{timeout:10000});assert.deepEqual(stable(await saved()),stable(expected.state),'real hunt entry consumes actual cost and includes paid early pet');const actors=await page.locator('.battle-screen canvas').evaluate(canvas=>JSON.parse(canvas.dataset.battleActors));assert.deepEqual(actors.map(a=>a.id).sort(),['cat','dog','rabbit']);receipt.pets.at(-1).battle={pending:await saved(),actors};await shot('390-adopted-rabbit-battle');
+}
+try{
+ await mkdir('artifacts',{recursive:true});if(finalSnapshot){const manifest=JSON.parse(await readFile(executionInputs.snapshotManifestPath,'utf8'));assert.equal(manifest.snapshotId,snapshotId);assert.equal(manifest.version,version);for(const[path,hash]of Object.entries(manifest.files)){const url=new URL(path,new URL('/',baseUrl)),response=await fetch(url);assert.equal(response.status,200);const bytes=Buffer.from(await response.arrayBuffer());assert.equal(sha(bytes),hash);receipt.httpIdentity.push({path,url:String(url),bytes:bytes.length,sha256:hash});}}
+ const fresh=await fixture(),legacy=await fixture(true);browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH??'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+ for(const[width,height]of[[344,740],[360,800],[390,844],[844,390]]){await begin(width,height,width===844?legacy:fresh);await guardsAndSeed();if(width===390){await outfitAndAdoption();await boughtSeedPlant();}if(width===844){await shop('pets');for(const id of['rabbit','fox','boar','owl'])assert.equal(await page.locator(`[data-shop-buy-kind="pet"][data-shop-item="${id}"]`).count(),0,'all deck-earned pets stay owned without repayment');}await reloadAndBattle(width===390);await context.close();context=null;console.log(`PASS ${width}x${height}: real shop inputs, domain accounting, crate removal and exact reload.`);}
+ assert.equal(receipt.crateRemovals.length,4);assert.equal(receipt.outfits.length,6);assert.equal(receipt.pets.length,1);assert.deepEqual(receipt.errors,[]);assert.deepEqual(receipt.failedAssets,[]);receipt.status='passed';
+}catch(error){receipt.status='failed';receipt.failure={case:currentCase,message:String(error),stack:error.stack};process.exitCode=1;if(page){try{receipt.failure.save=await saved();receipt.failure.frame=await frame();await shot('failure');}catch(e){receipt.failure.captureError=String(e);}}}
+finally{if(browser)await browser.close();receipt.finishedAt=new Date().toISOString();receipt.assertionsExecuted=assertionsExecuted;const path=`artifacts/shop-v${version}${diagnosticOnly?'-diagnostic':''}-verification.json`;await writeFile(path,JSON.stringify(receipt,null,2));console.log(JSON.stringify({status:receipt.status,assertionsExecuted,receipt:path,error:receipt.failure?.message}));}

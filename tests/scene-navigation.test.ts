@@ -58,7 +58,20 @@ test('projected ground identifies empty floors and rejects beds, buildings, rail
     assert.equal(groundLocation(world,projectDeckPoint(p)),undefined);
   assert.equal(groundLocation(world,projectDeckPoint([-238,-104]))?.surface,'deck','the removed cottage no longer blocks empty deck');
   assert.equal(groundLocation(world,[270,655])?.surface,'road');
-  for(const p of [[97,601],[184,564],[999,999],[NaN,20]]as NavigationPoint[])assert.equal(groundLocation(world,p),undefined);
+  for(const p of [[97,601],[999,999],[NaN,20]]as NavigationPoint[])assert.equal(groundLocation(world,p),undefined);
+  assert.deepEqual(groundLocation(world,[184,564]),road(184,564),'removed crate leaves no invisible obstacle');
+});
+
+test('the former road crate allows whole bodies to reach its space while remaining trees still block',()=>{
+  for(const radius of[7,24.82,25.74,30.8]){
+    const world=createNavigationWorld(1,3,[],{radius});
+    assert.equal(world.obstacles.some(obstacle=>obstacle.kind==='crate'),false);
+    assert.deepEqual(groundLocation(world,[184,564]),road(184,564));
+    assert.equal(groundLocation(world,[97,601]),undefined,'tree collision remains active');
+    const start=road((world.road.left+world.road.right)/2,(world.road.top+world.road.bottom)/2);
+    assert.ok(groundLocation(world,start.point),'the actual road interior starts clear for this whole body');
+    assertClear(world,requirePath(world,start,road(184,564)));
+  }
 });
 
 test('all three paid deck planes allow a direct walk through former cottage space regardless of legacy home metadata',()=>{

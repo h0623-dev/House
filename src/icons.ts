@@ -1,4 +1,5 @@
-import { portraitCrops, survivorAtlasUrl } from './character-art';
+import { survivorOutfitPortrait } from './outfit-art';
+import type { EquippedOutfitId } from './shop';
 import itemAtlasUrl from './assets/items-anime.png';
 import skillsFarmAtlasUrl from './assets/skills-farm-anime.png';
 
@@ -73,9 +74,6 @@ export function icon(name:string, cls=''):string {
  }
  return `<svg class="icon glyph-icon ${cls}" viewBox="0 0 24 24" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]??paths.sparkle}</svg>`;
 }
-export function portrait(gender: 'male' | 'female', cls = ''): string {
-  const crop = portraitCrops[gender];
-  // Inline SVG preserves the existing responsive portrait API while cropping
-  // the full-resolution illustration without extra requests or raster edits.
-  return `<svg class="portrait ${cls}" viewBox="${crop.x} ${crop.y} ${crop.size} ${crop.size}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="border-radius:20%;overflow:hidden"><rect x="${crop.x}" y="${crop.y}" width="${crop.size}" height="${crop.size}" rx="${crop.size*.2}" fill="${crop.backdrop}"/><circle cx="${crop.x+crop.size*.74}" cy="${crop.y+crop.size*.2}" r="${crop.size*.38}" fill="#fff9e5" opacity=".52"/><image href="${survivorAtlasUrl}" x="0" y="0" width="1536" height="1024"/></svg>`;
+export function portrait(gender: 'male' | 'female', cls = '', outfit: EquippedOutfitId='default'): string {
+  return survivorOutfitPortrait(gender,outfit,cls);
 }

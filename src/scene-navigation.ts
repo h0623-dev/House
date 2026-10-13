@@ -51,8 +51,7 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}
   obstacles.push({surface:'road',kind:'tree',bounds:{left:63,top:576,right:127,bottom:624}},
-    {surface:'road',kind:'tree',bounds:{left:12,top:559,right:55,bottom:583}},
-    {surface:'road',kind:'crate',bounds:{left:166,top:552,right:201,bottom:575}});
+    {surface:'road',kind:'tree',bounds:{left:12,top:559,right:55,bottom:583}});
   const front=getFloorBounds(level).front,ladder={entry:projectDeckPoint([-225,front-60]),top:projectDeckPoint([-225,front-3]),bottom:[140,527]as NavigationPoint};
   const links:NavigationLink[]=[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry]}];
   for(const upper of ids.filter(id=>id>1)){

@@ -1,4 +1,6 @@
 import { heroFrame, heroImages, type SurvivorFrame } from './character-art';
+import { drawSurvivorOutfit, type OutfitDrawLayer } from './outfit-art';
+import type { EquippedOutfitId } from './shop';
 
 /** The village and expeditions share one compact, painted survivor. */
 export type HeroPose = 'idle' | 'walk' | 'climb' | 'gather' | 'sow' | 'water' | 'harvest' | 'chop' | 'attack' | 'skill' | 'hurt' | 'celebrate';
@@ -6,7 +8,9 @@ export interface HeroOptions {
   x: number; y: number; scale: number; time: number;
   gender: 'female' | 'male'; pose: HeroPose; facing: 1 | -1; progress?: number;
   climbing?: 'up' | 'down';
+  outfit?: EquippedOutfitId;
 }
+export interface HeroDrawResult { outfit: EquippedOutfitId; gender: 'female' | 'male'; frame: string; imageReady: boolean; layers: OutfitDrawLayer[] }
 const TAU = Math.PI * 2;
 const WORK_POSES = new Set<HeroPose>(['gather', 'sow', 'water', 'harvest', 'chop']);
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
@@ -75,12 +79,13 @@ function drawIllustration(c: CanvasRenderingContext2D, frame: SurvivorFrame): vo
 }
 
 /** x/y are the soles; a standing survivor is 128 world pixels at scale 1. */
-export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
+export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawResult {
   const frame = heroFrame(o.gender, o.pose, o.time, o.progress, o.climbing);
   const image = heroImages[frame.sheet];
+  const outfit=o.outfit??'default',frameId=`${frame.sheet}:${frame.x}`;
   if (!image.complete || !image.naturalWidth) {
     drawLoadingHero(c, o);
-    return;
+    return {outfit,gender:o.gender,frame:frameId,imageReady:false,layers:[]};
   }
   const t = o.time, walking = o.pose === 'walk', climbing = o.pose === 'climb', working = WORK_POSES.has(o.pose);
   const combat = o.pose === 'attack' || o.pose === 'skill';
@@ -101,6 +106,7 @@ export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
   if (o.pose === 'hurt') c.globalAlpha *= .72 + Math.abs(Math.sin(t * 16)) * .28;
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
   drawIllustration(c, frame);
+  const layers=drawSurvivorOutfit(c,o.gender,frame,outfit);
 
   const unit = 128 / (frame.referenceHeight ?? frame.footY - frame.y);
   const originX = frame.effectAnchor ? (frame.effectAnchor.x - frame.footX) * unit : 25;
@@ -151,4 +157,5 @@ export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): void {
     c.beginPath(); c.ellipse(18, -60, 39, 31, -.4, -1.1, 1.2); c.stroke(); c.restore();
   }
   c.restore();
+  return {outfit,gender:o.gender,frame:frameId,imageReady:true,layers};
 }
