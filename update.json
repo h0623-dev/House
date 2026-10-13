@@ -1,9 +1,9 @@
 {
-  "version": "0.27.0",
-  "versionCode": 27,
+  "version": "0.28.0",
+  "versionCode": 28,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.27.0-debug.apk",
-  "sha256": "b1b26fdc6800fe16250301755b5e28f5dd788720d64a2ff968ef9a1424e36647",
-  "notes": "농장 관리와 성장 목표를 연결하고 트럭 주변의 이동 범위를 넓혔습니다. 직접 내려가 채집하고 농사·생산·마을 성장을 이어갑니다. 기존 저장·2배 속도·의상과 동료·자동 패치를 유지합니다.",
-  "publishedAt": "2026-10-13T13:15:41.140Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.28.0-debug.apk",
+  "sha256": "b85c69effb96e37d8c539c69437dfa2066be1049d4307aacc7c76908e51cc4de",
+  "notes": "지상에서도 확대율을 유지하며 주인공을 따라가도록 카메라를 개선했습니다. 주인공이 여닫는 동물 전용 경사로를 추가해 동료가 자연스럽게 트럭과 지상을 오갑니다. 기존 저장·2배 속도·자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-13T17:03:45.100Z"
 }
