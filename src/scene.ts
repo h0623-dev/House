@@ -21,22 +21,25 @@ import { type MotionRoute } from './scene-motion';
 import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-gestures';
 import { fitVillageCamera, getVillageContentBounds, VILLAGE_FACILITY_SIZE } from './village-camera';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
-  sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, distanceToSegment, getPatrolTargets, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
+  sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
   type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld } from './scene-navigation';
 import itemAtlasUrl from './assets/items-anime.png';
 import { layoutProductionBubbles } from './production-bubble-layout';
+import { OUTDOOR_SITES, getOutdoorSite, type OutdoorSiteId } from './outdoor-sites';
+import { getFarmPlotCare } from './farm-economy';
+import { getRoadsideSite } from './roadside';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
-type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number };
-type SceneAction = 'plant' | 'water' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade';
-type FarmAction = 'plant' | 'water' | 'harvest';
+type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
+type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number; siteId?:OutdoorSiteId };
+type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade';
+type FarmAction = 'plant' | 'water' | 'fertilize' | 'harvest';
 type PlanningMode = 'catalog' | 'placement' | 'expansion';
 type WorldBounds = { left: number; top: number; right: number; bottom: number };
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
-const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
+const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'fertilize' || kind === 'harvest';
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; outdoorSiteId?:OutdoorSiteId; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
 const CHORE_STALL_TIMEOUT=16;
 // Residents fit comfortably beside the truck's facilities and planters.
 // Compact painted residents sit between the crops and miniature buildings.
@@ -280,8 +283,15 @@ export class Scene {
     const workTree = candidates.find(item => item.kind === 'grove-work');
     const slots = candidates.filter(item => item.kind === 'build-slot').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
-    const hit = this.constructionMode ? slots[0] : facilityAction ?? foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1];
-    const target = groundLocation(this.navigationWorld(), [x,y]);
+    const roadEntry=candidates.find(item=>item.kind==='road-entry'),outdoorSite=candidates.find(item=>item.kind==='outdoor-site'),
+      outdoors=this.currentHeroLocation().surface==='road',world=this.navigationWorld();
+    if(roadEntry&&!this.constructionMode){
+      this.walkTo(outdoors?{surface:'deck',floor:1,point:[...world.ladder.entry]}:{surface:'road',point:[...world.ladder.bottom]});return;
+    }
+    const hit = this.constructionMode ? slots[0] : outdoorSite ?? (outdoors
+      ?foreground??workTree??candidates.find(item=>item.kind==='grove')
+      :facilityAction ?? foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1]);
+    const target = groundLocation(world, [x,y],this.activeFloor,outdoors?'road':undefined);
     // The truck cab remains interactive; its broad legacy hit circle must not
     // turn a real empty deck tile into the expansion menu.
     if (hit && (hit.kind !== 'truck' || !target)) { this.focus(hit.kind); this.onSelect(hit.kind, hit.plotId); }
@@ -299,7 +309,7 @@ export class Scene {
   constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable, plotId?: number) => void) {
     this.ctx = canvas.getContext('2d')!;
     canvas.style.touchAction = 'none';
-    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 텃밭과 반려견, 캐릭터, 도로 옆 벌목장을 눌러 보세요.');
+    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 빈 바닥을 눌러 트럭 밑과 도로를 걸어요. 사다리와 텃밭, 동료, 도로 채집 장소를 눌러 보세요.');
     canvas.addEventListener('pointerdown', this.pointerDown);
     canvas.addEventListener('pointermove', this.pointerMove);
     canvas.addEventListener('pointerup', this.pointer);
@@ -384,6 +394,15 @@ export class Scene {
   }
   getMapMoveMode() { return this.mapMoveMode; }
   isWalking() { return this.freeWalk !== null; }
+  /** HUD buttons use the same physical routes as native ground taps. */
+  walkOntoRoad() {
+    if(this.activeFloor!==1)this.setActiveFloor(1);
+    this.walkTo({surface:'road',point:[...this.navigationWorld().ladder.bottom]});
+  }
+  walkToTruck() {
+    if(this.activeFloor!==1)this.setActiveFloor(1);
+    this.walkTo({surface:'deck',floor:1,point:[...this.navigationWorld().ladder.entry]});
+  }
   /** Menu, battle and tool boundaries retain the current feet, never reset home. */
   stopWalking() {
     if (!this.freeWalk) return;
@@ -505,6 +524,29 @@ export class Scene {
     if (!this.action && zone !== this.zone) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zone = zone; this.villageOverview = false; }
     if (recenter) this.resetMapView();
   }
+  /** Recenter the real roadside place; opening its information never moves feet. */
+  focusOutdoorSite(id:OutdoorSiteId) {
+    const site=getOutdoorSite(id);if(!site||this.action)return;
+    if(this.activeFloor!==1)this.setActiveFloor(1);
+    this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
+    this.mapPan=[0,0];this.mapZoom=1;this.manualViewport=[640,420];
+    this.camera={x:site.point[0],y:site.point[1]-42,zoom:1};this.cameraFocusRequested=false;
+    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange',{detail:{zoom:this.mapZoom}}));this.render();
+  }
+  /** Rewards belong to the controller and can commit only after actual work finishes. */
+  playOutdoorAction(kind:'chop'|'gather',id:OutdoorSiteId):Promise<void> {
+    if(this.disposed)return Promise.resolve();
+    if(this.action)return Promise.reject(new Error('이미 행동 중이에요.'));
+    const site=getOutdoorSite(id);if(!site||site.kind!==kind)return Promise.reject(new Error('채집 장소를 확인해 주세요.'));
+    this.stopWalking();
+    const navigation=planWorkNavigation(this.choreWorld(),this.heroLocation,site.approaches.map(point=>({surface:'road',point:[...point]})));
+    if(!navigation)return Promise.reject(new Error('채집 장소로 가는 길이 막혔어요. 동료를 회복시키거나 빈 길로 이동해 주세요.'));
+    const route=navigation.motion,walk=route.duration,work=realDuration(kind==='chop'?2.55:2.4);
+    if(kind==='chop')this.treeCutAt=-100;
+    this.zone='home';this.lastFrame=performance.now();
+    return new Promise((resolve,reject)=>{this.action={kind,elapsed:0,duration:walk+work+navigation.returnMotion.duration,
+      walk,work,path:navigation.points,route,navigation,plotIndex:0,cropId:'carrot',outdoorSiteId:id,stalled:0,yieldAt:0,resolve,reject};});
+  }
   /** Resolves only after the visible walk, work and return have finished. */
   playAction(kind: SceneAction, plotId?: number, selectedCropId?: CropId): Promise<void> {
     if (this.disposed) return Promise.resolve();
@@ -517,7 +559,7 @@ export class Scene {
     const cropId = kind === 'plant' ? selectedCropId ?? this.plantingCropId : getPlotCropId(state?.plots[plotIndex] ?? { id: 0, plantedAt: null, watered: false });
     const [u, v] = this.plotPosition(plotIndex);
     let target: NavigationLocation = { surface: 'deck', floor:1, point: projectDeckPoint([u - 13,v + 39],1) };
-    let work = kind === 'expandFarm' ? 1.8 : kind === 'water' ? 1.5 : kind === 'harvest' ? 1.65 : 1.5;
+    let work = kind === 'expandFarm' ? 1.8 : kind === 'fertilize' ? 1.8 : kind === 'water' ? 1.5 : kind === 'harvest' ? 1.65 : 1.5;
     if (kind === 'chop' || kind === 'gather') {
       target = { surface: 'road', point: kind === 'chop' ? [142,590] : [211,578] };
       work = kind === 'chop' ? 2.55 : 2.4;
@@ -692,7 +734,8 @@ export class Scene {
     if (this.canvas.dataset.settlementSlots !== encoded) this.canvas.dataset.settlementSlots = encoded;
     const plots = (this.activeFloor===1?this.state?.plots??[]:[]).slice(0, FARM_POSITIONS.length).map((plot, index) => {
       const [u, v] = this.plotPosition(index), point = this.p(u + 35, v + 36, 112);
-      return { id: plot.id, x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale) };
+      return { id: plot.id, x: round(this.dx + point[0] * this.scale), y: round(this.dy + point[1] * this.scale),
+        fertilized:this.state?getFarmPlotCare(this.state,plot).fertilized:false,yieldAmount:this.state?getFarmPlotCare(this.state,plot).yieldAmount:null };
     });
     const farmGeometry = JSON.stringify(plots);
     if (this.canvas.dataset.farmPlots !== farmGeometry) this.canvas.dataset.farmPlots = farmGeometry;
@@ -704,6 +747,7 @@ export class Scene {
   private eligibleFarmPlot(plot: Plot) {
     if (this.farmMode === 'plant') return plot.plantedAt === null;
     if (this.farmMode === 'water') return plot.plantedAt !== null && !plot.watered;
+    if (this.farmMode === 'fertilize') return this.state!==null&&getFarmPlotCare(this.state,plot).canFertilize;
     return this.farmMode === 'harvest' && this.state !== null && getCropProgress(this.state, plot) >= 1;
   }
   private paintFarmPoint(clientX: number, clientY: number, swiping: boolean) {
@@ -802,6 +846,7 @@ export class Scene {
           // An explicit corridor exit has priority until its actual feet arrive.
           // Following the hero's new floor must not cancel it halfway out.
           motion.desiredFloor=hero.floor??1;
+          motion.desiredSurface=hero.surface==='road'?'road':'deck';
           const key=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
           if(motion.route!==yielding.route||key!==motion.worldKey){
             const blocker=actors.find(actor=>motion.blockedReason===`actor:${actor.id}`);
@@ -857,7 +902,9 @@ export class Scene {
       ??planNavigation(this.choreWorld(),this.heroLocation,target);
     if(!navigation)return;
     if(navigation.motion.duration<.001){this.stopWalking();return;}
-    this.holdCamera();
+    if(target.surface==='road'||this.heroLocation.surface==='road'){
+      this.manualViewport=null;this.mapPan=[0,0];this.villageOverview=false;
+    }else this.holdCamera();
     this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0};
     this.lastFrame=performance.now();this.publishWalking();this.render();
   }
@@ -893,7 +940,7 @@ export class Scene {
       returnPoint: action ? { x: action.navigation.returnLocation.point[0], y: action.navigation.returnLocation.point[1], surface: action.navigation.returnLocation.surface, floor:action.navigation.returnLocation.floor??1 } : null,
       returnWalk: round(action?.navigation.returnMotion.duration ?? 0),
       route: action?.navigation.points.map(point => ({ x: point[0], y: point[1] })) ?? [], climbSegments: action?.navigation.climbSegments ?? [],
-      floor:this.currentHeroLocation().floor??1,blockedReason:this.blockedReason,facilitySlot: action?.facilitySlot ?? null, facilityId: action?.facilitySlot === undefined || !this.state ? null : getSettlement(this.state).buildings.find(building => building.slot === action.facilitySlot)?.id ?? null,
+      floor:this.currentHeroLocation().floor??1,blockedReason:this.blockedReason,outdoorSiteId:action?.outdoorSiteId??null,facilitySlot: action?.facilitySlot ?? null, facilityId: action?.facilitySlot === undefined || !this.state ? null : getSettlement(this.state).buildings.find(building => building.slot === action.facilitySlot)?.id ?? null,
       pose: hero.pose, climbing: hero.climbing ?? null, progress: round(hero.progress),
       x: round(hero.point[0]), y: round(hero.point[1]), gaitTime: round(hero.time) });
     const progress = action ? Math.min(100, Math.floor(action.elapsed / action.duration * 100)) : 0;
@@ -928,7 +975,7 @@ export class Scene {
       const motion = sampleNavigation(action.navigation, action.elapsed - action.walk - action.work, true);
       return { ...motion, time: motion.distance / 86 };
     }
-    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather' };
+    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather' };
     return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
       progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
@@ -1000,9 +1047,10 @@ export class Scene {
       const amount = Math.min(entry, exit);
       const targetPoint = action.path[action.path.length - 1];
       const logging = action.kind === 'chop' || action.kind === 'gather';
-      const focusX = logging ? 160 : targetPoint[0] + 35;
-      const focusY = logging ? 523 : targetPoint[1] - 45;
-      const zoom = action.kind === 'expand' ? 1.08 : logging ? 2.2 : 1.78;
+      const outdoorSite=action.outdoorSiteId?getOutdoorSite(action.outdoorSiteId):undefined;
+      const focusX = outdoorSite?outdoorSite.point[0]:logging ? 160 : targetPoint[0] + 35;
+      const focusY = outdoorSite?outdoorSite.point[1]-44:logging ? 523 : targetPoint[1] - 45;
+      const zoom = action.kind === 'expand' ? 1.08 : outdoorSite?1.55:logging ? 2.2 : 1.78;
       target = { x: target.x + (focusX - target.x) * amount, y: target.y + (focusY - target.y) * amount, zoom: target.zoom + (zoom - target.zoom) * amount };
     }
     const blend = this.reducedMotion ? .6 : .13;
@@ -1047,6 +1095,16 @@ export class Scene {
       const village=fitVillageCamera(bounds,availableWidth,availableHeight);
       viewWidth=village.width;viewHeight=village.height;target={x:village.x,y:village.y,zoom:village.zoom};
     }
+    const resident=this.currentHeroLocation(),outdoorWalk=this.freeWalk&&
+      (this.freeWalk.navigation.target.surface==='road'||this.freeWalk.navigation.start.surface==='road');
+    if(this.activeFloor===1&&!this.action&&!showFarm&&!this.planningMode&&!this.constructionMode&&!this.villageOverview
+      &&(resident.surface==='road'||outdoorWalk)){
+      const point=resident.point,destination=this.freeWalk?.navigation.target.point??point,
+        direction:Point=[destination[0]-point[0],destination[1]-point[1]],length=Math.hypot(...direction),
+        lookAhead=length?Math.min(70,length)/length:0,scale=Math.min(.9,availableWidth/560,availableHeight/360);
+      viewWidth=availableWidth/scale;viewHeight=availableHeight/scale;
+      target={x:point[0]+direction[0]*lookAhead,y:point[1]-35+direction[1]*lookAhead,zoom:1};
+    }
     const planning = this.planningBounds();
     if (planning) {
       viewWidth = planning.right - planning.left;
@@ -1058,7 +1116,9 @@ export class Scene {
     if (this.manualViewport) [viewWidth, viewHeight] = this.manualViewport;
     this.cameraViewport = [viewWidth, viewHeight];
     // One user-controlled magnification works on the truck, farm, grove and during chores.
-    this.mapPanLimit = [viewWidth * .6, viewHeight * .6];
+    const road=this.activeFloor===1?getRoadBounds(this.state?.deckLevel??1):null;
+    this.mapPanLimit = [Math.max(viewWidth*.6,road?Math.max(target.x-road.left,road.right-target.x)+viewWidth*.35:0),
+      Math.max(viewHeight*.6,road?Math.max(target.y-road.top,road.bottom-target.y)+viewHeight*.35:0)];
     this.mapPan = [Math.max(-this.mapPanLimit[0], Math.min(this.mapPanLimit[0], this.mapPan[0])),
       Math.max(-this.mapPanLimit[1], Math.min(this.mapPanLimit[1], this.mapPan[1]))];
     target.x += this.mapPan[0]; target.y += this.mapPan[1]; target.zoom *= this.mapZoom;
@@ -1089,11 +1149,23 @@ export class Scene {
     this.layoutPaintGeometry=[];this.productionItems=[];
     this.heroDrawn = false;
     this.environment();
+    const cutaway=this.activeFloor===1&&this.roadUnderTruck();
+    // Every ground resident stays legible through the layered cutaway. Drawing
+    // before several translucent truck coats still hid nearly all of the body.
+    if(cutaway){c.save();c.globalAlpha*=.42;}
     this.truck();
+    if(cutaway)c.restore();
     this.foreground();
     if(this.activeFloor===1)this.loggingGrove();
+    if(this.activeFloor===1)this.outdoorSites();
     this.drawPets(false);
     if(this.freeWalk&&(this.freeWalk.navigation.target.floor??1)===this.activeFloor){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
+    if(cutaway&&this.currentHeroLocation().surface==='road'){
+      const[x,y]=this.heroState().point,pixel=1/this.scale;
+      this.ellipse(x,y+1,13*pixel,5*pixel,'#e6f0c85c','#f9f8d3',1.4*pixel);
+      this.round(x-17*pixel,y+10*pixel,34*pixel,16*pixel,8*pixel,'#f6fae4f0','#9eae7e');
+      this.label('지상',x,y+21*pixel,9*pixel,'#4c6d42',800);
+    }
     this.hero();
     this.workEffects();
     this.fireflies();
@@ -1101,6 +1173,14 @@ export class Scene {
     this.publishAction();
     this.publishWalking();
     this.canvas.dataset.sceneHits=JSON.stringify(this.hits.map(hit=>({...hit})));
+    this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway,truckOpacity:cutaway?.42:1,
+      roadActorLayer:cutaway&&this.currentHeroLocation().surface==='road'&&this.heroDrawn?'above-cutaway-truck':'normal-world-order',
+      sites:OUTDOOR_SITES.map((site,index)=>{const stock=this.state?getRoadsideSite(this.state,site.id):null;return{id:site.id,index,point:{x:site.point[0],y:site.point[1]},
+        x:this.dx+site.point[0]*this.scale,y:this.dy+(site.point[1]-72)*this.scale,resource:site.resource,approaches:site.approaches,
+        ready:stock?.ready??true,yieldAmount:stock?.yieldAmount??null,remainingSeconds:stock?.remainingSeconds??0,
+        bounds:[this.dx+site.point[0]*this.scale-24,this.dy+(site.point[1]-72)*this.scale-24,
+          this.dx+site.point[0]*this.scale+24,this.dy+(site.point[1]-72)*this.scale+24]};}),
+      ladderEntry:{x:this.dx+140*this.scale,y:this.dy+508*this.scale}});
     // Assets are cached before the next frame; the fallback never hides interactions.
     if (!worldArtReady()) this.label('그림을 불러오는 중…', 470, 45, 13, '#fff2d0');
   }
@@ -1218,6 +1298,12 @@ export class Scene {
       this.hits.unshift({kind: 'truck', x: center[0], y: center[1] + 55, radius: 97});
       this.pulse('truck', center[0], center[1] + 50, 71);
     }
+  }
+
+  private roadUnderTruck() {
+    const d=this.deckBounds(),polygons=[0,95].map(z=>[[d.left,d.back],[d.end,d.back],[d.end,d.front],[d.left,d.front]]
+      .map(([u,v])=>this.rawP(u,v,z))),actors=this.physicalActors();
+    return actors.some(actor=>actor.location.surface==='road'&&polygons.some(polygon=>circleOverlapsPolygon(actor.location.point,actor.radius,polygon)));
   }
 
   private expansionDeck() {
@@ -1424,6 +1510,11 @@ export class Scene {
         if (!drawCropSprite(this.ctx, cropId, 'plant', 0, 3, width, height)) drawWorldSprite(this.ctx, mature ? 'carrot' : medium ? 'carrotYoung' : 'sprout', 0, 3, width, height);
         this.ctx.restore();
       }
+      if(this.state&&getFarmPlotCare(this.state,plot).fertilized){
+        const point=this.p(u+35,v+67,120),pixel=1/this.scale;
+        this.round(point[0]-19*pixel,point[1]-7*pixel,38*pixel,15*pixel,7*pixel,'#edf3d9f5','#8caa6b');
+        this.label('영양 +2',point[0],point[1]+3*pixel,8*pixel,'#537246',800);
+      }
       if (eligibleTarget && !working) {
         const center = this.p(u + 34, v + 34, 115);
         this.ctx.save(); this.ctx.globalAlpha = queueIndex >= 0 ? .95 : .65;
@@ -1432,6 +1523,7 @@ export class Scene {
           const hint = this.p(u + 53, v + 46, 125);
           this.ellipse(hint[0], hint[1], 10, 10, '#fff9e9e8', waterTool ? '#88bed5' : '#ccb16c', 1);
           if (waterTool) this.waterDrop(hint[0], hint[1] + 1, 7);
+          else if(this.farmMode==='fertilize')this.sprig(hint[0],hint[1]+8,.55);
           else drawCropSprite(this.ctx, cropId, 'produce', hint[0], hint[1] + 8, 17, 17);
         }
         this.ctx.restore();
@@ -1549,7 +1641,7 @@ export class Scene {
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
       const cropName = CROPS[this.action.cropId].name;
-      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요' };
+      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', fertilize:'흙에 영양을 나눠요', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요' };
       const label = labels[this.action.kind];
       const top = y - 128 * WORLD_HERO_SCALE - 32;
       this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
@@ -1562,6 +1654,42 @@ export class Scene {
     drawTruckStairway(this.ctx,top,bottom);
     this.ctx.save(); this.ctx.setLineDash([5, 9]);
     this.line([[bottom[0], bottom[1] + 9], [157, 552], [151, 571], [130, 590]], '#e8c987', 2); this.ctx.restore();
+    const pixel=1/this.scale,x=bottom[0],y=bottom[1]-19,road=this.currentHeroLocation().surface==='road';
+    this.round(x-23*pixel,y-22*pixel,46*pixel,44*pixel,12*pixel,'#fff8e5f0','#a89669');
+    this.label(road?'↑':'↓',x,y+6*pixel,26*pixel,'#526d45',700);
+    this.label(road?'트럭으로':'도로로',x,y+35*pixel,10*pixel,'#435b3e',800);
+    this.hits.push({kind:'road-entry',x,y,radius:0,bounds:[x-23*pixel,y-22*pixel,x+23*pixel,y+22*pixel]});
+  }
+
+  private outdoorSites() {
+    for(const[index,site]of OUTDOOR_SITES.entries()){
+      const[x,y]=site.point;
+      const stock=this.state?getRoadsideSite(this.state,site.id):null,ready=stock?.ready??true;
+      if(site.id==='salvage'){
+        this.ellipse(x,y+3,42,15,'#263c303b');
+        this.resourceIllustration('scrap',x-16,y-17,53);this.resourceIllustration('scrap',x+17,y-8,42);
+        this.grass(x+33,y+5,.8);
+      }else if(site.id==='seed-meadow'){
+        drawWorldSprite(this.ctx,'forest',x,y+8,100,69,.8);
+        drawWorldSprite(this.ctx,'flowers',x-22,y,42,42);drawWorldSprite(this.ctx,'sprout',x+19,y+1,35,52);
+        this.resourceIllustration('seeds',x,y-25,45);
+      }else if(site.id==='spring'){
+        this.ellipse(x,y+3,43,15,'#67949170','#7b9777',1);
+        drawWorldSprite(this.ctx,'tank',x-9,y,48,65);
+        this.line([[x+10,y-21],[x+27,y-21],[x+27,y-7]],'#81a69d',5);
+        this.ellipse(x+27,y-2,9,3,'#accfe4','#5f9ca3',1);
+      }
+      const pixel=1/this.scale,badgeY=y-72;
+      this.round(x-24*pixel,badgeY-24*pixel,48*pixel,48*pixel,14*pixel,ready?'#fffae7f2':'#e2e9d7f2',ready?'#b49e70':'#acbaa0');
+      if(site.resource==='seeds'&&stock?.cropId)drawCropSprite(this.ctx,stock.cropId,'seed',x-(ready?5:0)*pixel,badgeY+7*pixel,25*pixel,28*pixel);
+      else this.resourceIllustration(site.resource,x-(ready?5:0)*pixel,badgeY-7*pixel,28*pixel);
+      if(ready&&stock)this.label(`+${stock.yieldAmount}`,x+14*pixel,badgeY-3*pixel,9*pixel,'#637640',800);
+      this.label(ready?'채집':`${Math.ceil(stock?.remainingSeconds??0)}초`,x,badgeY+17*pixel,9*pixel,ready?'#696d43':'#58704f',700);
+      this.label(site.name,x,badgeY+38*pixel,10*pixel,'#435b3e',800);
+      this.hits.push({kind:'outdoor-site',plotId:index,siteId:site.id,x,y:badgeY,radius:0,
+        bounds:[x-24*pixel,badgeY-24*pixel,x+24*pixel,badgeY+24*pixel]});
+      this.pulse(`outdoor:${site.id}`,x,badgeY,26*pixel);
+    }
   }
 
   private loggingGrove() {
@@ -1622,7 +1750,14 @@ export class Scene {
     const hero = this.heroState(), [hx, hy] = hero.point, progress = this.actionProgress();
     const [u, v] = this.plotPosition(action.plotIndex), target = this.p(u + 29, v + 33, 110);
     const c = this.ctx;
-    if (action.kind === 'plant') {
+    if(action.kind==='fertilize'){
+      for(let i=0;i<12;i++){
+        const t=(progress*2.6+i*.093)%1,sx=hx+24*WORLD_HERO_SCALE,sy=hy-36*WORLD_HERO_SCALE,
+          x=sx+(target[0]-sx+(i%4-1.5)*11)*t,y=sy+(target[1]-sy+Math.floor(i/4)*5)*t-Math.sin(t*Math.PI)*15;
+        this.ellipse(x,y,2.2,1.3,'#927247','#c0a27c',.6);
+      }
+      if(progress>.65)for(let i=0;i<3;i++)this.sprig(target[0]-15+i*15,target[1],.25+(progress-.65)*.3);
+    } else if (action.kind === 'plant') {
       for (let i = 0; i < 9; i++) {
         const t = (progress * 2.5 + i * .12) % 1;
         const sx = hx + 28 * WORLD_HERO_SCALE, sy = hy - 37 * WORLD_HERO_SCALE;

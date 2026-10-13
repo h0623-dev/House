@@ -4,6 +4,8 @@ import { getBuiltTypes, getSettlement, getLegacySettlement, getUpgradedFacilityR
 import { cloneTruckLayoutFields } from './truck-layout';
 import { cloneLayoutDirectionFields } from './layout-direction';
 import { cloneShopFields } from './shop';
+import { cloneFarmEconomyFields } from './farm-economy';
+import { cloneRoadsideFields } from './roadside';
 import { cloneCompanions } from './companions';
 import { cloneUnitProgressFields, getMaxTeamSize, getUnlockedUnitIds } from './units';
 
@@ -148,6 +150,8 @@ export function claimGrowthQuest(state: GameState, id: string): ActionResult {
     ...cloneTruckLayoutFields(state),
     ...cloneLayoutDirectionFields(state),
     ...cloneShopFields(state),
+    ...cloneFarmEconomyFields(state),
+    ...cloneRoadsideFields(state),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
     ...(state.companions ? { companions: cloneCompanions(state.companions) } : {}),
     ...cloneUnitProgressFields(state),

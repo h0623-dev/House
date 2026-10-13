@@ -10,7 +10,7 @@ export interface PetPatrolState {
   elapsed:number;distance:number;speed:number;heading:number;facing:1|-1;
   facingBlend:number;blend:number;turnRemaining:number;blockedReason:string|null;radius:number;
   pauseRemaining:number;retryRemaining:number;targetSequence:number;
-  turnFrom:1|-1;nextFacing:1|-1;turnHeading:number;worldKey:string;desiredFloor:TruckFloor;
+  turnFrom:1|-1;nextFacing:1|-1;turnHeading:number;worldKey:string;desiredFloor:TruckFloor;desiredSurface?:'deck'|'road';
 }
 const nominalRadius:Readonly<Record<UnitId,number>>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31};
 const finite=(n:number,fallback=0)=>Number.isFinite(n)?n:fallback;
@@ -45,18 +45,20 @@ function clearOfActors(location:NavigationLocation,radius:number,actors:readonly
 export function createPetPatrol(id:UnitId,world:NavigationWorld,hero:NavigationLocation,
   others:NavigationActor[],index:number,scale:number):PetPatrolState|undefined{
   const radius=getPetGroundRadius(id,scale),actors=actorsFor(world,hero,others),floor=floorOf(hero);
-  const candidates=getPatrolTargets({...world,actors},floor).filter(location=>clearOfActors(location,radius,actors));
+  const desiredSurface=hero.surface==='road'?'road':'deck',
+    candidates=getPatrolTargets({...world,actors},desiredSurface==='road'?0:floor).filter(location=>clearOfActors(location,radius,actors));
   candidates.sort((a,b)=>distance(a.point,hero.point)-distance(b.point,hero.point));
   const location=candidates[Math.min(candidates.length-1,Math.max(0,index)*3)];if(!location)return;
   const facing:1|-1=hero.point[0]>=location.point[0]?1:-1,heading=facing===1?0:Math.PI;
   return{id,location:copy(location),route:null,elapsed:0,distance:0,speed:0,heading,facing,facingBlend:facing,
     blend:0,turnRemaining:0,blockedReason:null,radius,pauseRemaining:.55+Math.max(0,index)*.23,retryRemaining:0,
-    targetSequence:Math.max(0,index)*11,turnFrom:facing,nextFacing:facing,turnHeading:heading,worldKey:geometryKey(world),desiredFloor:floor};
+    targetSequence:Math.max(0,index)*11,turnFrom:facing,nextFacing:facing,turnHeading:heading,worldKey:geometryKey(world),desiredFloor:floor,desiredSurface};
 }
 function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationLocation,
   actors:NavigationActor[]):NavigationPath|undefined{
-  const destinationFloor=floorOf(hero),sameFloor=state.location.surface==='deck'&&floorOf(state.location)===destinationFloor;
-  let candidates=getPatrolTargets({...world,actors},destinationFloor)
+  const destinationFloor=floorOf(hero),destinationSurface=hero.surface==='road'?'road':'deck',
+    sameFloor=state.location.surface===destinationSurface&&(destinationSurface==='road'||floorOf(state.location)===destinationFloor);
+  let candidates=getPatrolTargets({...world,actors},destinationSurface==='road'?0:destinationFloor)
     .filter(location=>clearOfActors(location,state.radius,actors,7))
     .filter(location=>!sameFloor||distance(location.point,state.location.point)>55);
   candidates.sort((a,b)=>{
@@ -80,9 +82,9 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
   others:NavigationActor[],delta:number,{reducedMotion=false}:{reducedMotion?:boolean}={}):void{
   const dt=Math.max(0,Math.min(.1,finite(delta)));if(!dt)return;
   if(reducedMotion){stop(state,dt);state.blend=0;return;}
-  const actors=actorsFor(world,hero,others),key=geometryKey(world),desiredFloor=floorOf(hero);
-  if(key!==state.worldKey||desiredFloor!==state.desiredFloor){
-    state.worldKey=key;state.desiredFloor=desiredFloor;state.route=null;state.elapsed=0;state.retryRemaining=0;state.pauseRemaining=0;
+  const actors=actorsFor(world,hero,others),key=geometryKey(world),desiredFloor=floorOf(hero),desiredSurface=hero.surface==='road'?'road':'deck';
+  if(key!==state.worldKey||desiredFloor!==state.desiredFloor||desiredSurface!==(state.desiredSurface??'deck')){
+    state.worldKey=key;state.desiredFloor=desiredFloor;state.desiredSurface=desiredSurface;state.route=null;state.elapsed=0;state.retryRemaining=0;state.pauseRemaining=0;
   }
   if(state.turnRemaining>0){
     stop(state,dt);state.heading=headingToward(state.heading,state.turnHeading,dt);

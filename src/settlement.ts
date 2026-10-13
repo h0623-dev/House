@@ -3,6 +3,8 @@ import { cloneCompanions } from './companions';
 import { cloneUnitProgressFields } from './units';
 import { cloneLayoutDirectionFields } from './layout-direction';
 import { cloneShopFields } from './shop';
+import { cloneFarmEconomyFields, reconcileFarmEconomyFood, validateFarmEconomy } from './farm-economy';
+import { cloneRoadsideFields } from './roadside';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { cloneTruckLayoutFields, getAllUnlockedSlots, getFloorSlots, getHomeLocation, getHomeSlots, getHouseFootprint,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCost, getTruckFloorCount, getTruckLayout, getFloorStairs, SETTLEMENT_POSITIONS,
@@ -217,6 +219,8 @@ function copy(state: GameState): GameState {
     ...cloneTruckLayoutFields(state),
     ...cloneLayoutDirectionFields(state),
     ...cloneShopFields(state),
+    ...cloneFarmEconomyFields(state),
+    ...cloneRoadsideFields(state),
     expedition: state.expedition ? { ...state.expedition, ...(state.expedition.participantIds ? { participantIds: [...state.expedition.participantIds] } : {}) } : null,
     settlement: getLegacySettlement(state),
   };
@@ -228,6 +232,7 @@ function success(state: GameState, message: string): SettlementResult {
 }
 function blocked(state: GameState): SettlementResult | null {
   if (state.expedition) return fail(state, '사냥을 마친 뒤 트럭의 생활 시설을 돌봐 주세요.');
+  if (Object.hasOwn(state, 'farmEconomy') && !validateFarmEconomy(state.farmEconomy, state)) return fail(state, '수확물과 영양 관리 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   if (Object.hasOwn(state, 'settlement') && !validateSettlement(state.settlement, state)) return fail(state, '생활 시설 정보를 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   if (Object.hasOwn(state, 'facilityHistory') && !validateFacilityHistory(state.facilityHistory, state)) return fail(state, '시설 성장 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   if (Object.hasOwn(state, 'truckLayout') && !validateTruckLayout(state.truckLayout, state)) return fail(state, '트럭 층과 배치 정보를 확인할 수 없어요. 저장 상태를 확인해 주세요.');
@@ -391,6 +396,7 @@ export function startProduction(state: GameState, id: number): SettlementResult 
   }
   const next = copy(state);
   for (const [resource, amount] of Object.entries(recipe)) next.resources[resource as Resource] -= amount!;
+  reconcileFarmEconomyFood(next);
   const target = mutableBuilding(next, id)!;
   target.startedAt = next.totalMinutes; target.readyAt = next.totalMinutes + getProductionMinutes(building);
   next.settlement!.stats!.productions += 1;

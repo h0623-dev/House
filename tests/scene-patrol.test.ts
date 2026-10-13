@@ -93,6 +93,40 @@ test('following either upper floor traverses every built stairway without telepo
  }
 });
 
+test('companions follow to the wider ground beneath the truck and return through its actual ladder',()=>{
+ for(const id of['dog','cat','boar']as const){
+  const radius=getPetGroundRadius(id,scale(id)),world=createNavigationWorld(1,3,[],{radius}),
+   pet=createPetPatrol(id,world,hero,[],0,scale(id));assert.ok(pet);
+  const outdoor:NavigationLocation={surface:'road',point:[600,820]},links=new Set<string>();
+  let reachedGround=false,reachedDeck=false;
+  for(let frame=0;frame<2000;frame++){
+   const before=structuredClone(pet.location),beforeDistance=pet.distance;
+   stepPetPatrol(pet,world,outdoor,[],.05);
+   const moved=length(before.point,pet.location.point);
+   assert.ok(moved<=44*.05+1e-6,'following outdoors uses continuous twofold patrol pace');
+   assert.ok(Math.abs(pet.distance-beforeDistance-moved)<1e-6,'road gait measures accepted travel only');
+   assert.equal(blocksActorStep(before,pet.location,radius,[{id:'hero',location:outdoor,radius:7}]),undefined);
+   if(pet.location.surface==='ladder')links.add(pet.location.link!);
+   if(pet.location.surface==='road'){
+    for(const obstacle of world.obstacles.filter(obstacle=>obstacle.surface==='road')){
+     const b=obstacle.bounds,polygon=[[b.left,b.top],[b.right,b.top],[b.right,b.bottom],[b.left,b.bottom]];
+     assert.equal(circleOverlapsPolygon(pet.location.point,radius,polygon),false,'the whole paw envelope clears trees and outdoor resource piles');
+    }
+    if(length(pet.location.point,outdoor.point)<160){reachedGround=true;break;}
+   }
+  }
+  assert.ok(reachedGround,`${id} reaches the actual outdoor resident`);assert.deepEqual([...links],['road-1']);
+  links.clear();
+  for(let frame=0;frame<2000;frame++){
+   const before=[...pet.location.point];stepPetPatrol(pet,world,hero,[],.05);
+   assert.ok(length(before,pet.location.point)<=44*.05+1e-6,'returning cannot teleport to a deck patrol point');
+   if(pet.location.surface==='ladder')links.add(pet.location.link!);
+   if(pet.location.surface==='deck'){reachedDeck=true;break;}
+  }
+  assert.ok(reachedDeck,`${id} returns to the actual deck`);assert.deepEqual([...links],['road-1']);
+ }
+});
+
 test('an occupied stair link and a swept actor crossing hold feet without false progress',()=>{
  const radius=getPetGroundRadius('dog',.78),world=createNavigationWorld(7,0,[],{radius,floors:[1,2]}),pet=createPetPatrol('dog',world,hero,[],0,.78);assert.ok(pet);
  const link=world.links.find(l=>l.id==='1-2')!,blocker:NavigationActor={id:'cat',radius:24,location:{surface:'ladder',floor:2,link:'1-2',point:[...link.points[2]]}};

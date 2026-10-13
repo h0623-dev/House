@@ -5,6 +5,8 @@ import { getLegacySettlement, validateSettlement, validateFacilityHistory, valid
 import { cloneTruckLayoutFields, type TruckLayout } from './truck-layout';
 import { cloneLayoutDirectionFields, validateLayoutDirections, type LayoutDirections } from './layout-direction';
 import { cloneShopFields, validateShopProgress, type ShopProgress } from './shop';
+import { cloneFarmEconomyFields, FARM_FERTILIZER_COST, getFarmPlotCare, markFarmPlotFertilized, recordFarmHarvest, reconcileFarmEconomyFood, validateFarmEconomy, type FarmEconomyProgress } from './farm-economy';
+import { cloneRoadsideFields, validateRoadsideProgress, type RoadsideProgress } from './roadside';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 import { COMPANION_IDS, MAX_COMPANION_XP, getCompanions, isCompanionId, validateCompanionHealth, validateCompanions, type CompanionHealth, type CompanionId, type CompanionRoster } from './companions';
@@ -13,7 +15,7 @@ export { CROPS, CROP_IDS, type CropId } from './crops';
 
 export type Resource = 'wood' | 'scrap' | 'food' | 'water' | 'seeds';
 export type Gender = 'female' | 'male';
-export type Action = 'gather' | 'chop' | 'hunt' | 'water' | 'plant' | 'harvest' | 'expand' | 'expandFarm' | 'rest' | 'pet' | 'repair';
+export type Action = 'gather' | 'chop' | 'hunt' | 'water' | 'fertilize' | 'plant' | 'harvest' | 'expand' | 'expandFarm' | 'rest' | 'pet' | 'repair';
 export interface Plot { id: number; plantedAt: number | null; watered: boolean; cropId?: CropId }
 export interface Expedition {
   id: number;
@@ -59,6 +61,10 @@ export interface GameState {
   layoutDirections?: LayoutDirections;
   /** Optional legacy-safe game-coin purchases; absent old saves receive no grants. */
   shop?: ShopProgress;
+  /** Only actually harvested crops and paid care; absent older saves receive no crop grants. */
+  farmEconomy?: FarmEconomyProgress;
+  /** Actually visited outdoor sites; old villages begin with no cooldown or reward grants. */
+  roadside?: RoadsideProgress;
   /** Lifetime construction records stay separate from legacy settlement schemas. */
   facilityHistory?: FacilityHistory;
   /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
@@ -153,6 +159,8 @@ function copy(state: GameState): GameState {
     ...cloneTruckLayoutFields(state),
     ...cloneLayoutDirectionFields(state),
     ...cloneShopFields(state),
+    ...cloneFarmEconomyFields(state),
+    ...cloneRoadsideFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...(state.villageOrders ? { villageOrders: { ...state.villageOrders } } : {}),
@@ -250,7 +258,7 @@ export function questList(state: GameState): Quest[] {
   return definitions.map(quest => ({ ...quest, current: Math.min(quest.current, quest.target), complete: quest.current >= quest.target }));
 }
 
-function grantQuests(state: GameState) {
+export function grantQuests(state: GameState) {
   for (const quest of questList(state)) {
     if (!quest.complete || state.quests.includes(quest.id)) continue;
     state.quests.push(quest.id);
@@ -307,6 +315,7 @@ export function advanceTime(state: GameState, minutes: number): GameState {
     const foodShortage = Math.max(0, daysPassed * 2 - next.resources.food);
     const waterShortage = Math.max(0, daysPassed * 3 - next.resources.water);
     next.resources.food = Math.max(0, next.resources.food - daysPassed * 2);
+    reconcileFarmEconomyFood(next);
     next.resources.water = Math.max(0, next.resources.water - daysPassed * 3);
     next.health = clamp(next.health - foodShortage * 3 - waterShortage * 4, 1);
     next.truckHealth = clamp(next.truckHealth - daysPassed * 7);
@@ -456,9 +465,10 @@ export function performAction(state: GameState, action: Action, plotId?: number,
   let next = copy(state);
   const fail = (message: string) => ({ state, ok: false, message });
   if (state.expedition) return fail('사냥을 마친 뒤 트럭에서 다시 활동할 수 있어요.');
+  if (Object.hasOwn(state, 'farmEconomy') && !validateFarmEconomy(state.farmEconomy, state)) return fail('수확물과 영양 관리 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   if (action === 'hunt') return fail('사냥터를 선택하고 직접 좀비를 물리쳐 보급품을 얻어 주세요.');
   const energyCosts: Record<Action, number> = {
-    gather: 10, chop: 10, hunt: 16, water: 3, plant: 4, harvest: 4, expand: 15, expandFarm: 8, rest: 0, pet: 0, repair: 6,
+    gather: 10, chop: 10, hunt: 16, water: 3, fertilize: FARM_FERTILIZER_COST.energy, plant: 4, harvest: 4, expand: 15, expandFarm: 8, rest: 0, pet: 0, repair: 6,
   };
   if (!Object.hasOwn(energyCosts, action)) return fail('아직 할 수 없는 행동이에요.');
   if (state.energy < energyCosts[action]) return fail('기운이 부족해요. 먼저 침대에서 쉬어 주세요.');
@@ -522,12 +532,16 @@ export function performAction(state: GameState, action: Action, plotId?: number,
     case 'harvest': {
       const plots = next.plots.filter(plot => getCropProgress(next, plot) >= 1 && (plotId === undefined || plot.id === plotId));
       if (!plots.length) return fail('아직 다 자란 작물이 없어요. 물을 주고 조금 기다려 주세요.');
+      const addedFood = plots.reduce((sum, plot) => sum + getFarmPlotCare(next, plot).yieldAmount, 0);
+      if (next.resources.food > 100_000_000 - addedFood) return fail('식량 보관량이 가득해요. 물자를 사용하거나 작물을 배달한 뒤 수확해 주세요.');
       let food = 0;
       let seeds = 0;
       const names = new Set<string>();
       plots.forEach(plot => {
         const crop = CROPS[getPlotCropId(plot)];
-        food += crop.food;
+        const amount = getFarmPlotCare(next, plot).yieldAmount;
+        food += amount;
+        recordFarmHarvest(next, plot, amount);
         seeds += crop.seedReturn;
         xp += crop.xp;
         names.add(crop.name);
@@ -541,6 +555,20 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       next.morale = clamp(next.morale + 3);
       message = `싱싱한 ${[...names].join(' · ')} ${plots.length}밭 수확! 식량 +${food} · 씨앗 +${seeds}`;
       duration = 15;
+      break;
+    }
+    case 'fertilize': {
+      const plot = next.plots.find(item => plotId === undefined ? item.plantedAt !== null && getFarmPlotCare(next, item).canFertilize : item.id === plotId);
+      if (!plot || plot.plantedAt === null) return fail('작물이 자라는 밭을 선택해 주세요.');
+      const care = getFarmPlotCare(next, plot);
+      if (care.fertilized) return fail('이 작물에는 이미 영양을 주었어요. 수확한 뒤 새 작물에 줄 수 있어요.');
+      if (getCropProgress(next, plot) >= 1) return fail('다 자란 작물이에요. 먼저 수확하고 새로 심은 작물에 영양을 주세요.');
+      if (next.resources.food < FARM_FERTILIZER_COST.food) return fail('영양을 만들 식량 1개가 필요해요.');
+      next.resources.food -= FARM_FERTILIZER_COST.food;
+      reconcileFarmEconomyFood(next);
+      markFarmPlotFertilized(next, plot);
+      message = `${CROPS[getPlotCropId(plot)].name}에 영양을 주었어요. 식량 1 사용 · 이번 수확 +${care.bonus}`;
+      duration = 10;
       break;
     }
     case 'expand': {
@@ -575,7 +603,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
     }
     case 'rest': {
       const meal = next.resources.food >= 1 && next.resources.water >= 1;
-      if (meal) { next.resources.food -= 1; next.resources.water -= 1; }
+      if (meal) { next.resources.food -= 1; next.resources.water -= 1; reconcileFarmEconomyFood(next); }
       next.energy = clamp(next.energy + (meal ? 55 : 35));
       next.health = clamp(next.health + (meal ? 12 : 3));
       const roster = getUnitRoster(next);
@@ -651,6 +679,8 @@ function validateSave(value: unknown): value is GameState {
     if (plot.plantedAt !== null && !isCropId(plot.cropId)) return false;
     ids.add(plot.id);
   }
+  if (Object.hasOwn(value, 'farmEconomy') && !validateFarmEconomy(value.farmEconomy, value as unknown as GameState)) return false;
+  if (Object.hasOwn(value, 'roadside') && !validateRoadsideProgress(value.roadside)) return false;
   if (!isRecord(value.stats) || !['harvests', 'gathers', 'hunts', 'expansions', 'chops', 'battlesWon', 'defeatedEnemies'].every(key => isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
   if (!['plantings', 'waterings'].every(key => !Object.hasOwn(value.stats as object, key) || isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;
   if (value.stats.expansions !== value.deckLevel - 1) return false;

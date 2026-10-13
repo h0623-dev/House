@@ -1,0 +1,52 @@
+.farm-economy{--farm-paper:#fff9e9;--farm-ink:#34523a;--farm-muted:#7c7757;color:var(--farm-ink);min-width:0}
+.farm-delivery-heading{display:flex;align-items:center;gap:9px;margin:5px 0 15px;flex-wrap:wrap}
+.farm-delivery-heading>span:first-child{display:flex;align-items:center;justify-content:center;width:43px;height:43px;flex-shrink:0;background:#edf0d9;border:1px solid #c1c8a0;border-radius:12px}
+.farm-delivery-heading>span:first-child>.icon{width:31px;height:31px}
+.farm-delivery-heading>div{flex:1;min-width:150px}
+.farm-delivery-heading small{font-size:10px;color:#7d8060}
+.farm-delivery-heading h3{font-size:15px;line-height:1.45;margin:3px 0;color:#35573d;word-break:keep-all}
+.farm-delivery-state{font-size:10px;font-weight:700;background:#ede8d2;color:#827551;border-radius:7px;padding:6px 8px}
+.farm-delivery-state.ready{background:#e0edcc;color:#4f7543}
+.farm-delivery-request{display:flex;align-items:center;gap:14px;padding:13px;border:1px solid #c8b781;border-radius:14px;background:linear-gradient(135deg,#fffdf4,#f4efd7);box-shadow:inset 0 1px #fff}
+.farm-delivery-crop{width:82px;height:86px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#edf0d8;border-radius:50%}
+.farm-delivery-crop>.icon{width:76px;height:73px}
+.farm-delivery-request>div:last-child{min-width:0;flex:1}
+.farm-delivery-request small{font-size:10px;color:#8a7d57}
+.farm-delivery-request h4{font-size:20px;color:#375a3e;line-height:1.4;margin:3px 0 6px}
+.farm-delivery-request h4>b{font-size:18px;white-space:nowrap}
+.farm-delivery-request p{font-size:12px;color:#777354;line-height:1.5;margin:3px 0 7px}
+.farm-delivery-request p>strong{font-size:16px;color:#4d7548}
+.farm-delivery-track{height:6px;background:#e2d9b7;border-radius:5px;overflow:hidden}
+.farm-delivery-track>i{display:block;height:100%;background:#82a665;border-radius:5px}
+.farm-delivery-shortage{display:block;font-size:10px;line-height:1.6;margin-top:7px;color:#867250;word-break:keep-all}
+.farm-delivery-reward-heading{display:flex;justify-content:space-between;align-items:center;gap:7px;flex-wrap:wrap;margin:16px 0 9px}
+.farm-delivery-reward-heading strong{font-size:12px}.farm-delivery-reward-heading span{font-size:9px;color:#8c7d5c}
+.farm-delivery-rewards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.farm-delivery-rewards>span{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:2px 4px;background:#f1ecd7;border:1px solid #d4c497;border-radius:9px;min-height:48px;padding:6px 4px;min-width:0}
+.farm-delivery-rewards>span>.icon{width:24px;height:24px;flex-shrink:0}
+.farm-delivery-rewards b{font-size:15px;color:#517447}.farm-delivery-rewards small{font-size:9px;color:#827451}
+.farm-deliver-button{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;min-height:48px;margin-top:13px;padding:9px;border:1px solid #365e3b;border-radius:10px;background:#4c7a4d;color:#fffbe6;font-size:13px;font-weight:800;box-shadow:inset 0 1px #afbf863d}
+.farm-deliver-button>.icon{width:24px;height:24px}.farm-deliver-button:disabled{opacity:1;background:#e3e1c7;color:#909577;border-color:#cfcea8;box-shadow:none}
+.farm-next-step{display:flex;align-items:center;gap:8px;min-height:60px;width:100%;padding:8px 10px;margin:8px 0;border:1px solid #c6b88c;border-radius:10px;background:#fffbef;text-align:left;color:#496a43}
+.farm-next-step>.icon:first-child{width:34px;height:34px;flex-shrink:0}.farm-next-step>.icon:last-child{width:15px;height:15px;flex-shrink:0}
+.farm-next-step>span{display:flex;flex-direction:column;flex:1;min-width:0;gap:3px}.farm-next-step strong{font-size:12px;line-height:1.45}.farm-next-step small{font-size:10px;color:#83795a;line-height:1.5;word-break:keep-all}
+.farm-care-help{margin:12px 0 17px;border-top:1px solid #ddd1ac;border-bottom:1px solid #ddd1ac;padding:3px 0}
+.farm-care-help>summary{display:flex;align-items:center;gap:6px;min-height:44px;font-size:11px;font-weight:700;color:#688050;list-style:none;cursor:pointer}
+.farm-care-help>summary::-webkit-details-marker{display:none}.farm-care-help>summary>.icon:first-child{width:23px;height:23px}.farm-care-help>summary>.icon:last-child{margin-left:auto;width:15px;height:15px}.farm-care-help[open]>summary>.icon:last-child{transform:rotate(90deg)}
+.farm-care-help p{font-size:10px;line-height:1.7;color:#827756;margin:3px 4px 8px}.farm-care-help>span{display:block;font-size:10px;color:#6c8451;margin:4px}
+.farm-care-help>button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;width:100%;background:#edf0d9;border:1px solid #c7caa1;border-radius:8px;color:#5b7548;font-size:11px;font-weight:700;margin:8px 0}.farm-care-help>button>.icon{width:15px;height:15px}
+.farm-crop-ledger{min-width:0;border-top:1px solid #d7c8a2;margin-top:16px;padding-top:12px}
+.farm-ledger-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:9px}.farm-ledger-heading h3{font-size:13px;color:#476844;margin:0}.farm-ledger-heading>span{font-size:9px;color:#8a7d5b}
+.farm-crop-stock-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.farm-crop-stock-grid>article{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;border:1px solid #d1c498;border-radius:9px;padding:7px 4px;background:#fff9e9;min-width:0}
+.farm-crop-stock-grid .icon{width:36px;height:34px}.farm-crop-stock-grid strong{font-size:10px;color:#65734d;line-height:1.4}.farm-crop-stock-grid span{font-size:10px;color:#837456;line-height:1.45}.farm-crop-stock-grid b{font-size:14px;color:#3c6540}
+.farm-ledger-total{font-size:10px;line-height:1.6;color:#6d7751;margin:9px 0 4px}.farm-ledger-total b{color:#416b43}
+.farm-ledger-note{font-size:9px;line-height:1.75;color:#8a7d5b;word-break:keep-all;margin:4px 0}
+.farm-growth-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:16px}
+.farm-growth-links>button{display:flex;align-items:center;justify-content:center;gap:5px;min-height:46px;padding:7px 4px;border:1px solid #c4b689;border-radius:9px;background:#f3ecd5;color:#597249;font-size:10px;font-weight:800;min-width:0}.farm-growth-links .icon{width:22px;height:22px;flex-shrink:0}
+.farm-delivery-preview{display:flex;align-items:center;gap:9px;min-height:78px;width:100%;border:1px solid #b9bd89;border-radius:12px;background:linear-gradient(120deg,#edf3db,#fbf5de);padding:10px;text-align:left;color:#36583e;margin:9px 0 13px;box-shadow:inset 0 1px #fffbed}
+.farm-delivery-preview-art{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;border-radius:50%;background:#e8edcf}.farm-delivery-preview-art>.icon{width:40px;height:40px}
+.farm-delivery-preview-copy{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}.farm-delivery-preview-copy>small{font-size:9px;color:#7b8559}.farm-delivery-preview-copy>strong{font-size:12px;line-height:1.5}.farm-delivery-preview-copy>strong>b{font-weight:600;color:#78904f;white-space:nowrap}.farm-delivery-preview-copy>span{font-size:10px;line-height:1.45;color:#857953}.farm-delivery-preview>.icon{width:15px;height:15px;flex-shrink:0}
+.farm-economy button:focus-visible,.farm-economy summary:focus-visible,.farm-delivery-preview:focus-visible{outline:3px solid #397451;outline-offset:2px}
+@media(max-width:380px){.farm-delivery-heading h3{font-size:14px}.farm-delivery-heading{gap:7px}.farm-delivery-heading>div{min-width:140px}.farm-delivery-crop{width:68px;height:73px}.farm-delivery-crop>.icon{width:62px;height:62px}.farm-delivery-request{gap:10px;padding:11px}.farm-delivery-request h4{font-size:18px}.farm-delivery-request h4>b{font-size:16px}.farm-delivery-rewards{gap:4px}.farm-delivery-rewards>span{gap:1px 3px;padding:5px 3px}.farm-delivery-rewards>span>.icon{width:22px;height:22px}.farm-delivery-rewards small{font-size:8px}}
+@media(orientation:landscape) and (max-height:600px){.farm-delivery-heading{margin-bottom:10px}.farm-delivery-request{padding:9px 12px}.farm-delivery-crop{height:72px;width:75px}.farm-delivery-crop>.icon{height:63px;width:65px}.farm-delivery-reward-heading{margin-top:11px}.farm-care-help{margin:9px 0 12px}.farm-crop-stock-grid{grid-template-columns:repeat(6,minmax(0,1fr))}.farm-crop-stock-grid .icon{width:32px;height:30px}}

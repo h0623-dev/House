@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, planNavigation, projectDeckPoint,
   unprojectDeckPoint, sampleNavigation, FARM_POSITIONS, SETTLEMENT_POSITIONS,
   HERO_BODY_RADIUS, circleOverlapsPolygon, blocksActorStep, planWorkNavigation, planYieldNavigation, distanceToSegment,
-  type NavigationLocation, type NavigationPath, type NavigationPoint, type NavigationWorld } from '../src/scene-navigation.ts';
+  type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationPoint, type NavigationWorld } from '../src/scene-navigation.ts';
 import { WALK_SPEED, CLIMB_SPEED } from '../src/scene-motion.ts';
 import { FLOOR_HEIGHT, getFloorStairs, type TruckFloor } from '../src/truck-layout.ts';
 import { createPetPatrol, stepPetPatrol } from '../src/scene-patrol.ts';
+import { OUTDOOR_SITES } from '../src/outdoor-sites.ts';
 
 
 // Captured v0.21 feet retain their original deck UV or stair-segment progress.
@@ -72,6 +73,83 @@ test('the former road crate allows whole bodies to reach its space while remaini
     assert.ok(groundLocation(world,start.point),'the actual road interior starts clear for this whole body');
     assertClear(world,requirePath(world,start,road(184,564)));
   }
+});
+
+test('the ground yard grows around the truck and admits whole bodies beneath the deck without crossing its surfaces',()=>{
+  let prior=createNavigationWorld(1,3,[]).roadOuter;
+  assert.ok((prior.right-prior.left)*(prior.bottom-prior.top)>275*180*12,'the initial yard is over twelve times the former road patch');
+  for(let level=1;level<=8;level++)for(const radius of[7,24.82,25.74,30.8]){
+    const world=createNavigationWorld(level,Math.min(24,level*3),Array.from({length:Math.min(16,level*2)},(_,i)=>i),{radius}),yard=world.roadOuter;
+    assert.ok(yard.left<=prior.left&&yard.right>=prior.right&&yard.bottom>=prior.bottom,'expansion never shrinks retained ground');
+    assert.equal(world.road.left,yard.left+radius);assert.equal(world.road.top,yard.top+radius);
+    assert.equal(world.road.right,yard.right-radius);assert.equal(world.road.bottom,yard.bottom-radius);
+    const under=road(480,420),outskirts=road(600,820),landing=road(...world.ladder.bottom);
+    for(const target of[under,outskirts]){
+      assert.deepEqual(groundLocation(world,target.point,1,'road'),target);
+      const path=requirePath(world,landing,target);assert.equal(path.climbSegments.length,0);assertClear(world,path);
+      assert.ok(path.segments.every(segment=>segment.fromFloor===0&&segment.toFloor===0));
+      closePoint(sampleNavigation(path,path.returnMotion.duration,true).point,landing.point);
+    }
+    assert.equal(groundLocation(world,[yard.left+radius-.1,500],1,'road'),undefined,'the full body cannot leave the expanded ground');
+    assert.equal(groundLocation(world,under.point,2,'road'),undefined,'upper view selection cannot invent a road on an upper storey');
+    prior=yard;
+  }
+});
+
+test('overlapping painted deck and ground retain explicit road selection and only real ladders change surfaces',()=>{
+  const world=createNavigationWorld(1,3,[0,1]),overlap=projectDeckPoint([200,0]);
+  assert.equal(groundLocation(world,overlap)?.surface,'deck');
+  assert.deepEqual(groundLocation(world,overlap,1,'road'),road(...overlap));
+  const under=road(480,420),entry:NavigationLocation={surface:'deck',floor:1,point:world.ladder.entry};
+  for(const[from,to]of[[under,entry],[entry,under]]){
+    const path=requirePath(world,from,to);assertClear(world,path);
+    assert.deepEqual([...new Set(path.segments.flatMap(segment=>segment.link?[segment.link]:[]))],['road-1']);
+    closePoint(sampleNavigation(path,0).point,from.point);closePoint(sampleNavigation(path,path.motion.duration).point,to.point);
+    closePoint(sampleNavigation(path,path.returnMotion.duration,true).point,from.point);
+  }
+});
+
+test('all four original outdoor places have true approaches even for the largest companion, with trunks and resource piles kept solid',()=>{
+  for(const radius of[7,24.82,25.74,30.8]){
+    const world=createNavigationWorld(1,3,[],{radius}),start=road(480,420);
+    for(const site of OUTDOOR_SITES){
+      assert.equal(groundLocation(world,site.point,1,'road'),undefined,'standing inside the actual painted resource footprint stays blocked');
+      const approaches=site.approaches.map(point=>road(...point)),path=planWorkNavigation(world,start,approaches);
+      assert.ok(path,`${site.id} admits an actual ${radius}-radius body`);assertClear(world,path);
+      assert.equal(path.climbSegments.length,0);assert.equal(path.returnIndex,0);
+      closePoint(sampleNavigation(path,path.returnMotion.duration,true).point,start.point);
+    }
+    for(const tree of world.obstacles.filter(obstacle=>obstacle.kind==='tree'&&obstacle.surface==='road')){
+      const b=tree.bounds;
+      assert.equal(groundLocation(world,[(b.left+b.right)/2,(b.top+b.bottom)/2],1,'road'),undefined);
+    }
+  }
+});
+
+test('roadside walking still detours a whole companion body and retains the shared twofold speed',()=>{
+  const from=road(480,420),to=road(600,820),dog:NavigationActor={id:'dog',radius:25.74,location:road(540,620)},
+    world=createNavigationWorld(1,3,[],{actors:[dog]}),path=requirePath(world,from,to);
+  assert.ok(path.points.length>2);assertClear(world,path);assert.equal(path.climbSegments.length,0);
+  assert.equal(blocksActorStep(from,to,HERO_BODY_RADIUS,[dog])?.id,'dog');
+  let prior=sampleNavigation(path,0);
+  for(let elapsed=.005;elapsed<path.motion.duration;elapsed+=.005){
+    const next=sampleNavigation(path,elapsed);
+    assert.ok(distance(next.point,prior.point)<=WALK_SPEED*.005+1e-6,'outdoor walking cannot jump or exceed twofold pace');
+    assert.ok(distance(next.point,dog.location.point)>=dog.radius+HERO_BODY_RADIUS-.01,'the complete actor bodies remain separated');
+    prior=next;
+  }
+});
+
+test('a ground companion can yield underneath projected farm art without switching to the deck',()=>{
+  const start=road(620,410),hero:NavigationActor={id:'hero',radius:7,location:road(620,451)},
+    world=createNavigationWorld(1,3,[0,1],{radius:25.74,actors:[hero]}),reserved=[road(620,422)],
+    path=planYieldNavigation(world,start,reserved);
+  assert.ok(path,'a short physical road exit stays available even beneath a planted deck');
+  assert.equal(path.target.surface,'road');assert.equal(path.climbSegments.length,0);
+  assert.ok(path.motion.distance<=56,'the resident need not exit the entire projected truck to take a clear step');
+  closePoint(sampleNavigation(path,0).point,start.point);assertClear(world,path);
+  for(let elapsed=0;elapsed<path.motion.duration;elapsed+=.013)
+    assert.ok(distance(sampleNavigation(path,elapsed).point,hero.location.point)>=world.radius+hero.radius-.01);
 });
 
 test('all three paid deck planes allow a direct walk through former cottage space regardless of legacy home metadata',()=>{
@@ -197,7 +275,7 @@ test('invalid floors and mutated caller coordinates cannot affect a planned rout
   const world=createNavigationWorld(1,3,[]),start=defaultHeroLocation(),target=deck(155,-20),path=requirePath(world,start,target);
   const actualStart=[...start.point],actualEnd=[...target.point];start.point[0]=999;target.point[1]=-999;
   closePoint(sampleNavigation(path,0).point,actualStart);closePoint(sampleNavigation(path,path.motion.duration).point,actualEnd);
-  for(const from of [road(400,500),deck(-400,20),{surface:'deck',point:[NaN,20]}as NavigationLocation,{surface:'unknown',point:[270,655]}as unknown as NavigationLocation])
+  for(const from of [road(world.roadOuter.right+100,500),deck(-400,20),{surface:'deck',point:[NaN,20]}as NavigationLocation,{surface:'unknown',point:[270,655]}as unknown as NavigationLocation])
     assert.equal(planNavigation(world,from,defaultHeroLocation()),undefined);
   assert.equal(planNavigation(world,defaultHeroLocation(),{surface:'ladder',point:world.ladder.top}),undefined);
 });

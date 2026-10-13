@@ -1,6 +1,7 @@
 import type { ActionResult, GameState, Gender, Resource } from './game';
 import { CROP_IDS, CROPS, isCropId, type CropId } from './crops';
 import { getUnlockedUnitIds, isUnitId, RESERVE_UNIT_IDS, UNITS, type UnitId } from './units';
+import { reconcileFarmEconomyFood, validateFarmEconomy } from './farm-economy';
 
 export const OUTFIT_IDS = ['garden', 'road', 'explorer'] as const;
 export type OutfitId = typeof OUTFIT_IDS[number];
@@ -58,6 +59,7 @@ function seedStock(state: GameState): Record<CropId, number> {
 }
 function blocked(state: GameState): string | null {
   if (state.expedition) return '탐험을 마친 뒤 트럭 상점을 이용해 주세요.';
+  if (Object.hasOwn(state, 'farmEconomy') && !validateFarmEconomy(state.farmEconomy, state)) return '수확물과 영양 관리 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.';
   if (Object.hasOwn(state, 'shop') && !validateShopProgress(state.shop)) return '상점의 구매 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.';
   if (!record(state.resources) || Object.hasOwn(state, 'seedInventory') && (!record(state.seedInventory) || Object.keys(state.seedInventory).length !== CROP_IDS.length)) return '보유 자원과 씨앗의 저장 상태를 확인해 주세요.';
   const stock = seedStock(state);
@@ -119,6 +121,7 @@ export function sellShopResource(state: GameState, resource: unknown, quantity: 
   const coins = SHOP_SALE_PRICES[resource] * quantity;
   if (!integer(getShop(state).coins + coins)) return fail(state, '코인 지갑이 가득해요. 상점에서 코인을 사용한 뒤 판매해 주세요.');
   const next = structuredClone(state); next.shop = getShop(state); next.resources[resource] -= quantity; next.shop.coins += coins;
+  if (resource === 'food') reconcileFarmEconomyFood(next);
   const name = resource === 'food' ? '식량' : resource === 'wood' ? '목재' : '고철';
   return success(next, `${name} ${quantity}개를 판매하고 코인 ${coins}개를 받았어요.`);
 }

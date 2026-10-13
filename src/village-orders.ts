@@ -3,6 +3,8 @@ import { getLegacySettlement } from './settlement';
 import { cloneTruckLayoutFields } from './truck-layout';
 import { cloneLayoutDirectionFields } from './layout-direction';
 import { cloneShopFields } from './shop';
+import { cloneFarmEconomyFields, reconcileFarmEconomyFood, validateFarmEconomy } from './farm-economy';
+import { cloneRoadsideFields } from './roadside';
 import { cloneUnitProgressFields } from './units';
 
 /** Optional in older saves. A counter stores only deliveries actually paid for. */
@@ -65,6 +67,7 @@ export function getVillageOrder(state: GameState): VillageOrder {
 export function fulfillVillageOrder(state: GameState, expectedId: string): ActionResult {
   const fail = (message: string): ActionResult => ({ state, ok: false, message });
   if (state.expedition) return fail('사냥을 마친 뒤 이웃에게 물자를 보내 주세요.');
+  if (Object.hasOwn(state, 'farmEconomy') && !validateFarmEconomy(state.farmEconomy, state)) return fail('수확물과 영양 관리 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   if (Object.hasOwn(state, 'villageOrders') && !validateVillageOrders(state.villageOrders)) {
     return fail('물자 요청 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   }
@@ -84,6 +87,8 @@ export function fulfillVillageOrder(state: GameState, expectedId: string): Actio
     ...cloneTruckLayoutFields(state),
     ...cloneLayoutDirectionFields(state),
     ...cloneShopFields(state),
+    ...cloneFarmEconomyFields(state),
+    ...cloneRoadsideFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
     ...cloneUnitProgressFields(state),
@@ -92,6 +97,7 @@ export function fulfillVillageOrder(state: GameState, expectedId: string): Actio
     villageOrders: { completed: completed + 1 },
   };
   for (const [resource, amount] of Object.entries(order.costs)) next.resources[resource as Resource] -= amount!;
+  reconcileFarmEconomyFood(next);
   for (const [resource, amount] of Object.entries(order.rewards.resources)) next.resources[resource as Resource] += amount!;
   next.xp += order.rewards.xp;
   next.level = Math.floor(next.xp / 120) + 1;

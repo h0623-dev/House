@@ -5,6 +5,9 @@ import { getSlotFloor, getSlotLocalIndex } from './truck-layout';
 import { formatGameDuration } from './game-time';
 import { facilityIcon } from './settlement-art';
 import { icon } from './icons';
+import { cropIcon } from './crop-art';
+import { renderFarmDeliveryPreview, updateFarmDeliveryPreview } from './farm-economy-ui';
+import { getOutdoorSite } from './outdoor-sites';
 import type { VillageAdvice, VillageHubModel } from './village-guide';
 
 const escape = (value: string | number): string => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
@@ -18,6 +21,11 @@ function activityLabel(advice: VillageAdvice): string {
     case 'farm': return target.mode === 'harvest' ? '수확하기' : target.mode === 'water' ? '물 주기' : '씨앗 심기';
     case 'facility': return target.operation === 'collect' ? '생산품 받기' : target.operation === 'start' ? '생산 시작' : '시설 개선';
     case 'orders': return '이웃 납품';
+    case 'farm-delivery': return '농산물 납품';
+    case 'roadside': {
+      const resource = getOutdoorSite(target.siteId)!.resource;
+      return resource === 'wood' ? '나무 베기' : resource === 'scrap' ? '고철 모으기' : resource === 'water' ? '물 길어오기' : '씨앗 찾기';
+    }
     case 'build': return '시설 건설';
     case 'gather': return '물자 탐색';
     case 'chop': return '나무 베기';
@@ -33,7 +41,7 @@ function activityLabel(advice: VillageAdvice): string {
 
 function adviceButton(advice: VillageAdvice, key: string, className = 'village-activity'): string {
   const title = className === 'village-activity' ? activityLabel(advice) : advice.title;
-  return `<button class="${className}" data-village-advice="${escape(key)}" data-village-advice-identity="${escape(advice.id)}" aria-label="${escape(`${advice.title} · ${advice.cta}`)}"><span class="village-advice-art" data-village-advice-icon="${escape(advice.icon)}">${icon(advice.icon)}</span><span class="village-advice-copy"><small data-village-advice-tag>${escape(advice.tag ?? advice.cta)}</small><strong data-village-advice-title>${escape(title)}</strong><span data-village-advice-detail>${escape(advice.detail)}</span></span><span class="village-advice-progress" data-village-advice-progress>${escape(progressText(advice))}</span>${icon('chevron', 'village-advice-chevron')}</button>`;
+  return `<button class="${className}" data-village-advice="${escape(key)}" data-village-advice-identity="${escape(advice.id)}" aria-label="${escape(`${advice.title} · ${advice.cta}`)}"><span class="village-advice-art" data-village-advice-icon="${escape(advice.cropId ? `crop:${advice.cropId}` : advice.icon)}">${advice.cropId ? cropIcon(advice.cropId, 'produce') : icon(advice.icon)}</span><span class="village-advice-copy"><small data-village-advice-tag>${escape(advice.tag ?? advice.cta)}</small><strong data-village-advice-title>${escape(title)}</strong><span data-village-advice-detail>${escape(advice.detail)}</span></span><span class="village-advice-progress" data-village-advice-progress>${escape(progressText(advice))}</span>${icon('chevron', 'village-advice-chevron')}</button>`;
 }
 
 /** Render once; clock updates patch existing buttons rather than replacing the dock. */
@@ -58,9 +66,10 @@ function updateAdvice(button: HTMLButtonElement, advice: VillageAdvice): void {
   setText(button, '[data-village-advice-detail]', advice.detail);
   setText(button, '[data-village-advice-progress]', progressText(advice));
   const art = button.querySelector<HTMLElement>('[data-village-advice-icon]');
-  if (art && art.dataset.villageAdviceIcon !== advice.icon) {
-    art.dataset.villageAdviceIcon = advice.icon;
-    art.innerHTML = icon(advice.icon);
+  const artKey = advice.cropId ? `crop:${advice.cropId}` : advice.icon;
+  if (art && art.dataset.villageAdviceIcon !== artKey) {
+    art.dataset.villageAdviceIcon = artKey;
+    art.innerHTML = advice.cropId ? cropIcon(advice.cropId, 'produce') : icon(advice.icon);
   }
 }
 
@@ -128,7 +137,7 @@ export function renderVillageManagement(state: GameState, model: VillageHubModel
   const facilities = getSettlement(state).buildings;
   const goals = `<details class="village-management-goals" ${facilities.length ? '' : 'open'}><summary>성장 목표와 다음 투자 ${icon('chevron')}</summary><h3>지금의 성장 목표</h3>${adviceButton(model.primary, 'primary', 'village-plan-card')}<h3>다음 마을 투자</h3>${adviceButton(model.investment, 'investment', 'village-plan-card village-investment-card')}</details>`;
   const production = `<div class="village-production-heading"><h3>마을 생산</h3><small>지도에서 시설을 보고 생산을 이어가요.</small></div><div class="village-production-list">${facilities.map(building => facilityRow(state, building)).join('')}</div><div class="village-production-empty" ${facilities.length ? 'hidden' : ''}>${icon('hammer')}<strong>첫 생활 시설을 지어 보세요</strong><span>물과 식량을 생산해 이웃에게 보내고 트럭을 키워요.</span><button data-open="build">시설 고르기 ${icon('chevron')}</button></div>`;
-  return `<div class="village-management" data-village-management><div class="village-management-summary"><span><b data-management-ready>${model.summary.readyFacilities}</b>수령 가능</span><span><b data-management-working>${model.summary.workingFacilities}</b>생산 중</span><span><b data-management-total>${model.summary.totalFacilities}</b>생활 시설</span></div>${facilities.length ? production + goals : goals + production}<p class="village-management-note">완성품을 받은 뒤 다음 생산을 시작해요. ‘받고 다시 생산’은 표시된 재료를 사용해 한 번 생산해요.</p></div>`;
+  return `<div class="village-management" data-village-management><div class="village-management-summary"><span><b data-management-ready>${model.summary.readyFacilities}</b>수령 가능</span><span><b data-management-working>${model.summary.workingFacilities}</b>생산 중</span><span><b data-management-total>${model.summary.totalFacilities}</b>생활 시설</span></div>${renderFarmDeliveryPreview(state)}${facilities.length ? production + goals : goals + production}<p class="village-management-note">완성품을 받은 뒤 다음 생산을 시작해요. ‘받고 다시 생산’은 표시된 재료를 사용해 한 번 생산해요.</p></div>`;
 }
 
 /** Keep management cards and focus stable while their production clocks advance. */
@@ -138,6 +147,7 @@ export function updateVillageManagement(root: HTMLElement, state: GameState, mod
   setText(management, '[data-management-ready]', model.summary.readyFacilities);
   setText(management, '[data-management-working]', model.summary.workingFacilities);
   setText(management, '[data-management-total]', model.summary.totalFacilities);
+  updateFarmDeliveryPreview(management, state);
   for (const [key, advice] of [['primary', model.primary], ['investment', model.investment]] as const) {
     const button = management.querySelector<HTMLButtonElement>(`[data-village-advice="${key}"]`);
     if (button) updateAdvice(button, advice);

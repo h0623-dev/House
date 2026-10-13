@@ -1,0 +1,16 @@
+.road-controls{position:absolute;z-index:4;left:10px;top:109px;display:flex;gap:5px;max-width:calc(100% - 80px)}
+.road-controls button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:48px;min-height:48px;padding:4px 5px;border:1px solid #b6a176;border-radius:11px;color:#4c6945;background:#fff6e5ee;box-shadow:0 2px 6px #25351e24}
+.road-controls .icon{width:22px;height:22px}.road-controls small{font-size:9px;font-weight:750;line-height:1.4;white-space:nowrap}
+.road-controls button:focus-visible,.outdoor-card button:focus-visible{outline:3px solid #537a45;outline-offset:2px}
+.construction-mode .road-controls,.facility-selected .road-controls{display:none}
+.quick-actions{grid-template-columns:repeat(7,minmax(44px,1fr));gap:1px}
+.quick-action{min-width:44px}.quick-fertilize .control-icon{background:#e4ebc5}
+.outdoor-cards{display:grid;gap:10px}.outdoor-card{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid #c7ba90;border-radius:13px;background:#fbf6e4;min-width:0}
+.outdoor-card-art{display:flex;align-items:center;justify-content:center;width:58px;height:63px;flex-shrink:0}.outdoor-card-art>.icon{width:54px;height:57px}
+.outdoor-card>div{display:flex;flex:1;min-width:0;flex-direction:column;gap:5px}.outdoor-card strong{font-size:13px;color:#365740}.outdoor-card span:not(.outdoor-card-art){font-size:11px;color:#766f50}.outdoor-card small{font-size:10px;color:#708653;line-height:1.6}
+.outdoor-card button{display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:center;min-width:55px;min-height:52px;padding:6px;border:1px solid #b8b982;border-radius:9px;background:#edf0d5;color:#486544;font-size:10px;font-weight:750}.outdoor-card button .icon{width:21px;height:21px}
+.outdoor-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:15px}.outdoor-modal-actions .button{min-height:48px;font-size:12px}
+.farm-care-button{min-height:44px;font-size:10px;margin-top:6px;gap:4px}.farm-care-button .icon{width:22px;height:24px;flex-shrink:0}.farm-care-button>span{line-height:1.45}
+.farm-all-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.farm-all-tools>.button{font-size:10px;min-height:46px;padding:7px 4px;gap:4px}
+@media(max-width:380px){.road-controls{gap:4px}.outdoor-card{padding:9px;gap:7px}.outdoor-card-art{width:48px;height:55px}.outdoor-card-art>.icon{width:46px;height:51px}.outdoor-card strong{font-size:12px}.outdoor-card span:not(.outdoor-card-art){font-size:10px}.quick-action>small{font-size:8px}}
+@media(orientation:landscape) and (max-height:600px){.road-controls{top:61px;gap:4px}.road-controls button{min-width:46px;min-height:46px;padding:3px}.road-controls .icon{width:20px;height:20px}.road-controls small{font-size:8px}.outdoor-cards{grid-template-columns:1fr 1fr}.outdoor-card{padding:8px;gap:7px}.outdoor-card-art{width:44px;height:47px}.outdoor-card-art>.icon{width:42px;height:45px}}

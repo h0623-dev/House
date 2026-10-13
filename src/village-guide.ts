@@ -8,13 +8,17 @@ import { BUILDINGS, BUILDING_TYPES, getBuiltTypes, getFacilityHistory, getFloorS
 import { gameMinutesToSeconds } from './game-time';
 import { getVillageOrder } from './village-orders';
 import { getReadyTeam } from './units';
+import { getFarmCropInventory, getFarmOrder } from './farm-economy';
+import { getRoadsideSite } from './roadside';
+import { type OutdoorSiteId } from './outdoor-sites';
 
 export type VillageTarget =
   | { kind: 'quest'; questId: string }
   | { kind: 'facility'; id: number; operation: 'collect' | 'start' | 'upgrade' }
   | { kind: 'build'; buildingType: BuildingType }
   | { kind: 'farm'; mode: 'harvest' | 'water' | 'plant'; cropId?: CropId }
-  | { kind: 'gather' | 'chop' | 'rest' | 'orders' | 'expand' | 'floors' | 'farm-expand' | 'hunt' | 'companions' };
+  | { kind: 'roadside'; siteId: OutdoorSiteId }
+  | { kind: 'gather' | 'chop' | 'rest' | 'orders' | 'farm-delivery' | 'expand' | 'floors' | 'farm-expand' | 'hunt' | 'companions' };
 
 export interface VillageAdvice {
   id: string;
@@ -22,6 +26,7 @@ export interface VillageAdvice {
   detail: string;
   cta: string;
   icon: string;
+  cropId?: CropId;
   target: VillageTarget;
   tag?: string;
   progress?: { current: number; max: number };
@@ -45,6 +50,7 @@ const canStart = (state: GameState, building: Building) => building.readyAt === 
   && (state.settlement?.stats?.productions ?? 0) < 100_000_000 && affordable(state, getProductionCost(building));
 const facilityTarget = (building: Building, operation: 'collect' | 'start' | 'upgrade'): VillageTarget => ({ kind: 'facility', id: building.id, operation });
 const targetKey = (target: VillageTarget) => target.kind === 'facility' ? `${target.kind}:${target.id}:${target.operation}`
+  : target.kind === 'roadside' ? `${target.kind}:${target.siteId}`
   : target.kind === 'build' ? `${target.kind}:${target.buildingType}` : target.kind === 'farm' ? `${target.kind}:${target.mode}`
   : target.kind === 'quest' ? `${target.kind}:${target.questId}` : target.kind;
 
@@ -73,10 +79,37 @@ function workingAdvice(state: GameState, building: Building): VillageAdvice {
 function farmAdvice(state: GameState, mode: 'harvest' | 'water' | 'plant'): VillageAdvice {
   const ready = state.plots.filter(plot => getCropProgress(state, plot) >= 1).length;
   const thirsty = state.plots.filter(plot => plot.plantedAt !== null && !plot.watered).length;
-  const cropId = CROP_IDS.find(id => getSeedCount(state, id) > 0);
-  return mode === 'harvest' ? { id: 'farm-harvest', title: '텃밭에 작물이 익었어요', detail: `${ready}밭을 수확해 식량과 다음 씨앗을 모아요.`, cta: '수확하기', icon: 'food', target: { kind: 'farm', mode }, tag: '수확 가능' }
+  const requested = getFarmOrder(state).progress[0].cropId;
+  const cropId = getSeedCount(state, requested) > 0 ? requested : CROP_IDS.find(id => getSeedCount(state, id) > 0);
+  return mode === 'harvest' ? { id: 'farm-harvest', title: '텃밭에 작물이 익었어요', detail: `${ready}밭을 수확해 납품할 작물과 다음 씨앗을 모아요.`, cta: '수확하기', icon: 'food', target: { kind: 'farm', mode }, tag: '수확 가능' }
     : mode === 'water' ? { id: 'farm-water', title: '새싹에 물을 주세요', detail: `${thirsty}밭을 돌보면 작물이 잘 자라요. 한 밭마다 물 1개를 사용해요.`, cta: '물 주기', icon: 'water', target: { kind: 'farm', mode }, tag: '텃밭 돌보기' }
     : { id: 'farm-plant', title: '빈 밭에 새 씨앗을 심어요', detail: cropId ? `${CROPS[cropId].seedName}을 골라 다음 수확을 준비해요.` : '도로에서 씨앗을 구한 뒤 빈 밭에 심어요.', cta: '씨앗 고르기', icon: 'seeds', target: { kind: 'farm', mode, ...(cropId ? { cropId } : {}) }, tag: '다음 수확' };
+}
+
+/** Guide the one current crop request from actual stock and planted batches. */
+export function getFarmDeliveryAdvice(state: GameState): VillageAdvice {
+  const order = getFarmOrder(state), cropId = order.progress[0].cropId;
+  const crop = CROPS[cropId], stock = getFarmCropInventory(state)[cropId], target = order.costs[cropId]!;
+  const base: VillageAdvice = { id: `crop-delivery-${order.id}`, title: `${crop.name} ${target}개를 이웃에게 보내요`,
+    detail: `보관 ${stock}개 · 납품 보상 코인 ${order.rewards.coins}, 목재 ${order.rewards.wood}${order.rewards.scrap ? `, 고철 ${order.rewards.scrap}` : ''}로 다음 씨앗과 건설을 준비해요.`,
+    cta: '농산물 납품', icon: 'food', cropId, target: { kind: 'farm-delivery' }, tag: order.ready ? '납품 가능' : '농장 성장',
+    progress: { current: Math.min(stock, target), max: target } };
+  if (order.ready || state.expedition) return base;
+  const matching = state.plots.filter(plot => plot.plantedAt !== null && (plot.cropId ?? 'carrot') === cropId);
+  if (matching.some(plot => getCropProgress(state, plot) >= 1) && state.energy >= 4) {
+    return { ...base, id: `${base.id}-harvest`, title: `${crop.name}을 수확해 납품을 준비해요`,
+      cta: '수확하기', target: { kind: 'farm', mode: 'harvest' }, tag: '수확 가능' };
+  }
+  if (matching.some(plot => !plot.watered) && state.energy >= 3 && state.resources.water > 0) {
+    return { ...base, id: `${base.id}-water`, title: `${crop.name} 새싹에 물을 주세요`,
+      cta: '물 주기', target: { kind: 'farm', mode: 'water' }, tag: '다음 납품 준비' };
+  }
+  if (state.plots.some(plot => plot.plantedAt === null) && getSeedCount(state, cropId) > 0 && state.energy >= 4) {
+    return { ...base, id: `${base.id}-plant`, title: `이번에는 ${crop.name}을 심어요`,
+      detail: `${crop.seedName}을 골라 빈 밭에 이어 심어요. 수확물을 납품하면 코인 ${order.rewards.coins}와 건설 재료를 받아요.`,
+      cta: '씨앗 고르기', target: { kind: 'farm', mode: 'plant', cropId }, tag: '요청한 작물' };
+  }
+  return base;
 }
 function supplyAdvice(state: GameState, cost: Cost, purpose: string): VillageAdvice | null {
   const shortage = Object.entries(cost).map(([resource, amount]) => ({ resource: resource as Resource, missing: Math.max(0, amount! - state.resources[resource as Resource]) }))
@@ -100,10 +133,15 @@ function supplyAdvice(state: GameState, cost: Cost, purpose: string): VillageAdv
     if (state.energy < 16 || !getReadyTeam(state).length) return restAdvice();
     return { id: 'prepare-food', title: '동물 친구들과 보급품을 찾아요', detail: `${prefix} 건강한 친구들을 편성해 도로로 나가요.`, cta: '탐험 준비', icon: 'hunt', target: { kind: 'hunt' }, tag: '식량 보급' };
   }
-  if (state.energy < 10) return restAdvice();
-  const kind = shortage.resource === 'wood' ? 'chop' : 'gather';
-  return { id: `prepare-${shortage.resource}`, title: `${resourceLabels[shortage.resource]}를 먼저 모아요`, detail: prefix,
-    cta: kind === 'chop' ? '벌목장 가기' : '도로 탐색', icon: kind === 'chop' ? 'axe' : 'map', target: { kind }, tag: '성장 준비' };
+  const siteIds: Record<Exclude<Resource, 'food'>, OutdoorSiteId> = {
+    wood: 'grove', scrap: 'salvage', water: 'spring', seeds: 'seed-meadow',
+  };
+  const view = getRoadsideSite(state, siteIds[shortage.resource]);
+  if (state.energy < view.energyCost) return restAdvice();
+  return { id: `prepare-${shortage.resource}`, title: `${resourceLabels[shortage.resource]}를 먼저 모아요`,
+    detail: `${prefix} ${view.site.name}에서 ${view.ready ? `${view.yieldAmount}개를 채집해요.` : `${view.remainingSeconds}초 뒤 다시 채집할 수 있어요.`}`,
+    cta: `${view.site.name} 가기`, icon: shortage.resource,
+    target: { kind: 'roadside', siteId: view.site.id }, tag: view.ready ? '성장 준비' : '현장 준비 중' };
 }
 function prepareInvestment(state: GameState, advice: VillageAdvice, cost: Cost): VillageAdvice {
   const energy = advice.target.kind === 'expand' ? 15 : advice.target.kind === 'farm-expand' ? 8 : 0;
@@ -213,7 +251,10 @@ export function getVillageHub(state: GameState): VillageHubModel {
     : primaryAdvice(state, getActiveGrowthQuest(state), investment, freeSlots);
   const candidates: VillageAdvice[] = [];
   if (!state.expedition) {
+    const farmOrder = getFarmOrder(state), farmDelivery = getFarmDeliveryAdvice(state);
+    if (farmOrder.ready) candidates.push(farmDelivery);
     candidates.push(...ready.filter(building => canCollect(state, building)).map(readyAdvice));
+    if (!farmOrder.ready) candidates.push(farmDelivery);
     if (readyPlots && state.energy >= 4) candidates.push(farmAdvice(state, 'harvest'));
     const order = getVillageOrder(state);
     if (order.ready) candidates.push({ id: `order-${order.id}`, title: order.name,

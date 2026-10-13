@@ -1,4 +1,5 @@
 import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRoute } from './scene-motion';
+import { OUTDOOR_SITES } from './outdoor-sites';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   projectTruckPoint, unprojectTruckPoint, type HomeLocation, type TruckFloor } from './truck-layout';
 export { FARM_POSITIONS, SETTLEMENT_POSITIONS, DECK_FRONTS } from './truck-layout';
@@ -39,6 +40,15 @@ const floorId = (p:NavigationLocation):number => p.surface==='road'?0:p.floor??1
 const margin = (radius:number) => ({x:radius*Math.hypot(.47,.67)/.6555,y:radius*Math.hypot(.34,.91)/.6555});
 const inflate = (r:NavigationRect,x:number,y=x):NavigationRect => ({left:r.left-x,top:r.top-y,right:r.right+x,bottom:r.bottom+y});
 
+/** Ground stays a separate physical surface underneath the elevated living deck. */
+export function getRoadBounds(level:number):NavigationRect {
+  const deck=getFloorBounds(level),corners=[[deck.left,deck.back],[deck.end,deck.back],
+    [deck.end,deck.front],[deck.left,deck.front]].map(point=>projectDeckPoint(point as NavigationPoint));
+  return {left:Math.min(-40,...corners.map(point=>point[0]-100)),top:360,
+    right:Math.max(1160,...corners.map(point=>point[0]+130)),
+    bottom:Math.max(880,...corners.map(point=>point[1]+95+105))};
+}
+
 /** The same physical footprints feed navigation, placement previews and collision checks. */
 export function createNavigationWorld(level:number,plotCount:number,facilitySlots:readonly number[],options:NavigationWorldOptions={}):NavigationWorld {
   const radius=options.radius??HERO_BODY_RADIUS,clearance=margin(radius),ids=options.floors??[1],activeFloor=options.activeFloor??1;
@@ -51,7 +61,10 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}
   obstacles.push({surface:'road',kind:'tree',bounds:{left:63,top:576,right:127,bottom:624}},
-    {surface:'road',kind:'tree',bounds:{left:12,top:559,right:55,bottom:583}});
+    {surface:'road',kind:'tree',bounds:{left:12,top:559,right:55,bottom:583}},
+    {surface:'road',kind:'tree',bounds:{left:13,top:607,right:45,bottom:628}},
+    {surface:'road',kind:'tree',bounds:{left:1033,top:718,right:1077,bottom:746}});
+  for(const site of OUTDOOR_SITES.filter(site=>site.id!=='grove'))obstacles.push({surface:'road',kind:'outdoor-site',bounds:{...site.bounds}});
   const front=getFloorBounds(level).front,ladder={entry:projectDeckPoint([-225,front-60]),top:projectDeckPoint([-225,front-3]),bottom:[140,527]as NavigationPoint};
   const links:NavigationLink[]=[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry]}];
   for(const upper of ids.filter(id=>id>1)){
@@ -61,8 +74,9 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
     for(const floor of [stair.lowerFloor,upper])obstacles.push({surface:'deck',floor,kind:'stairs',bounds:{...stair.reserved}});
   }
   const active=floors.find(f=>f.id===activeFloor)??floors[0];
+  const roadOuter=getRoadBounds(level);
   return {deck:active.deck,deckOuter:active.outer,activeFloor:active.id,floors,radius,actors:(options.actors??[]).map(a=>({...a,location:copyLocation(a.location)})),
-    obstacles,links,roadOuter:{left:65,top:505,right:340,bottom:685},road:{left:65+radius,top:505+radius,right:340-radius,bottom:685-radius},ladder};
+    obstacles,links,roadOuter,road:{left:roadOuter.left+radius,top:roadOuter.top+radius,right:roadOuter.right-radius,bottom:roadOuter.bottom-radius},ladder};
 }
 function obstaclesFor(world:NavigationWorld,floor:number):NavigationRect[] {
   const clearance=floor?margin(world.radius):{x:world.radius,y:world.radius};
@@ -102,8 +116,10 @@ function crossesObstacle(world:NavigationWorld,floor:number,from:MotionPoint,to:
   });
 }
 function boundsFor(world:NavigationWorld,floor:number) { return floor?world.floors.find(f=>f.id===floor)?.deck:world.road; }
-export function groundLocation(world:NavigationWorld,point:MotionPoint,floor=world.activeFloor):NavigationLocation|undefined {
+export function groundLocation(world:NavigationWorld,point:MotionPoint,floor=world.activeFloor,preferredSurface?:'deck'|'road'):NavigationLocation|undefined {
   if(!finite(point))return;
+  if(preferredSurface==='road')return floor===1&&inside(point,world.road)&&!occupied(world,0,point)
+    ?{surface:'road',point:[...point]}:undefined;
   const deck=world.floors.find(f=>f.id===floor),uv=unprojectDeckPoint(point,floor);
   if(deck&&inside(uv,deck.outer)){
     if(inside(uv,deck.deck)&&!occupied(world,floor,point))return{surface:'deck',floor,point:[...point]};
@@ -242,7 +258,7 @@ export function planYieldNavigation(world:NavigationWorld,start:NavigationLocati
     const candidates:NavigationLocation[]=[];
     for(const base of bases)for(const reach of reaches)for(let direction=0;direction<16;direction++){
       const angle=direction*Math.PI/8,point:NavigationPoint=[base.point[0]+Math.cos(angle)*reach,base.point[1]+Math.sin(angle)*reach],
-        location=groundLocation(world,point,(base.floor||1)as TruckFloor);
+        location=groundLocation(world,point,(base.floor||1)as TruckFloor,base.floor===0?'road':undefined);
       if(!location||floorId(location)!==base.floor)continue;
       if([...reserved,...landingReservations].some(goal=>floorId(goal)===base.floor&&distance(point,goal.point)<world.radius+reservedRadius+2))continue;
       if(occupiedLinks.some(link=>(base.floor===link.lower||base.floor===link.upper)&&link.points.slice(1).some((to,index)=>
@@ -295,7 +311,14 @@ export function blocksActorStep(from:NavigationLocation,to:NavigationLocation,ra
     return same&&distanceToSegment(a.location.point,from.point,to.point)<radius+a.radius-.01;
   });
 }
-export function getPatrolTargets(world:NavigationWorld,floor:TruckFloor):NavigationLocation[] {
+export function getPatrolTargets(world:NavigationWorld,floor:TruckFloor|0):NavigationLocation[] {
+  if(floor===0){
+    const result:NavigationLocation[]=[];
+    for(let y=world.road.top+18;y<world.road.bottom-18;y+=58)for(let x=world.road.left+18;x<world.road.right-18;x+=64){
+      const location=groundLocation(world,[x,y],1,'road');if(location)result.push(location);
+    }
+    return result;
+  }
   const bounds=world.floors.find(f=>f.id===floor)?.deck;if(!bounds)return[];
   const result:NavigationLocation[]=[];
   const rows=new Set<number>([0,14]);for(let v=bounds.top+12;v<bounds.bottom-12;v+=48)rows.add(v);

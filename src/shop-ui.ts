@@ -73,7 +73,7 @@ function saleCards(state: GameState, quantity: ShopQuantity): string {
   return `<p class="shop-intro">남는 물자를 판매해 코인을 모아요.<br>코인으로 씨앗·동료·의상을 구매할 수 있어요.</p>${quantityPicker(quantity, true)}<div class="shop-sale-list">${saleResources.map(id => {
     const enough = state.resources[id] >= quantity, total = SHOP_SALE_PRICES[id] * quantity;
     return `<article class="shop-product shop-sale-card" data-shop-product="${id}"><span class="shop-sale-art">${icon(id)}</span><div class="shop-sale-copy"><h3>${saleName(id)}</h3><span>보유 <b data-shop-stock="${id}">${state.resources[id]}개</b></span><small>1개 판매 ${coin(SHOP_SALE_PRICES[id])}</small></div><button class="shop-sale-button" data-shop-buy-kind="sale" data-shop-item="${id}" aria-label="${saleName(id)} ${quantity}개 판매 · 코인 ${total}개 받기" ${!enough ? 'disabled' : ''}><span>${enough ? `${quantity}개 판매` : '물자가 부족해요'}</span>${coin(total)}</button></article>`;
-  }).join('')}</div><p class="shop-sale-warning">${icon('truck')}식량은 휴식에, 목재와 고철은 건설에도 써요.<br>이번에 판매할 수량을 확인해 주세요.</p><p class="shop-note">수확물은 식량으로 모아 보관하고 판매해요.<br>판매를 확정하기 전에는 물자가 줄어들지 않아요.</p>`;
+  }).join('')}</div><p class="shop-sale-warning">${icon('truck')}식량은 휴식과 작물 영양에, 목재와 고철은 건설에도 써요.<br>이번에 판매할 수량을 확인해 주세요.</p><p class="shop-note">수확물은 전체 식량에 포함돼요. 식량을 판매하면 일반 식량부터 사용하고, 부족하면 당근·감자·토마토·옥수수·딸기·호박 순서로 보관한 작물도 줄어요.<br>판매를 확정하기 전에는 물자가 줄어들지 않아요.</p>`;
 }
 
 /** Cards display saved stock and real ownership; opening the shop never grants currency. */
@@ -97,7 +97,7 @@ export function renderShopPurchaseConfirmation(state: GameState, kind: ShopPurch
     detail = '남녀 공용 의상이에요. 구매한 뒤 입기로 갈아입어요.';
   } else if (kind === 'sale' && isShopSaleResource(id)) {
     title = saleName(id); art = icon(id); unitPrice = SHOP_SALE_PRICES[id]; stock = state.resources[id];
-    detail = id === 'food' ? '식량은 휴식과 여행에도 필요해요.' : '목재와 고철은 건설과 확장에도 필요해요.';
+    detail = id === 'food' ? '식량은 휴식·여행·작물 영양에도 필요해요. 일반 식량이 부족하면 보관한 작물도 순서대로 사용해요.' : '목재와 고철은 건설과 확장에도 필요해요.';
   } else {
     return `<section class="truck-shop"><p class="shop-intro">선택한 물건을 찾을 수 없어요. 상점에서 다시 골라 주세요.</p><button class="shop-owned-action full-width" data-shop-back>상점으로 돌아가기</button></section>`;
   }

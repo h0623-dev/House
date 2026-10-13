@@ -5,7 +5,9 @@ import { advanceTime, beginHunt, createGame, expansionCost, loadGame, performAct
 import { claimGrowthQuest, getActiveGrowthQuest } from '../src/growth-quests.ts';
 import { BUILDINGS, buildFacility, buildTruckFloor, collectProduction, getFloorSlots, getSettlement,
   isFacilitySlotAvailable, startProduction } from '../src/settlement.ts';
-import { getVillageHub, type VillageAdvice } from '../src/village-guide.ts';
+import { getVillageHub, getFarmDeliveryAdvice, type VillageAdvice } from '../src/village-guide.ts';
+import { fulfillFarmOrder, getFarmCropInventory, getFarmOrder, reconcileFarmEconomyFood } from '../src/farm-economy.ts';
+import { performRoadsideAction, getRoadsideSite } from '../src/roadside.ts';
 
 function claimCurrent(state: GameState): GameState {
   const quest = getActiveGrowthQuest(state)!;
@@ -83,7 +85,7 @@ test('earned growth rewards remain the primary action without being granted by r
 test('a construction objective routes to its actual missing material and restores the objective when funded', () => {
   const state = reachedWaterworks();
   state.resources.wood = 0; state.resources.scrap = BUILDINGS.waterworks.scrap;
-  assert.equal(getVillageHub(state).primary.target.kind, 'chop');
+  assert.deepEqual(getVillageHub(state).primary.target, { kind: 'roadside', siteId: 'grove' });
   assert.match(getVillageHub(state).primary.detail, /목재 12개/);
   state.resources.wood = BUILDINGS.waterworks.wood;
   assert.deepEqual(getVillageHub(state).primary.target, { kind: 'quest', questId: 'rainwater-home' });
@@ -113,14 +115,14 @@ test('a harvest objective with unwatered growing crops recommends caring for tho
   const hub = getVillageHub(state);
   assert.deepEqual(hub.primary.target, { kind: 'farm', mode: 'water' });
   state.resources.water = 0;
-  assert.equal(getVillageHub(state).primary.target.kind, 'gather');
+  assert.deepEqual(getVillageHub(state).primary.target, { kind: 'roadside', siteId: 'spring' });
 });
 
 test('an unaffordable deck objective directs to missing supplies or recovery before reopening expansion', () => {
   let state = reachedExpansion();
   const cost = expansionCost(state);
   state.resources.wood = cost.wood; state.resources.scrap = 0;
-  assert.equal(getVillageHub(state).primary.target.kind, 'gather');
+  assert.deepEqual(getVillageHub(state).primary.target, { kind: 'roadside', siteId: 'salvage' });
   state.energy = 14;
   assert.equal(getVillageHub(state).primary.target.kind, 'rest');
   state.energy = 85; state.resources.scrap = cost.scrap;
@@ -155,6 +157,8 @@ test('activities expose only affordable starts and paid deliveries, never a seco
   let state = reachedProduction();
   state = buildFacility(state, 'kitchen', availableSlot(state)).state;
   state.resources.water = 0; state.resources.food = 0;
+  // The shortage fixture spends all food, including any actual typed harvest.
+  reconcileFarmEconomyFood(state);
   const kitchen = getSettlement(state).buildings.find(building => building.type === 'kitchen')!;
   const hub = getVillageHub(state);
   assert.ok(!hub.activities.some(item => item.target.kind === 'facility' && item.target.id === kitchen.id && item.target.operation === 'start'));
@@ -212,4 +216,107 @@ test('viewing recommendations preserves paid floors, identities, seed quantities
   assert.deepEqual(getSettlement(loaded), getSettlement(state));
   assert.deepEqual(loaded.seedInventory, state.seedInventory);
   assert.deepEqual(loaded.companions, state.companions);
+});
+
+test('farm delivery recommendations follow actual harvest, paid current delivery and the next requested seed', () => {
+  let state = createGame();
+  const fresh = getFarmDeliveryAdvice(state), freshBefore = JSON.stringify(state);
+  assert.deepEqual(fresh.target, { kind: 'farm', mode: 'harvest' });
+  assert.equal(fresh.cropId, 'carrot');
+  assert.equal(getFarmOrder(state).ready, false);
+  assert.ok(getVillageHub(state).activities.some(advice => advice.cropId === 'carrot' && advice.target.kind === 'farm'));
+  assert.equal(JSON.stringify(state), freshBefore);
+  state = action(state, 'harvest', 1);
+  const ready = getFarmDeliveryAdvice(state);
+  assert.deepEqual(ready.target, { kind: 'farm-delivery' });
+  assert.equal(ready.tag, '납품 가능');
+  assert.equal(getVillageHub(state).activities[0].target.kind, 'farm-delivery');
+  const beforeDelivery = JSON.stringify(state);
+  getVillageHub(state);
+  assert.equal(JSON.stringify(state), beforeDelivery);
+  const sent = fulfillFarmOrder(state, getFarmOrder(state).id);
+  assert.equal(sent.ok, true, sent.message);
+  state = sent.state;
+  const next = getFarmDeliveryAdvice(state);
+  assert.deepEqual(next.target, { kind: 'farm', mode: 'plant', cropId: 'potato' });
+  assert.equal(next.cropId, 'potato');
+  assert.match(next.title, /감자/);
+  assert.equal(getFarmCropInventory(state).potato, 0);
+  assert.equal(getVillageHub(state).primary.target.kind, 'quest');
+});
+
+test('legacy food and growing crops never masquerade as delivery stock or cause recommendation grants', () => {
+  const state = createGame();
+  delete state.farmEconomy;
+  state.resources.food = 100;
+  state.plots[0].plantedAt = state.totalMinutes;
+  state.plots[0].watered = false;
+  const before = JSON.stringify(state);
+  const advice = getFarmDeliveryAdvice(state);
+  assert.deepEqual(advice.target, { kind: 'farm', mode: 'water' });
+  assert.equal(advice.progress!.current, 0);
+  assert.equal(getFarmOrder(state).ready, false);
+  assert.ok(Object.values(getFarmCropInventory(state)).every(quantity => quantity === 0));
+  getVillageHub(state); getVillageHub(advanceTime(state, 5));
+  assert.equal(JSON.stringify(state), before);
+  assert.equal(state.farmEconomy, undefined);
+});
+
+test('crop guidance preserves the required order when its seed is absent instead of suggesting another seed', () => {
+  let state = action(createGame(), 'harvest', 1);
+  state = fulfillFarmOrder(state, getFarmOrder(state).id).state;
+  state.seedInventory!.potato = 0;
+  state.resources.seeds = Object.values(state.seedInventory!).reduce((sum, quantity) => sum + quantity, 0);
+  const before = JSON.stringify(state), advice = getFarmDeliveryAdvice(state);
+  assert.equal(advice.cropId, 'potato');
+  assert.deepEqual(advice.target, { kind: 'farm-delivery' });
+  assert.equal(advice.progress!.current, 0);
+  assert.match(advice.detail, /코인 19/);
+  assert.equal(JSON.stringify(state), before);
+});
+
+test('seed shortages target the actual seed meadow and its paid rotating harvest resolves the seed shortage', () => {
+  let state = reachedProduction();
+  state = startProduction(state, 1).state;
+  state = claimCurrent(collectProduction(advanceTime(state, BUILDINGS.waterworks.minutes), 1).state);
+  state.seedInventory = { carrot: 0, potato: 0, tomato: 0, corn: 0, strawberry: 0, pumpkin: 0 };
+  state.resources.seeds = 0;
+  state.plots.forEach(plot => { plot.plantedAt = null; plot.watered = false; });
+  const before = JSON.stringify(state), advice = getVillageHub(state).primary;
+  assert.deepEqual(advice.target, { kind: 'roadside', siteId: 'seed-meadow' });
+  assert.match(advice.detail, /씨앗 풀밭/);
+  assert.equal(JSON.stringify(state), before);
+  const gathered = performRoadsideAction(state, 'seed-meadow');
+  assert.equal(gathered.ok, true, gathered.message);
+  state = gathered.state;
+  assert.equal(state.resources.seeds, 3);
+  assert.equal(state.seedInventory!.carrot, 3);
+  assert.deepEqual(getVillageHub(state).primary.target, { kind: 'quest', questId: 'new-seeds' });
+});
+
+test('water advice uses the spring energy cost and records cooldown without inventing water from salvage', () => {
+  let state = claimCurrent(action(createGame(), 'gather'));
+  state.plots[0].plantedAt = state.totalMinutes;
+  state.plots[0].watered = false;
+  state.resources.water = 0;
+  state.energy = 8;
+  const before = JSON.stringify(state), advice = getVillageHub(state).primary;
+  assert.deepEqual(advice.target, { kind: 'roadside', siteId: 'spring' });
+  assert.match(advice.detail, /도로 샘터/);
+  assert.equal(JSON.stringify(state), before);
+  const gathered = performRoadsideAction(state, 'spring');
+  assert.equal(gathered.ok, true, gathered.message);
+  state = gathered.state;
+  assert.equal(state.resources.water, 12);
+  assert.equal(state.energy, 0);
+  assert.equal(getRoadsideSite(state, 'spring').ready, false);
+  assert.equal(getVillageHub(state).primary.target.kind, 'rest');
+  // An explicit shortage fixture keeps the real paid spring cooldown.
+  state.resources.water = 0; state.energy = 8;
+  const waiting = getVillageHub(state).primary;
+  assert.deepEqual(waiting.target, { kind: 'roadside', siteId: 'spring' });
+  assert.equal(waiting.tag, '목표 준비');
+  assert.match(waiting.detail, /20초/);
+  state.energy = 7;
+  assert.equal(getVillageHub(state).primary.target.kind, 'rest');
 });
