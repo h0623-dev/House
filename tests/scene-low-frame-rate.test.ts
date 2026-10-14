@@ -130,7 +130,7 @@ test('actual Scene uses one physical clock on a phone rendering every 350 ms', a
       assert.ok(Math.abs(scene.petMotion.get('cat')!.radius - 24.82) < 1e-10);
       assert.equal(scene.action!.work, 1.275);
       assert.deepEqual(scene.action!.navigation.points, [[403.28, 306.41999999999996],
-        [331.9573647680092, 290.66775652039524], [220.98, 286.57], [182.79, 313.36], [140, 527], [142, 590]]);
+        [331.9573647680092, 290.66775652039524], [220.98, 286.57], [182.79, 313.36], [140, 527], [160, 590]]);
       const returnLocation = copy(scene.action!.navigation.returnLocation);
       for (let frame = 0; frame < 100 && scene.action; frame++) run.next();
       assert.equal(scene.action, null, 'the genuine chore finishes rather than leaving a busy action');

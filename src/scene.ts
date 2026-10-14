@@ -23,11 +23,11 @@ import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-ges
 import { fitVillageCamera, getVillageContentBounds, mergeVillageBounds, VILLAGE_FACILITY_SIZE } from './village-camera';
 import { frameHomeOverview, getHomeOverviewBounds } from './player-camera';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
-  sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
+  sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, navigationObstaclePolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS,
   type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld, type NavigationLink } from './scene-navigation';
 import itemAtlasUrl from './assets/items-anime.png';
 import { layoutProductionBubbles } from './production-bubble-layout';
-import { OUTDOOR_SITES, getOutdoorSite, type OutdoorSiteId } from './outdoor-sites';
+import { OUTDOOR_SITES, getOutdoorSites, getOutdoorTrees, getOutdoorSite, type OutdoorSiteId } from './outdoor-sites';
 import { getFarmPlotCare } from './farm-economy';
 import { getRoadsideSite } from './roadside';
 import { getPetPassage, getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
@@ -333,7 +333,7 @@ export class Scene {
   constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable, plotId?: number) => void) {
     this.ctx = canvas.getContext('2d')!;
     canvas.style.touchAction = 'none';
-    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 빈 바닥을 눌러 트럭 밑과 도로를 걸어요. 사다리와 텃밭, 동료, 도로 채집 장소를 눌러 보세요.');
+    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 빈 바닥을 눌러 트럭 주변 도로를 걸어요. 사다리와 텃밭, 동료, 도로 채집 장소를 눌러 보세요.');
     canvas.addEventListener('pointerdown', this.pointerDown);
     canvas.addEventListener('pointermove', this.pointerMove);
     canvas.addEventListener('pointerup', this.pointer);
@@ -570,7 +570,7 @@ export class Scene {
   }
   /** Recenter the real roadside place; opening its information never moves feet. */
   focusOutdoorSite(id:OutdoorSiteId) {
-    const site=getOutdoorSite(id);if(!site||this.action)return;
+    const site=getOutdoorSite(id,this.state?.deckLevel??1);if(!site||this.action)return;
     if(this.activeFloor!==1)this.setActiveFloor(1);
     // Information sheets and physical travel use the same complete map.
     this.resumePlayerCamera();
@@ -659,7 +659,7 @@ export class Scene {
   playOutdoorAction(kind:'chop'|'gather',id:OutdoorSiteId):Promise<void> {
     if(this.disposed)return Promise.resolve();
     if(this.action)return Promise.reject(new Error('이미 행동 중이에요.'));
-    const site=getOutdoorSite(id);if(!site||site.kind!==kind)return Promise.reject(new Error('채집 장소를 확인해 주세요.'));
+    const site=getOutdoorSite(id,this.state?.deckLevel??1);if(!site||site.kind!==kind)return Promise.reject(new Error('채집 장소를 확인해 주세요.'));
     this.stopWalking();
     const navigation=planWorkNavigation(this.choreWorld(),this.heroLocation,site.approaches.map(point=>({surface:'road',point:[...point]})));
     if(!navigation)return Promise.reject(new Error('채집 장소로 가는 길이 막혔어요. 동료를 회복시키거나 빈 길로 이동해 주세요.'));
@@ -683,7 +683,8 @@ export class Scene {
     let target: NavigationLocation = { surface: 'deck', floor:1, point: projectDeckPoint([u - 13,v + 39],1) };
     let work = kind === 'expandFarm' ? 1.8 : kind === 'fertilize' ? 1.8 : kind === 'water' ? 1.5 : kind === 'harvest' ? 1.65 : 1.5;
     if (kind === 'chop' || kind === 'gather') {
-      target = { surface: 'road', point: kind === 'chop' ? [142,590] : [211,578] };
+      const grove=getOutdoorSite('grove',this.state?.deckLevel??1)!;
+      target = { surface: 'road', point: kind === 'chop' ? [...grove.approaches[0]] : [211+grove.point[0]-97,578+grove.point[1]-601] };
       work = kind === 'chop' ? 2.55 : 2.4;
       if (kind === 'chop') this.treeCutAt = -100;
     } else if (kind === 'expand') {
@@ -694,7 +695,8 @@ export class Scene {
     // A passing pet may temporarily occupy the work approach. The fixed route
     // avoids structures; each accepted frame still waits for full actor clearance.
     let approaches:NavigationLocation[];
-    if(target.surface==='road')approaches=[target,...[[-28,0],[28,0],[0,28],[0,-28]].map(([x,y])=>({surface:'road' as const,point:[target.point[0]+x,target.point[1]+y]as Point}))];
+    if(kind==='chop')approaches=getOutdoorSite('grove',this.state?.deckLevel??1)!.approaches.map(point=>({surface:'road' as const,point:[...point]as Point}));
+    else if(target.surface==='road')approaches=[target,...[[-28,0],[28,0],[0,28],[0,-28]].map(([x,y])=>({surface:'road' as const,point:[target.point[0]+x,target.point[1]+y]as Point}))];
     else if(kind==='expand')approaches=[target,...[-48,48,-96,96].map(shift=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint([-157+shift,this.deckBounds().front-23],1)}))];
     else approaches=[target,...[[u+83,v+39],[u+34,v-13],[u+34,v+81]].map(point=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint(point as Point,1)}))];
     const navigation = planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
@@ -1108,7 +1110,7 @@ export class Scene {
         floors:world.floors.map(f=>({id:f.id,outerPolygon:corners(f.outer).map(p=>point(projectDeckPoint(p,f.id))),deckPolygon:corners(f.deck).map(p=>point(projectDeckPoint(p,f.id)))})),
         links:world.links.map(l=>({...l,points:l.points.map(point)})),
         ladder:{entry:point(world.ladder.entry),top:point(world.ladder.top),bottom:point(world.ladder.bottom)},
-        obstacles:world.obstacles.map(o=>{const polygon=corners(o.bounds).map(p=>o.surface==='deck'?projectDeckPoint(p,o.floor??1):p);return{surface:o.surface,floor:o.floor??1,kind:o.kind,
+        obstacles:world.obstacles.map(o=>{const polygon=navigationObstaclePolygon(o);return{surface:o.surface,floor:o.floor??1,kind:o.kind,
           bounds:{left:Math.min(...polygon.map(p=>p[0])),top:Math.min(...polygon.map(p=>p[1])),right:Math.max(...polygon.map(p=>p[0])),bottom:Math.max(...polygon.map(p=>p[1]))},polygon:polygon.map(point)};})}});
     const detail={moving:walking!==null,surface:location.surface},eventState=JSON.stringify(detail);
     if(eventState!==this.walkEventState){this.walkEventState=eventState;this.canvas.dispatchEvent(new CustomEvent('scenewalkchange',{detail}));}
@@ -1224,7 +1226,7 @@ export class Scene {
     const farmCenter: Point = farmCount <= 3 ? [468, 350]
       : [(Math.min(...farmXs) + Math.max(...farmXs)) / 2, (Math.min(...farmYs) + Math.max(...farmYs)) / 2 - 5];
     let target = showFarm && this.zone === 'home' ? { x: farmCenter[0], y: farmCenter[1], zoom: 1.48 } : { x: homeX, y: homeY, zoom: 1 };
-    if (this.zone === 'grove') target = { x: 180, y: 515, zoom: 2.15 };
+    if (this.zone === 'grove') { const grove=getOutdoorSite('grove',this.state?.deckLevel??1)!;target = { x: 180+grove.point[0]-97, y: 515+grove.point[1]-601, zoom: 2.15 }; }
     const action = this.action;
     // A stable whole-farm view lets additional taps queue while the hero works.
     if (action && !(this.farmMode && isFarmAction(action.kind))) {
@@ -1234,7 +1236,7 @@ export class Scene {
       const amount = Math.min(entry, exit);
       const targetPoint = action.path[action.path.length - 1];
       const logging = action.kind === 'chop' || action.kind === 'gather';
-      const outdoorSite=action.outdoorSiteId?getOutdoorSite(action.outdoorSiteId):undefined;
+      const outdoorSite=action.outdoorSiteId?getOutdoorSite(action.outdoorSiteId,this.state?.deckLevel??1):undefined;
       const focusX = outdoorSite?outdoorSite.point[0]:logging ? 160 : targetPoint[0] + 35;
       const focusY = outdoorSite?outdoorSite.point[1]-44:logging ? 523 : targetPoint[1] - 45;
       const zoom = action.kind === 'expand' ? 1.08 : outdoorSite?1.55:logging ? 2.2 : 1.78;
@@ -1348,12 +1350,7 @@ export class Scene {
     this.petPassageLeasedPaint=[];
     this.heroDrawn = false;
     this.environment();
-    const cutaway=this.activeFloor===1&&this.roadUnderTruck();
-    // Every ground resident stays legible through the layered cutaway. Drawing
-    // before several translucent truck coats still hid nearly all of the body.
-    if(cutaway){c.save();c.globalAlpha*=.42;}
     this.truck();
-    if(cutaway)c.restore();
     this.foreground();
     if(this.activeFloor===1)this.loggingGrove();
     if(this.activeFloor===1)this.outdoorSites();
@@ -1361,12 +1358,6 @@ export class Scene {
     this.drawPets(true);
     this.drawPets(false);
     if(this.freeWalk&&(this.freeWalk.navigation.target.floor??1)===this.activeFloor){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
-    if(cutaway&&this.currentHeroLocation().surface==='road'){
-      const[x,y]=this.heroState().point,pixel=1/this.scale;
-      this.ellipse(x,y+1,13*pixel,5*pixel,'#e6f0c85c','#f9f8d3',1.4*pixel);
-      this.round(x-17*pixel,y+10*pixel,34*pixel,16*pixel,8*pixel,'#f6fae4f0','#9eae7e');
-      this.label('지상',x,y+21*pixel,9*pixel,'#4c6d42',800);
-    }
     this.hero();
     this.workEffects();
     this.fireflies();
@@ -1375,14 +1366,14 @@ export class Scene {
     this.publishWalking();
     this.publishPetPassage();
     this.canvas.dataset.sceneHits=JSON.stringify(this.hits.map(hit=>({...hit})));
-    this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway,truckOpacity:cutaway?.42:1,
-      roadActorLayer:cutaway&&this.currentHeroLocation().surface==='road'&&this.heroDrawn?'above-cutaway-truck':'normal-world-order',
-      sites:OUTDOOR_SITES.map((site,index)=>{const stock=this.state?getRoadsideSite(this.state,site.id):null;return{id:site.id,index,point:{x:site.point[0],y:site.point[1]},
+    this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway:false,truckOpacity:1,
+      roadActorLayer:'normal-world-order',groundPolicy:'outside-truck-body',
+      sites:getOutdoorSites(this.state?.deckLevel??1).map((site,index)=>{const stock=this.state?getRoadsideSite(this.state,site.id):null;return{id:site.id,index,point:{x:site.point[0],y:site.point[1]},
         x:this.dx+site.point[0]*this.scale,y:this.dy+(site.point[1]-72)*this.scale,resource:site.resource,approaches:site.approaches,
         ready:stock?.ready??true,yieldAmount:stock?.yieldAmount??null,remainingSeconds:stock?.remainingSeconds??0,
         bounds:[this.dx+site.point[0]*this.scale-24,this.dy+(site.point[1]-72)*this.scale-24,
           this.dx+site.point[0]*this.scale+24,this.dy+(site.point[1]-72)*this.scale+24]};}),
-      ladderEntry:{x:this.dx+140*this.scale,y:this.dy+508*this.scale},accessStairs:this.accessStairPaint});
+      ladderEntry:{x:this.dx+this.navigationWorld().ladder.bottom[0]*this.scale,y:this.dy+(this.navigationWorld().ladder.bottom[1]-19)*this.scale},accessStairs:this.accessStairPaint});
     // Assets are cached before the next frame; the fallback never hides interactions.
     if (!worldArtReady()) this.label('그림을 불러오는 중…', 470, 45, 13, '#fff2d0');
   }
@@ -1451,10 +1442,11 @@ export class Scene {
 
   private truck() {
     const { level, left, end, back, front: deckFront } = this.deckBounds();
+    const passageV=getPetPassageGeometry(level).hingeUV[1];
     const floorArt={project:(u:number,v:number,z:number)=>this.rawP(u,v,z),bounds:{left,end,back,front:deckFront},
       floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>({id:(i+1)as TruckFloor,z:94+i*FLOOR_HEIGHT})),selectedFloor:this.activeFloor,
       stairways:Array.from({length:(this.state?getTruckFloorCount(this.state):1)-1},(_,i)=>{const stair=getFloorStairs(this.state?.deckLevel??1,(i+2)as 2|3);return{from:stair.lowerFloor,to:stair.upperFloor,top:stair.top,bottom:stair.bottom,reserved:stair.reserved};}),
-      railGaps:this.activeFloor===1?[{edge:'front' as const,from:-270,to:-180},{edge:'left' as const,from:-52,to:52}]:[],night:skyNightAmount(this.state?.minutes??660)};
+      railGaps:this.activeFloor===1?[{edge:'front' as const,from:-270,to:-180},{edge:'left' as const,from:passageV-52,to:passageV+52}]:[],night:skyNightAmount(this.state?.minutes??660)};
     drawTruckFloor(this.ctx,{...floorArt,pass:'structure'});
     if(this.activeFloor===1){
     this.renderFloor=1;
@@ -1498,12 +1490,6 @@ export class Scene {
       this.hits.unshift({kind: 'truck', x: center[0], y: center[1] + 55, radius: 97});
       this.pulse('truck', center[0], center[1] + 50, 71);
     }
-  }
-
-  private roadUnderTruck() {
-    const d=this.deckBounds(),polygons=[0,95].map(z=>[[d.left,d.back],[d.end,d.back],[d.end,d.front],[d.left,d.front]]
-      .map(([u,v])=>this.rawP(u,v,z))),actors=this.physicalActors();
-    return actors.some(actor=>actor.location.surface==='road'&&polygons.some(polygon=>circleOverlapsPolygon(actor.location.point,actor.radius,polygon)));
   }
 
   private expansionDeck() {
@@ -1869,7 +1855,7 @@ export class Scene {
   }
 
   private outdoorSites() {
-    for(const[index,site]of OUTDOOR_SITES.entries()){
+    for(const[index,site]of getOutdoorSites(this.state?.deckLevel??1).entries()){
       const[x,y]=site.point;
       const stock=this.state?getRoadsideSite(this.state,site.id):null,ready=stock?.ready??true;
       if(site.id==='salvage'){
@@ -1900,7 +1886,9 @@ export class Scene {
   }
 
   private loggingGrove() {
-    const c = this.ctx;
+    const c = this.ctx,site=getOutdoorSite('grove',this.state?.deckLevel??1)!,base=OUTDOOR_SITES[0];
+    const shift:Point=[site.point[0]-base.point[0],site.point[1]-base.point[1]],firstHit=this.hits.length;
+    c.save();c.translate(shift[0],shift[1]);
     drawWorldSprite(c, 'forest', 99, 628, 196, 159);
     this.tree(34, 574, .87); this.tree(29, 619, .57);
     const cut = this.time - this.treeCutAt, falling = cut >= 0 && cut < .8, stump = cut >= .8 && cut < 15;
@@ -1930,6 +1918,8 @@ export class Scene {
       this.round(16, 421, 182, 30, 12, '#fff9e7f0', '#bcaa7a');
       this.label('나무를 눌러 벌목을 시작해요', 107, 441, 11, '#4d572f', 700);
     }
+    c.restore();
+    for(const hit of this.hits.slice(firstHit)){hit.x+=shift[0];hit.y+=shift[1];if(hit.bounds)hit.bounds=[hit.bounds[0]+shift[0],hit.bounds[1]+shift[1],hit.bounds[2]+shift[0],hit.bounds[3]+shift[1]];}
   }
 
   private buildingDeck() {
@@ -1992,15 +1982,16 @@ export class Scene {
         c.restore();
       }
     } else if (action.kind === 'chop') {
+      const grove=getOutdoorSite('grove',this.state?.deckLevel??1)!,shiftX=grove.point[0]-97,shiftY=grove.point[1]-601;
       const cut = this.time - this.treeCutAt;
       if (cut < 0 || cut > .8) for (let i = 0; i < 12; i++) {
         const t = (progress * 3 + i * .057) % 1;
-        const x = 98 + Math.cos(i * 1.2) * t * 40, y = 578 - Math.sin(t * Math.PI) * (15 + i * 2) + t * 21;
+        const x = 98+shiftX + Math.cos(i * 1.2) * t * 40, y = 578+shiftY - Math.sin(t * Math.PI) * (15 + i * 2) + t * 21;
         c.save(); c.translate(x, y); c.rotate(t * 6 + i); this.round(-3, -1, 6, 2, 1, '#e0bf81'); c.restore();
       }
       if (progress > .8) {
-        this.round(111, 514 - (progress - .8) * 55, 82, 26, 12, '#f6e8be', '#b5a175');
-        this.label('목재 +18', 152, 532 - (progress - .8) * 55, 12, '#617947', 800);
+        this.round(111+shiftX, 514+shiftY - (progress - .8) * 55, 82, 26, 12, '#f6e8be', '#b5a175');
+        this.label('목재 +18', 152+shiftX, 532+shiftY - (progress - .8) * 55, 12, '#617947', 800);
       }
     } else if (action.kind === 'gather') {
       // The recovered bundle travels from the roadside pile to the survivor's bag.
@@ -2008,10 +1999,13 @@ export class Scene {
       const pickedUp = Math.max(0, Math.min(1, (progress - .38) / .24));
       const stowed = Math.max(0, Math.min(1, (progress - .64) / .25));
       if (pickedUp > 0 && stowed < 1) {
+        const site=action.outdoorSiteId?getOutdoorSite(action.outdoorSiteId,this.state?.deckLevel??1):undefined,
+          grove=getOutdoorSite('grove',this.state?.deckLevel??1)!,
+          sourceX=site?site.point[0]:184+grove.point[0]-97,sourceY=site?site.point[1]-24:568+grove.point[1]-601;
         const handX = hx - 26 * WORLD_HERO_SCALE, handY = hy - 37 * WORLD_HERO_SCALE;
         const packX = hx + 6 * WORLD_HERO_SCALE, packY = hy - 52 * WORLD_HERO_SCALE;
-        const x = 184 + (handX - 184) * pickedUp + (packX - handX) * stowed;
-        const y = 568 + (handY - 568) * pickedUp + (packY - handY) * stowed;
+        const x = sourceX + (handX - sourceX) * pickedUp + (packX - handX) * stowed;
+        const y = sourceY + (handY - sourceY) * pickedUp + (packY - handY) * stowed;
         c.save(); c.globalAlpha = Math.min(1, pickedUp * 4) * (1 - stowed * stowed);
         this.round(x - 4, y - 4, 9, 7, 2, '#ad9b78', '#796c52');
         this.line([[x - 2, y - 3], [x - 2, y + 2]], '#d9c69a', 1); c.restore();
@@ -2063,7 +2057,7 @@ export class Scene {
     c.beginPath(); c.ellipse(x, y, radius, radius * .62, 0, 0, Math.PI * 2); c.strokeStyle = '#fff4bd'; c.lineWidth = 3; c.stroke(); c.restore();
   }
   private foreground() {
-    this.tree(-58, 739, 1.03); this.tree(1054, 733, 1.29);
+    for(const tree of getOutdoorTrees(this.state?.deckLevel??1).filter(tree=>!tree.grove))this.tree(tree.point[0],tree.point[1],tree.scale);
     drawWorldSprite(this.ctx, 'forest', 943, 754, 165, 141);
     drawWorldSprite(this.ctx, 'forest', 8, 724, 143, 122);
     this.grass(859, 740, 1.5);

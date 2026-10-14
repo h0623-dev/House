@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {registerHooks} from 'node:module';
 import {createPetPatrol,getPetGroundRadius,stepPetPatrol} from '../src/scene-patrol';
-import {circleOverlapsPolygon,createNavigationWorld,defaultHeroLocation,planNavigation,planYieldNavigation,projectDeckPoint,blocksActorStep,sampleNavigation,
+import {circleOverlapsPolygon,createNavigationWorld,defaultHeroLocation,planNavigation,planYieldNavigation,projectDeckPoint,blocksActorStep,sampleNavigation,navigationObstaclePolygon,
   distanceToSegment,type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationPoint,type NavigationWorld} from '../src/scene-navigation';
 import {createGame,type GameState} from '../src/game';
 import type {PetPatrolState} from '../src/scene-patrol';
@@ -93,7 +93,7 @@ test('following either upper floor traverses every built stairway without telepo
  }
 });
 
-test('companions follow to the wider ground beneath the truck and return through their open walking ramp',()=>{
+test('companions follow to the wider exterior yard and return through their open walking ramp',()=>{
  for(const id of['dog','cat','boar']as const){
   const radius=getPetGroundRadius(id,scale(id)),world=createNavigationWorld(1,3,[],{radius,actor:'pet',petPassageOpen:true}),
    pet=createPetPatrol(id,world,hero,[],0,scale(id));assert.ok(pet);
@@ -109,7 +109,7 @@ test('companions follow to the wider ground beneath the truck and return through
    if(pet.location.surface==='ramp'){links.add(pet.location.link!);assert.equal(pet.route?.climbSegments.length,0);}
    if(pet.location.surface==='road'){
     for(const obstacle of world.obstacles.filter(obstacle=>obstacle.surface==='road')){
-     const b=obstacle.bounds,polygon=[[b.left,b.top],[b.right,b.top],[b.right,b.bottom],[b.left,b.bottom]];
+     const polygon=navigationObstaclePolygon(obstacle);
      assert.equal(circleOverlapsPolygon(pet.location.point,radius,polygon),false,'the whole paw envelope clears trees and outdoor resource piles');
     }
     if(length(pet.location.point,outdoor.point)<160){reachedGround=true;break;}

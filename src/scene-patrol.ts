@@ -1,6 +1,7 @@
 import {GAME_SPEED_MULTIPLIER} from './game-speed';
 import {WALK_SPEED} from './scene-motion';
 import {blocksActorStep,getPatrolTargets,planNavigation,planYieldNavigation,sampleNavigation,isNavigationLinkSurface,
+  circleOverlapsPolygon,navigationObstaclePolygon,sweptCircleOverlapsPolygon,
   type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationWorld,type NavigationLink} from './scene-navigation';
 import type {TruckFloor} from './truck-layout';
 import type {UnitId} from './units';
@@ -108,6 +109,15 @@ function stop(state:PetPatrolState,delta:number):void{
   state.speed=0;state.blend=Math.max(0,state.blend*(1-Math.min(1,delta*10)));
 }
 
+function repairCoveredRampExit(state:PetPatrolState,world:NavigationWorld,actors:NavigationActor[]):NavigationPath|undefined {
+  const target=state.route!.target,live={...world,actors},retained=planNavigation(live,state.location,target);
+  if(retained)return retained;
+  // The former goal may itself lie under the expanded body. Keep this admitted
+  // owner's roadward direction and use the nearest real exterior road instead.
+  const candidates=getPatrolTargets(live,0).sort((a,b)=>distance(a.point,target.point)-distance(b.point,target.point));
+  for(const destination of candidates){const route=planNavigation(live,state.location,destination);if(route)return route;}
+}
+
 /** Advance only accepted swept steps. Waiting, turning and blocked paths plant feet. */
 export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:NavigationLocation,
   others:NavigationActor[],delta:number,{reducedMotion=false}:{reducedMotion?:boolean}={}):void{
@@ -135,6 +145,18 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
     state.route=chooseRoute(state,world,hero,actors)??null;state.elapsed=0;
     if(!state.route){state.blockedReason='no-clear-patrol-route';state.retryRemaining=.75;stop(state,dt);return;}
     state.blockedReason=null;
+  }
+  const body=state.location.surface==='ramp'&&state.passageLease&&state.route.target.surface==='road'
+    ?world.obstacles.find(obstacle=>obstacle.surface==='road'&&obstacle.kind==='truck-body'):undefined;
+  if(body){
+    const polygon=navigationObstaclePolygon(body),route=state.route,
+      covered=circleOverlapsPolygon(route.target.point,state.radius,polygon)||route.surfaces.some((surface,index)=>surface==='road'
+        &&sweptCircleOverlapsPolygon(route.points[index],route.points[index+1],state.radius,polygon));
+    if(covered){
+      const repaired=repairCoveredRampExit(state,world,actors);
+      if(!repaired){state.blockedReason='no-clear-ramp-exit';state.retryRemaining=.75;stop(state,dt);return;}
+      state.route=repaired;state.elapsed=0;state.blockedReason=null;
+    }
   }
   const nextElapsed=Math.min(state.route.motion.duration,state.elapsed+dt*(22*GAME_SPEED_MULTIPLIER/WALK_SPEED));
   const sample=sampleNavigation(state.route,nextElapsed),from=state.location,to=sample.location,travel=distance(from.point,to.point);

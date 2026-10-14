@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { advanceTime, beginHunt, createGame, getSeedInventory, loadGame, performAction, SAVE_KEY, saveGame, tick, type ActionResult, type GameState, type SaveStorage } from '../src/game.ts';
 import { CROP_IDS } from '../src/crops.ts';
 import { GAME_MINUTES_PER_SECOND } from '../src/game-time.ts';
+import { recoverEnergy } from '../src/energy-recovery.ts';
 import { getFarmCropInventory } from '../src/farm-economy.ts';
 import { buyShopSeed, getShop, sellShopResource } from '../src/shop.ts';
 import { buildFacility } from '../src/settlement.ts';
 import { claimGrowthQuest } from '../src/growth-quests.ts';
 import { fulfillVillageOrder, getVillageOrder } from '../src/village-orders.ts';
 import { rotateLayoutTarget } from '../src/layout-direction.ts';
-import { OUTDOOR_SITES, type OutdoorSiteId } from '../src/outdoor-sites.ts';
+import { getOutdoorSite, OUTDOOR_SITES, type OutdoorSiteId } from '../src/outdoor-sites.ts';
 import { cloneRoadsideFields, getRoadsideProgress, getRoadsideSite, performRoadsideAction, ROADSIDE_RULES, validateRoadsideProgress } from '../src/roadside.ts';
 
 function storage(): SaveStorage {
@@ -36,6 +37,37 @@ test('old villages read four available outdoor sites without adding saved cooldo
   const progress = getRoadsideProgress(loaded); progress.sites.spring.visits = 99; progress.sites.spring.readyAt = 999;
   assert.deepEqual(cloneRoadsideFields(loaded), {}); assert.deepEqual(loaded, before);
   assert.equal(Object.hasOwn(reload(loaded), 'roadside'), false);
+});
+
+test('paid deck expansion moves only site geometry while retaining exact roadside identities and saved transactions',()=>{
+  let state=recoverEnergy(createGame(),0),deviceTime=0;
+  const recover=()=>{deviceTime+=(100-state.energy)*20_000;state=recoverEnergy(state,deviceTime);};
+  for(const site of OUTDOOR_SITES)state=success(performRoadsideAction(state,site.id));
+  for(let level=1;level<=8;level++){
+    assert.equal(state.deckLevel,level);
+    const before=structuredClone(state);
+    for(const site of OUTDOOR_SITES){
+      const view=getRoadsideSite(state,site.id);
+      assert.deepEqual(view.site,getOutdoorSite(site.id,level));
+      assert.equal(view.yieldAmount,ROADSIDE_RULES[site.id].amount);assert.equal(view.energyCost,ROADSIDE_RULES[site.id].energy);
+      assert.equal(view.visits,state.roadside!.sites[site.id].visits);
+    }
+    assert.deepEqual(state,before,'geometry queries never pay, advance time or write a save sidecar');
+    const loaded=reload(state);assert.deepEqual(loaded.roadside,state.roadside);
+    assert.deepEqual(getRoadsideSite(loaded,'spring').site,getOutdoorSite('spring',level));
+    assert.deepEqual(getRoadsideSite({roadside:state.roadside,totalMinutes:state.totalMinutes},'spring').site,getOutdoorSite('spring',1),
+      'old callers without a deck level retain their compatible level-one geometry');
+    if(level===8)break;
+    const wood=20+(level-1)*14,scrap=10+(level-1)*7;
+    while(state.resources.wood<wood){recover();state=tick(state,ROADSIDE_RULES.grove.cooldownSeconds);state=success(performRoadsideAction(state,'grove'));}
+    while(state.resources.scrap<scrap){recover();state=tick(state,ROADSIDE_RULES.salvage.cooldownSeconds);state=success(performRoadsideAction(state,'salvage'));}
+    if(state.energy<15)recover();
+    const paid=structuredClone(state),next=success(performAction(state,'expand',0,undefined,{advanceClock:false}));
+    assert.equal(next.deckLevel,level+1);assert.equal(next.resources.wood,paid.resources.wood-wood);assert.equal(next.resources.scrap,paid.resources.scrap-scrap);
+    assert.deepEqual(next.roadside,paid.roadside);assert.deepEqual(getSeedInventory(next),getSeedInventory(paid));
+    assert.equal(next.totalMinutes,paid.totalMinutes);assert.deepEqual(state,paid);
+    state=next;
+  }
 });
 
 test('the four real site actions pay their own exact resources, energy, experience, metric, and cooldown', () => {

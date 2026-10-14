@@ -34,8 +34,8 @@ export function validateRoadsideProgress(value: unknown): value is RoadsideProgr
         && (row.visits > 0 || row.readyAt === 0);
     });
 }
-export function getRoadsideSite(state: Pick<GameState, 'roadside' | 'totalMinutes'>, id: OutdoorSiteId) {
-  const site = getOutdoorSite(id)!, rule = ROADSIDE_RULES[id], progress = getRoadsideProgress(state).sites[id];
+export function getRoadsideSite(state: Pick<GameState, 'roadside' | 'totalMinutes'> & Partial<Pick<GameState,'deckLevel'>>, id: OutdoorSiteId) {
+  const site = getOutdoorSite(id,state.deckLevel??1)!, rule = ROADSIDE_RULES[id], progress = getRoadsideProgress(state).sites[id];
   const remainingMinutes = Math.max(0, progress.readyAt - state.totalMinutes);
   return { site, ready: remainingMinutes === 0, remainingSeconds: gameMinutesToSeconds(remainingMinutes),
     yieldAmount: rule.amount, energyCost: rule.energy, visits: progress.visits,
@@ -45,7 +45,7 @@ export function getRoadsideSite(state: Pick<GameState, 'roadside' | 'totalMinute
 /** Commit only after the character actually finishes walking and working on site. */
 export function performRoadsideAction(state: GameState, id: unknown): ActionResult {
   const fail = (message: string): ActionResult => ({ state, ok: false, message });
-  const site = getOutdoorSite(id);
+  const site = getOutdoorSite(id,state.deckLevel);
   if (!site) return fail('도로에서 채집할 장소를 골라 주세요.');
   if (state.expedition) return fail('동물 탐험을 마친 뒤 도로에서 채집해 주세요.');
   if (!Number.isFinite(state.energy) || state.energy < 0 || state.energy > 100

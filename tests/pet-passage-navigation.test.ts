@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createNavigationWorld, defaultHeroLocation, getPetPassageLink, groundLocation, planNavigation,
-  projectDeckPoint, sampleNavigation, circleOverlapsPolygon, blocksActorStep, distanceToSegment, type NavigationLocation, type NavigationWorld } from '../src/scene-navigation';
+  projectDeckPoint, sampleNavigation, circleOverlapsPolygon, blocksActorStep, distanceToSegment, navigationObstaclePolygon, type NavigationLocation, type NavigationWorld } from '../src/scene-navigation';
 import { createPetPatrol, getPetGroundRadius, stepPetPatrol } from '../src/scene-patrol';
 import { getPetPassageGeometry, PET_PASSAGE_LINK_ID, PET_PASSAGE_WIDTH } from '../src/pet-passage';
 import type { TruckFloor } from '../src/truck-layout';
@@ -12,13 +12,9 @@ const radiusFor = (id: 'dog' | 'cat' | 'boar') => getPetGroundRadius(id, id === 
 function clear(world: NavigationWorld, location: NavigationLocation) {
   if (location.surface !== 'deck' && location.surface !== 'road') return;
   for (const obstacle of world.obstacles.filter(o => o.surface === location.surface && (o.surface === 'road' || o.floor === location.floor))) {
-    const r = obstacle.bounds, polygon = [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]]
-      .map(p => oPoint(obstacle.surface, p, obstacle.floor));
+    const polygon = navigationObstaclePolygon(obstacle);
     assert.equal(circleOverlapsPolygon(location.point, world.radius, polygon), false);
   }
-}
-function oPoint(surface: 'deck' | 'road', p: number[], floor?: TruckFloor): [number, number] {
-  return surface === 'deck' ? projectDeckPoint(p, floor ?? 1) : [p[0], p[1]];
 }
 function segmentDistance(a: [number, number], b: [number, number], c: [number, number], d: [number, number]) {
   const rx=b[0]-a[0],ry=b[1]-a[1],sx=d[0]-c[0],sy=d[1]-c[1],det=rx*sy-ry*sx;
@@ -43,7 +39,7 @@ test('every pet bridge segment and every gate approach clears the whole human la
           `level${level} leaves every real gate operator outside the full bridge corridor`);
       for(let step=0;step<=100;step++){
         const t=step/100,p:[number,number]=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
-        for(const obstacle of world.obstacles.filter(obstacle=>obstacle.surface==='road')){
+        for(const obstacle of world.obstacles.filter(obstacle=>obstacle.surface==='road'&&obstacle.kind!=='truck-body')){
           const r=obstacle.bounds;
           assert.equal(circleOverlapsPolygon(p,radius+2,[[r.left,r.top],[r.right,r.top],[r.right,r.bottom],[r.left,r.bottom]]),false,
             'the entire bridge clears real roadside trunks and resource footprints');
@@ -152,11 +148,23 @@ test('a closed-gate lease finishes retained ramp feet while refusing every new d
   // substitute coordinates from the new truck edge under the moving body.
   const closed = createNavigationWorld(8, 24, [0, 1], { radius, floors: [1, 2, 3], actor: 'pet', petPassageLease: link });
   assert.equal(closed.links.find(l => l.id === PET_PASSAGE_LINK_ID)?.entryAllowed, false);
-  for (const target of [road(geometry.ground), deck(geometry.entry)]) {
+  const outside=road(getPetPassageGeometry(8).ground);
+  assert.equal(groundLocation(closed,geometry.ground,1,'road'),undefined,'expansion does not reopen the old landing as underbody road');
+  for (const target of [outside, deck(geometry.entry)]) {
     const exit = planNavigation(closed, halfway, target); assert.ok(exit);
     assert.deepEqual(sampleNavigation(exit, 0).point, halfway.point);
-    assert.deepEqual(sampleNavigation(exit, exit.motion.duration).point, target.point);
+    assert.ok(distance(sampleNavigation(exit,exit.motion.duration).point,target.point)<1e-7);
     assert.equal(exit.climbSegments.length, 0);
+    if(target.surface==='road'){
+      assert.ok(exit.points.some(point=>distance(point,geometry.ground)<1e-7),'the retained flight finishes at its original authored landing');
+      assert.ok(exit.returnIndex>0,'its former ground landing is followed by an animated physical exit');
+      assert.ok(groundLocation(closed,exit.returnLocation.point,1,'road'),'returning stops at body-clear ground');
+      let previous=sampleNavigation(exit,0);
+      for(let elapsed=.005;elapsed<exit.motion.duration;elapsed+=.005){const sample=sampleNavigation(exit,elapsed);
+        assert.ok(distance(previous.point,sample.point)<=400*.005+1e-6,'retained feet never teleport during egress');
+        if(sample.location.surface==='road')clear(closed,sample.location);
+        previous=sample;}
+    }
   }
   assert.equal(planNavigation(closed, deck(geometry.entry), road(geometry.ground)), undefined);
   assert.equal(planNavigation(closed, road(geometry.ground), deck(geometry.entry)), undefined);
@@ -197,6 +205,77 @@ test('closing during a real patrol preserves in-flight motion and lets the pet f
     }
     assert.ok(walkedOnGround > 50, 'a shut gate leaves natural patrol on the current side available');
   }
+});
+
+test('an actual patrol crossing during expansion retains its old flight and reaches body-clear road with complete paws', () => {
+  for(const id of['dog','cat','boar']as const)for(const openGate of[false,true]){
+    const radius=radiusFor(id),scale=id==='dog'?.78:id==='boar'?.7:.73,geometry=getPetPassageGeometry(1),lease=getPetPassageLink(1),
+      before=createNavigationWorld(1,3,[],{radius,actor:'pet',petPassageOpen:true}),
+      route=planNavigation(before,deck(geometry.entry),road(geometry.ground));assert.ok(route);
+    const elapsed=route.motion.duration*.45,retained=sampleNavigation(route,elapsed).location;
+    assert.equal(retained.surface,'ramp');
+    const hero=defaultHeroLocation(),pet=createPetPatrol(id,before,hero,[],0,scale);assert.ok(pet);
+    const next=route.motion.segments.find(segment=>distanceToSegment(retained.point,segment.from,segment.to)<1e-7)!,
+      heading=Math.atan2(next.to[1]-retained.point[1],next.to[0]-retained.point[0]);
+    Object.assign(pet,{location:structuredClone(retained),route,elapsed,pauseRemaining:0,retryRemaining:0,turnRemaining:0,
+      passageLease:lease,distance:1781.25,heading,facing:Math.cos(heading)>=0?1:-1,facingBlend:Math.cos(heading)>=0?1:-1,desiredSurface:'road'});
+    const after=createNavigationWorld(8,3,[],{radius,floors:[1,2,3],actor:'pet',petPassageOpen:openGate,petPassageLease:lease}),
+      outdoor=road([270,after.road.bottom-40]),originalLease=structuredClone(pet.passageLease),oldDistance=pet.distance;
+    assert.equal(groundLocation(after,geometry.ground,1,'road'),undefined,'the previous landing is genuinely under the enlarged body');
+    let reached=false,travelled=0,sawOldLanding=false,repairedRoute:typeof route|undefined;
+    for(let frame=0;frame<1200;frame++){
+      const from=structuredClone(pet.location),gait=pet.distance;stepPetPatrol(pet,after,outdoor,[],.05);
+      const moved=distance(from.point,pet.location.point);travelled+=moved;
+      assert.ok(moved<=44*.05+1e-6,'repair never increases the patrol cruise speed');
+      assert.ok(Math.abs(pet.distance-gait-moved)<1e-6,'only actual movement advances retained gait');
+      assert.equal(pet.radius,radius);
+      if(frame===0){
+        assert.ok(pet.route);assert.notEqual(pet.route,route,'only the now-covered remainder is repaired');repairedRoute=pet.route;
+        assert.ok(distance(pet.route.points[0],retained.point)<1e-7,'repair starts at the exact previously accepted feet');
+      }
+      if(pet.location.surface==='ramp'){
+        assert.equal(pet.route,repairedRoute,'later ordinary patrol steps retain the repaired admitted exit');
+        assert.deepEqual(pet.passageLease,originalLease,'expansion keeps the original real bridge geometry');
+        assert.equal(pet.location.link,PET_PASSAGE_LINK_ID);
+        if(pet.route?.points.some(point=>distance(point,geometry.ground)<1e-7))sawOldLanding=true;
+      }
+      if(pet.location.surface==='road'){
+        clear(after,pet.location);assert.ok(groundLocation(after,pet.location.point,1,'road'),'the first accepted road feet already clear the entire new body');
+        reached=true;break;
+      }
+      assert.notEqual(pet.location.surface,'deck','expansion and gate closing never reverse the admitted descent');
+    }
+    assert.ok(reached&&sawOldLanding,`${id} expanded ${openGate?'open':'closed'} flight finishes its retained descent`);
+    assert.ok(Math.abs(pet.distance-oldDistance-travelled)<1e-6);assert.equal(pet.passageLease,undefined);
+  }
+});
+
+test('a covered retained ramp waits for a physically blocked road exit without dropping its owner or inventing feet', () => {
+  const radius=radiusFor('boar'),geometry=getPetPassageGeometry(1),lease=getPetPassageLink(1),
+    before=createNavigationWorld(1,3,[],{radius,actor:'pet',petPassageOpen:true}),
+    route=planNavigation(before,deck(geometry.entry),road(geometry.ground));assert.ok(route);
+  const elapsed=route.motion.duration*.45,retained=sampleNavigation(route,elapsed).location,hero=defaultHeroLocation(),
+    pet=createPetPatrol('boar',before,hero,[],0,.7);assert.ok(pet);
+  Object.assign(pet,{location:structuredClone(retained),route,elapsed,pauseRemaining:0,retryRemaining:0,turnRemaining:0,
+    passageLease:lease,distance:904.5,desiredSurface:'road'});
+  const blocking={id:'immobile',radius:5000,location:road([0,391])},
+    blocked=createNavigationWorld(8,3,[],{radius,floors:[1,2,3],actor:'pet',petPassageLease:lease,actors:[blocking]}),
+    outdoor=road([270,blocked.road.bottom-40]);
+  for(let frame=0;frame<32;frame++){
+    stepPetPatrol(pet,blocked,outdoor,[],.05);
+    assert.deepEqual(pet.location,retained);assert.equal(pet.distance,904.5);assert.equal(pet.speed,0);
+    assert.equal(pet.route,route);assert.deepEqual(pet.passageLease,lease);assert.equal(pet.blockedReason,'no-clear-ramp-exit');
+  }
+  const released=createNavigationWorld(8,3,[],{radius,floors:[1,2,3],actor:'pet',petPassageLease:lease});
+  let arrived=false;
+  for(let frame=0;frame<1200;frame++){
+    const from=structuredClone(pet.location),gait=pet.distance;stepPetPatrol(pet,released,outdoor,[],.05);
+    const moved=distance(from.point,pet.location.point);
+    assert.ok(moved<=44*.05+1e-6);assert.ok(Math.abs(pet.distance-gait-moved)<1e-6);
+    if(pet.location.surface==='road'){clear(released,pet.location);arrived=true;break;}
+    assert.equal(pet.location.surface,'ramp');assert.deepEqual(pet.passageLease,lease);
+  }
+  assert.ok(arrived,'clearing the real obstruction releases the original roadward owner');
 });
 
 test('upper-floor followers descend every existing stair and then walk their exclusive ground ramp', () => {

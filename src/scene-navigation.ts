@@ -1,6 +1,7 @@
 import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRoute } from './scene-motion';
-import { OUTDOOR_SITES } from './outdoor-sites';
-import { getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
+import { getOutdoorSites, getOutdoorTrees } from './outdoor-sites';
+import { getPetPassageGeometry, PET_PASSAGE_LINK_ID, PET_PASSAGE_WIDTH, PET_PASSAGE_MAX_BODY_RADIUS } from './pet-passage';
+import { getTruckGroundFootprint } from './truck-ground';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   projectTruckPoint, unprojectTruckPoint, type HomeLocation, type TruckFloor } from './truck-layout';
 export { FARM_POSITIONS, SETTLEMENT_POSITIONS, DECK_FRONTS } from './truck-layout';
@@ -13,7 +14,11 @@ export type NavigationSurface = 'deck' | 'road' | 'ladder' | 'ramp';
 export type NavigationPoint = [number, number];
 export interface NavigationLocation { point: NavigationPoint; surface: NavigationSurface; floor?: TruckFloor; link?: string }
 export interface NavigationRect { left: number; top: number; right: number; bottom: number }
-export interface NavigationObstacle { surface: 'deck' | 'road'; floor?: TruckFloor; kind?: string; bounds: NavigationRect }
+export interface NavigationObstacle {
+  surface: 'deck' | 'road'; floor?: TruckFloor; kind?: string; bounds: NavigationRect;
+  /** Exact screen-space footprint; bounds remain a broad-phase routing envelope. */
+  polygon?: NavigationPoint[];
+}
 export interface NavigationActor { id: string; location: NavigationLocation; radius: number; passageIntent?:string }
 export interface NavigationFloor { id: TruckFloor; deck: NavigationRect; outer: NavigationRect }
 export interface NavigationLink { id: string; lower: 0 | TruckFloor; upper: TruckFloor; points: NavigationPoint[]; surface?: 'ladder' | 'ramp'; entryAllowed?: boolean }
@@ -49,13 +54,18 @@ const floorId = (p:NavigationLocation):number => p.surface==='road'?0:p.floor??1
 const margin = (radius:number) => ({x:radius*Math.hypot(.47,.67)/.6555,y:radius*Math.hypot(.34,.91)/.6555});
 const inflate = (r:NavigationRect,x:number,y=x):NavigationRect => ({left:r.left-x,top:r.top-y,right:r.right+x,bottom:r.bottom+y});
 
-/** Ground stays a separate physical surface underneath the elevated living deck. */
+/** Ground remains a separate physical surface surrounding the living truck. */
 export function getRoadBounds(level:number):NavigationRect {
   const deck=getFloorBounds(level),corners=[[deck.left,deck.back],[deck.end,deck.back],
-    [deck.end,deck.front],[deck.left,deck.front]].map(point=>projectDeckPoint(point as NavigationPoint));
-  return {left:Math.min(-40,...corners.map(point=>point[0]-100)),top:360,
+    [deck.end,deck.front],[deck.left,deck.front]].map(point=>projectDeckPoint(point as NavigationPoint)),
+    // A pet parked beyond the ramp landing must leave another full paw body
+    // room to pass between it and the road edge beside the solid truck.
+    passingRoom=PET_PASSAGE_WIDTH/2+3*PET_PASSAGE_MAX_BODY_RADIUS+4;
+  return {left:Math.min(-40,getTruckGroundFootprint(level).bounds.left-passingRoom,...corners.map(point=>point[0]-100)),top:360,
     right:Math.max(1160,...corners.map(point=>point[0]+130)),
-    bottom:Math.max(880,...corners.map(point=>point[1]+95+105))};
+    bottom:Math.max(880,...corners.map(point=>point[1]+95+105),
+      ...getOutdoorSites(level).flatMap(site=>[site.bounds.bottom+40,...site.approaches.map(point=>point[1]+40)]),
+      ...getOutdoorTrees(level).map(tree=>tree.bounds.bottom+40))};
 }
 
 /** The same physical footprints feed navigation, placement previews and collision checks. */
@@ -69,12 +79,11 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   for(const [u,v]of FARM_POSITIONS.slice(0,plotCount))obstacles.push({surface:'deck',floor:1,kind:'farm',bounds:{left:u,top:v,right:u+69,bottom:v+68}});
   for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}
-  obstacles.push({surface:'road',kind:'tree',bounds:{left:63,top:576,right:127,bottom:624}},
-    {surface:'road',kind:'tree',bounds:{left:12,top:559,right:55,bottom:583}},
-    {surface:'road',kind:'tree',bounds:{left:13,top:607,right:45,bottom:628}},
-    {surface:'road',kind:'tree',bounds:{left:1033,top:718,right:1077,bottom:746}});
-  for(const site of OUTDOOR_SITES.filter(site=>site.id!=='grove'))obstacles.push({surface:'road',kind:'outdoor-site',bounds:{...site.bounds}});
-  const front=getFloorBounds(level).front,ladder={entry:projectDeckPoint([-225,front-60]),top:projectDeckPoint([-225,front-3]),bottom:[140,527]as NavigationPoint};
+  for(const tree of getOutdoorTrees(level))obstacles.push({surface:'road',kind:'tree',bounds:{...tree.bounds}});
+  for(const site of getOutdoorSites(level).filter(site=>site.id!=='grove'))obstacles.push({surface:'road',kind:'outdoor-site',bounds:{...site.bounds}});
+  const body=getTruckGroundFootprint(level);obstacles.push({surface:'road',kind:'truck-body',...body});
+  const front=getFloorBounds(level).front,ladder={entry:projectDeckPoint([-225,front-60]),top:projectDeckPoint([-225,front-3]),
+    bottom:[140,527+.47*(front-getFloorBounds(1).front)]as NavigationPoint};
   const links:NavigationLink[]=options.actor==='pet'
     ?options.petPassageLease?.id===PET_PASSAGE_LINK_ID
       ?[{...options.petPassageLease,points:options.petPassageLease.points.map(point=>[...point]),surface:'ramp',entryAllowed:options.petPassageOpen??false}]
@@ -108,26 +117,21 @@ function actorsFor(world:NavigationWorld,floor:number) {
 function staticFor(world:NavigationWorld,floor:number) {
   return world.obstacles.filter(obstacle=>floor?obstacle.surface==='deck'&&obstacle.floor===floor:obstacle.surface==='road');
 }
-function obstaclePolygon(obstacle:NavigationObstacle):NavigationPoint[] {
+export function navigationObstaclePolygon(obstacle:NavigationObstacle):NavigationPoint[] {
+  if(obstacle.polygon)return obstacle.polygon;
   const r=obstacle.bounds;
   return [[r.left,r.top],[r.right,r.top],[r.right,r.bottom],[r.left,r.bottom]].map(point=>obstacle.surface==='deck'
     ?projectDeckPoint(point as NavigationPoint,obstacle.floor??1):point as NavigationPoint);
 }
 function occupied(world:NavigationWorld,floor:number,point:MotionPoint) {
-  return staticFor(world,floor).some(obstacle=>circleOverlapsPolygon(point,world.radius,obstaclePolygon(obstacle)))
+  return staticFor(world,floor).some(obstacle=>circleOverlapsPolygon(point,world.radius,navigationObstaclePolygon(obstacle)))
     ||actorsFor(world,floor).some(actor=>distance(point,actor.location.point)<world.radius+actor.radius-.01);
 }
 function crossesObstacle(world:NavigationWorld,floor:number,from:MotionPoint,to:MotionPoint,obstacle:NavigationObstacle) {
   const uvFrom=floor?unprojectDeckPoint(from,floor as TruckFloor):from,
     uvTo=floor?unprojectDeckPoint(to,floor as TruckFloor):to,clearance=floor?margin(world.radius):{x:world.radius,y:world.radius};
   if(!crossesRect(uvFrom,uvTo,inflate(obstacle.bounds,clearance.x,clearance.y)))return false;
-  const polygon=obstaclePolygon(obstacle);
-  if(crossesRect(uvFrom,uvTo,obstacle.bounds))return true;
-  return polygon.some((point,index)=>{
-    const next=polygon[(index+1)%polygon.length];
-    return Math.min(distanceToSegment(point,from,to),distanceToSegment(next,from,to),
-      distanceToSegment(from,point,next),distanceToSegment(to,point,next))<world.radius-.01;
-  });
+  return sweptCircleOverlapsPolygon(from,to,world.radius,navigationObstaclePolygon(obstacle));
 }
 function boundsFor(world:NavigationWorld,floor:number) { return floor?world.floors.find(f=>f.id===floor)?.deck:world.road; }
 export function groundLocation(world:NavigationWorld,point:MotionPoint,floor=world.activeFloor,preferredSurface?:'deck'|'road'):NavigationLocation|undefined {
@@ -160,7 +164,7 @@ function floorPath(world:NavigationWorld,floor:number,from:MotionPoint,to:Motion
     };
   const start=convert(from),target=convert(to),bounds=boundsFor(world,floor);if(!bounds)return;
   const clearance=floor?margin(world.radius):{x:world.radius,y:world.radius},actors=actorsFor(world,floor),
-    solids=staticFor(world,floor).map(obstacle=>({raw:obstacle.bounds,bounds:inflate(obstacle.bounds,clearance.x,clearance.y),polygon:obstaclePolygon(obstacle)})),
+    solids=staticFor(world,floor).map(obstacle=>({obstacle,bounds:inflate(obstacle.bounds,clearance.x,clearance.y),polygon:navigationObstaclePolygon(obstacle)})),
     obstacles=obstaclesFor(world,floor),valid=(p:MotionPoint)=>inside(p,bounds)
       &&!solids.some(solid=>inside(p,solid.bounds)&&circleOverlapsPolygon(project(p),world.radius,solid.polygon))
       &&!actors.some(actor=>distance(project(p),actor.location.point)<world.radius+actor.radius-.01);
@@ -169,17 +173,23 @@ function floorPath(world:NavigationWorld,floor:number,from:MotionPoint,to:Motion
     const from=project(a),to=project(b);
     return !solids.some(solid=>{
       if(!crossesRect(a,b,solid.bounds))return false;
-      if(crossesRect(a,b,solid.raw))return true;
-      return solid.polygon.some((point,index)=>{
-        const next=solid.polygon[(index+1)%solid.polygon.length];
-        return Math.min(distanceToSegment(point,from,to),distanceToSegment(next,from,to),
-          distanceToSegment(from,point,next),distanceToSegment(to,point,next))<world.radius-.01;
-      });
+      return sweptCircleOverlapsPolygon(from,to,world.radius,solid.polygon);
     })&&!actors.some(actor=>distanceToSegment(actor.location.point,from,to)<world.radius+actor.radius-.01);
   };
   if(clear(start,target))return[project(start),project(target)];
   const nodes:NavigationPoint[]=[start,target];
-  for(const r of obstacles)for(const p of [[r.left-.5,r.top-.5],[r.right+.5,r.top-.5],[r.right+.5,r.bottom+.5],[r.left-.5,r.bottom+.5]]as NavigationPoint[])if(valid(p))nodes.push(p);
+  for(const r of obstacles)for(const corner of [[r.left-.5,r.top-.5],[r.right+.5,r.top-.5],[r.right+.5,r.bottom+.5],[r.left-.5,r.bottom+.5]]as NavigationPoint[]){
+    // An obstacle envelope can extend beyond the road while its circle still
+    // leaves a real passage along the boundary. Keep that boundary intersection
+    // in the visibility graph, subject to the same exact full-body checks.
+    const point:NavigationPoint=[Math.max(bounds.left,Math.min(bounds.right,corner[0])),Math.max(bounds.top,Math.min(bounds.bottom,corner[1]))];
+    if(valid(point))nodes.push(point);
+  }
+  // A sloped footprint needs its actual offset corners: routing only around
+  // a screen bounding box can close an otherwise clear outside passage.
+  for(const solid of solids.filter(solid=>solid.obstacle.polygon))for(const point of offsetPolygonCorners(solid.polygon,world.radius+.5)){
+    const p=convert(point);if(valid(p))nodes.push(p);
+  }
   const cost=nodes.map(()=>Infinity),previous=nodes.map(()=>-1),visited=new Set<number>();cost[0]=0;
   while(visited.size<nodes.length){
     let current=-1;for(let i=0;i<nodes.length;i++)if(!visited.has(i)&&(current<0||cost[i]<cost[current]))current=i;
@@ -202,7 +212,17 @@ function escapePoint(world:NavigationWorld,location:NavigationLocation):Navigati
   const candidates:NavigationPoint[]=[];
   for(const r of containing)candidates.push([r.left-.5,start[1]],[r.right+.5,start[1]],[start[0],r.top-.5],[start[0],r.bottom+.5],
     [r.left-.5,r.top-.5],[r.right+.5,r.top-.5],[r.right+.5,r.bottom+.5],[r.left-.5,r.bottom+.5]);
-  const otherObstacles=staticFor(world,floor).filter(obstacle=>!circleOverlapsPolygon(location.point,world.radius,obstaclePolygon(obstacle))),
+  for(const obstacle of staticFor(world,floor).filter(obstacle=>obstacle.polygon)){
+    const polygon=navigationObstaclePolygon(obstacle);if(!circleOverlapsPolygon(location.point,world.radius,polygon))continue;
+    const normals=polygonOutwardNormals(polygon);
+    polygon.forEach((a,index)=>{
+      const b=polygon[(index+1)%polygon.length],dx=b[0]-a[0],dy=b[1]-a[1],length=dx*dx+dy*dy,
+        amount=length?Math.max(0,Math.min(1,((location.point[0]-a[0])*dx+(location.point[1]-a[1])*dy)/length)):0,
+        normal=normals[index],p:NavigationPoint=[a[0]+amount*dx+normal[0]*(world.radius+.5),a[1]+amount*dy+normal[1]*(world.radius+.5)];
+      candidates.push(floor?unprojectDeckPoint(p,floor as TruckFloor):p);
+    });
+  }
+  const otherObstacles=staticFor(world,floor).filter(obstacle=>!circleOverlapsPolygon(location.point,world.radius,navigationObstaclePolygon(obstacle))),
     otherActors=actorsFor(world,floor).filter(actor=>distance(location.point,actor.location.point)>=world.radius+actor.radius-.01);
   return candidates.filter(p=>inside(p,bounds)&&!occupied(world,floor,project(p)))
     .filter(p=>!otherObstacles.some(obstacle=>crossesObstacle(world,floor,location.point,project(p),obstacle))
@@ -222,7 +242,7 @@ export function planNavigation(world:NavigationWorld,start:NavigationLocation,ta
   const appendLink=(link:NavigationLink,indices:number[])=>{
     for(let n=1;n<indices.length;n++)append(link.points[indices[n]],link.surface??'ladder',pointFloor(link,indices[n-1]),pointFloor(link,indices[n]),link.id);
   };
-  let current=floorId(start),returnIndex=0;
+  let current=floorId(start),returnIndex=0,returnAnchor:NavigationLocation|undefined;
   if(isNavigationLinkSurface(start.surface)){
     const found=world.links.flatMap(link=>link.points.slice(1).map((p,index)=>({link,index,a:link.points[index],b:p})))
       .find(({link,a,b})=>(link.surface??'ladder')===start.surface&&(!start.link||start.link===link.id)&&Math.abs(distance(a,start.point)+distance(start.point,b)-distance(a,b))<.01);
@@ -231,6 +251,16 @@ export function planNavigation(world:NavigationWorld,start:NavigationLocation,ta
     append(found.link.points[indices[0]],found.link.surface??'ladder',pointFloor(found.link,found.index),pointFloor(found.link,indices[0]),found.link.id);
     appendLink(found.link,indices);
     current=towardUpper?found.link.upper:found.link.lower;
+    // A leased old flight retains its real feet through an expansion. Once its
+    // original landing is reached, walk out of the new body before admitting a
+    // normal floor route; the body never becomes a newly selectable road goal.
+    const landing:NavigationLocation={surface:current?'deck':'road',point:[...points[points.length-1]],...(current?{floor:current as TruckFloor}:{})},
+      grewOverLanding=current===0&&staticFor(world,0).some(obstacle=>obstacle.kind==='truck-body'&&circleOverlapsPolygon(landing.point,world.radius,navigationObstaclePolygon(obstacle))),
+      escaped=grewOverLanding?escapePoint(world,landing):undefined;
+    if(escaped){
+      append(escaped,found.link.surface??'ladder',current,current,found.link.id);
+      returnIndex=points.length-1;returnAnchor={...landing,point:[...escaped]};
+    }
   }else{
     if(world.actor!=='pet'&&start.surface==='deck'&&current===1&&!inside(unprojectDeckPoint(start.point),world.floors[0].deck)){
       const {entry,top}=world.ladder;if(Math.abs(distance(entry,start.point)+distance(start.point,top)-distance(entry,top))<.01)append(entry,'ladder',1,1,'road-1');
@@ -249,7 +279,7 @@ export function planNavigation(world:NavigationWorld,start:NavigationLocation,ta
   const climbSegments=surfaces.flatMap((surface,index)=>surface==='ladder'?[index]:[]),motion=createMotionRoute(points,climbSegments),
     returnMotion=returnIndex?createMotionRoute(points.slice(returnIndex),climbSegments.filter(i=>i>=returnIndex).map(i=>i-returnIndex)):motion;
   return{points,surfaces,segments,climbSegments,start:copyLocation(start),target:copyLocation(target),motion,returnIndex,returnMotion,
-    returnLocation:{point:[...points[returnIndex]],surface:returnIndex?surfaces[returnIndex-1]:start.surface,...(returnIndex&&floorId(start)?{floor:floorId(start)as TruckFloor}:start.floor?{floor:start.floor}:{}),...(start.link?{link:start.link}:{})}};
+    returnLocation:returnAnchor??{point:[...points[returnIndex]],surface:returnIndex?surfaces[returnIndex-1]:start.surface,...(returnIndex&&floorId(start)?{floor:floorId(start)as TruckFloor}:start.floor?{floor:start.floor}:{}),...(start.link?{link:start.link}:{})}};
 }
 /** Immobile companions remain physical blockers; choose another real work edge. */
 export function planWorkNavigation(world:NavigationWorld,start:NavigationLocation,approaches:readonly NavigationLocation[]):NavigationPath|undefined {
@@ -312,6 +342,32 @@ export function distanceToSegment(point:MotionPoint,from:MotionPoint,to:MotionPo
   const dx=to[0]-from[0],dy=to[1]-from[1],denominator=dx*dx+dy*dy,
     ratio=denominator?Math.max(0,Math.min(1,((point[0]-from[0])*dx+(point[1]-from[1])*dy)/denominator)):0;
   return distance(point,[from[0]+dx*ratio,from[1]+dy*ratio]);
+}
+function segmentDistance(a:MotionPoint,b:MotionPoint,c:MotionPoint,d:MotionPoint):number {
+  const rx=b[0]-a[0],ry=b[1]-a[1],sx=d[0]-c[0],sy=d[1]-c[1],det=rx*sy-ry*sx;
+  if(Math.abs(det)>1e-9){
+    const cx=c[0]-a[0],cy=c[1]-a[1],t=(cx*sy-cy*sx)/det,u=(cx*ry-cy*rx)/det;
+    if(t>=0&&t<=1&&u>=0&&u<=1)return 0;
+  }
+  return Math.min(distanceToSegment(a,c,d),distanceToSegment(b,c,d),distanceToSegment(c,a,b),distanceToSegment(d,a,b));
+}
+export function sweptCircleOverlapsPolygon(from:MotionPoint,to:MotionPoint,radius:number,polygon:readonly MotionPoint[]):boolean {
+  return circleOverlapsPolygon(from,radius,polygon)||circleOverlapsPolygon(to,radius,polygon)
+    ||polygon.some((point,index)=>segmentDistance(from,to,point,polygon[(index+1)%polygon.length])<radius-.01);
+}
+function polygonOutwardNormals(polygon:readonly MotionPoint[]):NavigationPoint[] {
+  const area=polygon.reduce((sum,point,index)=>{const next=polygon[(index+1)%polygon.length];return sum+point[0]*next[1]-next[0]*point[1];},0),sign=area>=0?1:-1;
+  return polygon.map((point,index)=>{
+    const next=polygon[(index+1)%polygon.length],dx=next[0]-point[0],dy=next[1]-point[1],length=Math.hypot(dx,dy)||1;
+    return [sign*dy/length,-sign*dx/length];
+  });
+}
+function offsetPolygonCorners(polygon:readonly MotionPoint[],radius:number):NavigationPoint[] {
+  const normals=polygonOutwardNormals(polygon);
+  return polygon.map((point,index)=>{
+    const a=normals[(index+polygon.length-1)%polygon.length],b=normals[index],denominator=1+a[0]*b[0]+a[1]*b[1];
+    return [point[0]+(a[0]+b[0])*radius/denominator,point[1]+(a[1]+b[1])*radius/denominator];
+  });
 }
 export function circleOverlapsPolygon(point:MotionPoint,radius:number,polygon:readonly MotionPoint[]):boolean {
   let inside=false;

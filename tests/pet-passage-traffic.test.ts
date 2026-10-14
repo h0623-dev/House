@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { createGame, type GameState } from '../src/game';
 import { getPetPassageGeometry, setPetPassageOpen } from '../src/pet-passage';
-import { blocksActorStep, getPetPassageLink, groundLocation, planNavigation, sampleNavigation, type NavigationActor, type NavigationLocation, type NavigationWorld } from '../src/scene-navigation';
+import { blocksActorStep, getPetPassageLink, groundLocation, planNavigation, sampleNavigation, circleOverlapsPolygon, navigationObstaclePolygon,
+  sweptCircleOverlapsPolygon, type NavigationActor, type NavigationLocation, type NavigationWorld } from '../src/scene-navigation';
 import type { PetPatrolState } from '../src/scene-patrol';
 import type { UnitId } from '../src/units';
 const distance=(a:readonly number[],b:readonly number[])=>Math.hypot(a[0]-b[0],a[1]-b[1]);
@@ -142,6 +143,44 @@ test('actual two-resident Scene clears ordinary active bridge traffic without te
    }
    assert.ok(queuedAtTarget&&clearedBeforeEntry&&parkedDuringApproach>2);assert.ok(arrived,'both full bodies finish inside the unchanged 41.20-second regression budget');
    assert.deepEqual(scene.state,before);
+  });
+  await t.test('the actual paid-deck capture releases a queued cat past the yielded full dog without changing the passage deadline',()=>{
+   const{scene,dog,cat}=fixture('down'),state=structuredClone(scene.state);
+   state.deckLevel=7;state.plots=Array.from({length:9},(_,index)=>({...structuredClone(state.plots[0]),id:index+1}));
+   state.truckLayout={version:1,floors:3,home:{floor:3,slot:1},placements:[{id:1,slot:17}],
+    upperBuildings:[{id:17,type:'waterworks',slot:33,level:2,startedAt:644,readyAt:680},
+     {id:18,type:'kitchen',slot:32,level:1,startedAt:null,readyAt:null}],nextBuildingId:19};
+   scene.setState(state);scene.heroLocation={surface:'road',point:[140,658.13]};scene.petYields.clear();
+   const passage=getPetPassageLink(7),parked:NavigationLocation={surface:'road',point:[-207.1076052811586,447.7995220449949]},
+    dogFrom:NavigationLocation={surface:'road',point:[parked.point[0],391.7995220449949]},
+    catFrom:NavigationLocation={surface:'deck',floor:1,point:[114.04356045435364,329.42656546521204]};
+   Object.assign(dog,{location:structuredClone(parked),route:null,elapsed:0,pauseRemaining:0,retryRemaining:0,turnRemaining:0,
+    blockedReason:null,distance:2122.2783242529217,heading:-4.71238898038469,facing:-1,facingBlend:-1,desiredFloor:1,desiredSurface:'road'});
+   Object.assign(cat,{location:structuredClone(catFrom),route:null,elapsed:0,pauseRemaining:0,retryRemaining:0,turnRemaining:0,
+    blockedReason:'no-clear-patrol-route',waitingForPassage:passage.id,distance:959.2461066365452,
+    heading:-12.566370614359172,facing:1,facingBlend:1,desiredFloor:1,desiredSurface:'road'});
+   delete dog.passageLease;delete cat.passageLease;
+   const dogWorld=scene.petNavigationWorld(dog.radius,scene.physicalActors().filter(actor=>actor.id!=='dog')),
+    yielded=planNavigation(dogWorld,dogFrom,parked);assert.ok(yielded);
+   scene.petYields.set('dog',{route:yielded,reserved:[{surface:'ramp',floor:1,link:passage.id,point:[...passage.points[0]]}],
+    reservedRadius:cat.radius,passage,passageOwner:'cat'});
+   for(const pet of[dog,cat]){const world=scene.petNavigationWorld(pet.radius,scene.physicalActors().filter(actor=>actor.id!==pet.id));
+    pet.worldKey=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);}
+   const before=structuredClone(scene.state);let reached=false,walkedRamp=false,releasedQueue=false;
+   for(let frame=0;frame<441;frame++){
+    step(scene,()=>scene.advancePets(.05));
+    if(cat.location.surface==='ramp')walkedRamp=true;
+    if(!cat.waitingForPassage)releasedQueue=true;
+    for(const pet of[dog,cat]){
+     const world=scene.petNavigationWorld(pet.radius,[]),body=world.obstacles.find(obstacle=>obstacle.kind==='truck-body')!;
+     if(pet.location.surface==='road')assert.equal(circleOverlapsPolygon(pet.location.point,pet.radius,navigationObstaclePolygon(body)),false);
+     if(pet.route)for(let index=0;index<pet.route.surfaces.length;index++)if(pet.route.surfaces[index]==='road')
+      assert.equal(sweptCircleOverlapsPolygon(pet.route.points[index],pet.route.points[index+1],pet.radius,navigationObstaclePolygon(body)),false);
+    }
+    if(cat.location.surface==='road'){reached=true;break;}
+   }
+   assert.ok(reached&&walkedRamp&&releasedQueue,'the captured wait clears through real full-body walking within the existing 22.065-second native deadline');
+   assert.deepEqual(scene.state,before,'queue clearance preserves the paid save and every resource');
   });
   await t.test('closing with the captured blocked descending cat lets that original road lease exit before actual gate work resolves',async()=>{
    const{scene,dog,cat}=fixture('down'),originalRoute=cat.route,before=structuredClone(scene.state);let resolved=false,rejected='';
