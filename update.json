@@ -1,9 +1,9 @@
 {
-  "version": "0.30.0",
-  "versionCode": 30,
+  "version": "0.31.0",
+  "versionCode": 31,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.30.0-debug.apk",
-  "sha256": "7098820c86ca79a7acdf8498197c5201e7f2caf6132756c6f35df3ac8866d020",
-  "notes": "지상 이동 중 주인공이 트럭 차체 밑으로 들어가지 않고 바깥 도로로 돌아갑니다. 트럭 밖 자유 이동과 사람 계단·동물 통로를 유지하며, 기존 저장·기력 자동 회복·전체 마을 보기·2배 속도·자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-14T00:56:32.552Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.31.0-debug.apk",
+  "sha256": "d92b5282ce6584229b77bd1c0ca85e8080948245df9958e9ba5ce2c8c92fd8fa",
+  "notes": "숲의 개별 나무와 고철·씨앗·샘물을 직접 찾아 채집합니다. 채집물마다 실제 180초 뒤 따로 재생하며 숲길을 걷고 나무를 베고 기력을 자동 회복합니다. 기존 저장·트럭 이동·전체 마을 보기·2배 속도·자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-14T04:27:18.349Z"
 }
