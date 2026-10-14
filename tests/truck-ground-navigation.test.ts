@@ -7,6 +7,7 @@ import { getFloorBounds, type TruckFloor } from '../src/truck-layout';
 import { getPetPassageGeometry, PET_PASSAGE_LINK_ID } from '../src/pet-passage';
 import { WALK_SPEED, CLIMB_SPEED } from '../src/scene-motion';
 import { getTruckGroundFootprint } from '../src/truck-ground';
+import { GROUND_RESOURCE_BOUNDS } from '../src/ground-resources';
 
 const road = (point: NavigationPoint): NavigationLocation => ({ surface: 'road', point });
 const distance = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -168,8 +169,9 @@ test('the captured paid-deck ramp landing allows a full cat to pass the parked d
   assert.ok(distance(sampleNavigation(route,route.motion.duration).point,target.point)<1e-7);
 });
 
-test('the paid-deck passing band admits the full largest paws and preserves the initial road boundary', () => {
-  assert.equal(createNavigationWorld(1,3,[]).roadOuter.left,-40);
+test('the paid-deck passing band admits the full largest paws and the initial ground surrounds the fixed forest', () => {
+  assert.ok(createNavigationWorld(1,3,[]).roadOuter.left<=GROUND_RESOURCE_BOUNDS.left-2*30.8,
+    'the first-level ground includes the authored forest and room for complete animals to pass');
   const retained:NavigationLocation={surface:'deck',floor:1,point:[114.04356045435364,329.42656546521204]},
     parked={id:'dog',radius:25.74,location:road([-207.1076052811586,447.7995220449949])},
     world=createNavigationWorld(7,9,[17,32,33],{radius:30.8,floors:[1,2,3],actor:'pet',petPassageOpen:true,actors:[parked]}),

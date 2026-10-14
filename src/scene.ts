@@ -27,16 +27,17 @@ import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationD
   type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld, type NavigationLink } from './scene-navigation';
 import itemAtlasUrl from './assets/items-anime.png';
 import { layoutProductionBubbles } from './production-bubble-layout';
-import { OUTDOOR_SITES, getOutdoorSites, getOutdoorTrees, getOutdoorSite, type OutdoorSiteId } from './outdoor-sites';
+import { type OutdoorSiteId } from './outdoor-sites';
+import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId, type GroundResourceNode } from './ground-resources';
+import { getGatheringNode } from './gathering';
 import { getFarmPlotCare } from './farm-economy';
-import { getRoadsideSite } from './roadside';
 import { getPetPassage, getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
 import { drawPetPassage } from './pet-passage-art';
 import { isNavigationLinkSurface } from './scene-navigation';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'pet-gate' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
-type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; plotId?: number; siteId?:OutdoorSiteId };
+type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'pet-gate' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'ground-resource' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
+type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; polygon?: Point[]; plotId?: number; siteId?:OutdoorSiteId; nodeId?:GroundResourceId };
 type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade' | 'pet-gate';
 type FarmAction = 'plant' | 'water' | 'fertilize' | 'harvest';
 type PlanningMode = 'catalog' | 'placement' | 'expansion';
@@ -44,11 +45,13 @@ type WorldBounds = { left: number; top: number; right: number; bottom: number };
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'fertilize' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; outdoorSiteId?:OutdoorSiteId; stayAtTarget?:boolean; gaitOffset?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; outdoorSiteId?:OutdoorSiteId; groundResourceId?:GroundResourceId; stayAtTarget?:boolean; gaitOffset?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
 const CHORE_STALL_TIMEOUT=16;
 // Residents fit comfortably beside the truck's facilities and planters.
 // Compact painted residents sit between the crops and miniature buildings.
 const WORLD_HERO_SCALE = .64;
+const RESOURCE_FOCUS_MIN_SCALE = .38;
+const RESOURCE_PROP_FOCUS_MIN_SCALE = .6;
 const CROP_PLANT_SIZE: Record<CropId, Point> = { carrot: [21, 34], potato: [26, 27], tomato: [24, 35], corn: [19, 40], strawberry: [22, 25], pumpkin: [29, 27] };
 const CROP_SEED_COLOR: Record<CropId, string> = { carrot: '#d29b57', potato: '#bfab72', tomato: '#cfad6c', corn: '#efc955', strawberry: '#9d7150', pumpkin: '#ead5a1' };
 // The original eight beds keep their identity and position as the garden grows.
@@ -97,6 +100,8 @@ export class Scene {
   private petPassageLeasedPaint: { owners: UnitId[]; points: Point[]; drawn: boolean; painted: boolean }[] = [];
   private accessStairPaint: ReturnType<typeof drawTruckAccessStairs> | null = null;
   private zone: 'home' | 'grove' = 'home';
+  private resourceFocus: { siteId: OutdoorSiteId; nodeId?: GroundResourceId } | null = null;
+  private groundResourcePaint: unknown[] = [];
   private selectedPlotId: number | null = null;
   private farmFocus = false;
   private farmMode: FarmAction | null = null;
@@ -130,7 +135,7 @@ export class Scene {
   private plantingCropId: CropId = 'carrot';
   private itemAtlas = (() => { const image = new Image(); image.decoding = 'async'; image.src = itemAtlasUrl; return image; })();
   private camera = { x: 480, y: 350, zoom: 1 };
-  private treeCutAt = -100;
+  private treeCuts = new Map<GroundResourceId, number>();
   private heroDrawn = false;
   private actionEventState = '';
   private disposed = false;
@@ -180,9 +185,11 @@ export class Scene {
         }else{action.stalled=0;action.yieldAt=0;action.elapsed=nextElapsed;this.followFloor(nextLocation.floor??1);}
         if(action.stalled>=CHORE_STALL_TIMEOUT||this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT){
           const retained=this.currentHeroLocation();this.heroLocation={...retained,point:[...retained.point]};this.action=null;this.zone='home';
+          if(action.groundResourceId)this.treeCuts.delete(action.groundResourceId);
           action.reject(new Error(this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT?'동물이 통로에 있어 문을 닫지 않았어요. 친구가 통로를 벗어난 뒤 다시 해 주세요.':'동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
         }else{
-          if (action.kind === 'chop' && action.elapsed >= action.walk + action.work * .78 && this.treeCutAt < this.time - 15) this.treeCutAt = this.time;
+          if (action.kind === 'chop' && action.groundResourceId && action.elapsed >= action.walk + action.work * .78 && !this.treeCuts.has(action.groundResourceId))
+            this.treeCuts.set(action.groundResourceId, performance.now() / 1000);
           if (action.elapsed >= action.duration) {
             const destination=action.stayAtTarget?action.navigation.target:action.navigation.returnLocation;
             this.heroLocation = { ...destination, point: [...destination.point] };
@@ -307,18 +314,19 @@ export class Scene {
     const slots = candidates.filter(item => item.kind === 'build-slot').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const roadEntry=candidates.find(item=>item.kind==='road-entry'),petGate=candidates.find(item=>item.kind==='pet-gate'),outdoorSite=candidates.find(item=>item.kind==='outdoor-site'),
+      resource=[...candidates].reverse().find(item=>item.kind==='ground-resource'),
       outdoors=this.currentHeroLocation().surface==='road',world=this.navigationWorld();
     if(petGate&&!this.constructionMode){this.focus('pet-gate');this.onSelect('pet-gate');return;}
     if(roadEntry&&!this.constructionMode){
       this.walkTo(outdoors?{surface:'deck',floor:1,point:[...world.ladder.entry]}:{surface:'road',point:[...world.ladder.bottom]});return;
     }
     const hit = this.constructionMode ? slots[0] : outdoorSite ?? (outdoors
-      ?foreground??workTree??candidates.find(item=>item.kind==='grove')
-      :facilityAction ?? foreground ?? facilities[0] ?? workTree ?? plots[0] ?? candidates[candidates.length - 1]);
+      ?foreground??resource??workTree??candidates.find(item=>item.kind==='grove')
+      :facilityAction ?? foreground ?? facilities[0] ?? resource ?? workTree ?? plots[0] ?? candidates[candidates.length - 1]);
     const target = groundLocation(world, [x,y],this.activeFloor,outdoors?'road':undefined);
     // The truck cab remains interactive; its broad legacy hit circle must not
     // turn a real empty deck tile into the expansion menu.
-    if (hit && (hit.kind !== 'truck' || !target)) { this.focus(hit.kind); this.onSelect(hit.kind, hit.plotId); }
+    if (hit && (hit.kind !== 'truck' || !target)) { this.focus(hit.nodeId?`ground:${hit.nodeId}`:hit.kind); this.onSelect(hit.kind, hit.plotId); }
     else if (target) this.walkTo(target);
   };
   private wheelInput = (event: WheelEvent) => {
@@ -333,7 +341,7 @@ export class Scene {
   constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable, plotId?: number) => void) {
     this.ctx = canvas.getContext('2d')!;
     canvas.style.touchAction = 'none';
-    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 빈 바닥을 눌러 트럭 주변 도로를 걸어요. 사다리와 텃밭, 동료, 도로 채집 장소를 눌러 보세요.');
+    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 빈 바닥을 눌러 길을 걸어요. 숲길의 나무와 땅 위의 고철, 씨앗 풀, 샘물을 각각 눌러 채집해 보세요.');
     canvas.addEventListener('pointerdown', this.pointerDown);
     canvas.addEventListener('pointermove', this.pointerMove);
     canvas.addEventListener('pointerup', this.pointer);
@@ -358,12 +366,12 @@ export class Scene {
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
-  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; if(enabled)this.villageOverview=false; }
+  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; if(enabled){this.resourceFocus=null;this.villageOverview=false;} }
   /** A farming tool stays selected while taps or a finger swipe queue further plots. */
   setFarmMode(mode: FarmAction | null, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
     if (mode !== this.farmMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.farmMode = mode;
-    if(mode)this.villageOverview=false;
+    if(mode){this.resourceFocus=null;this.villageOverview=false;}
     this.canvas.style.touchAction = 'none';
     this.queuedPlotIds = mode ? [...queuedPlotIds] : [];
     this.plantingCropId = selectedSeed;
@@ -373,6 +381,7 @@ export class Scene {
   setConstructionMode(type: BuildingType | null, selectedSlot?: number, movingId?: number) {
     if (type !== this.constructionMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.constructionMode = type;
+    if(type)this.resourceFocus=null;
     this.selectedSlot = type && selectedSlot !== undefined ? selectedSlot : null;
     this.movingBuildingId = type && movingId !== undefined ? movingId : null;
     if (type && !this.action) this.zone = 'home';
@@ -385,7 +394,7 @@ export class Scene {
     this.planningMode = mode; this.planningLevel = level; this.villageOverview = false;
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null;
     this.cameraFocusRequested = true;
-    if (mode) this.zone = 'home';
+    if (mode) {this.zone = 'home';this.resourceFocus=null;}
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
   }
@@ -398,7 +407,7 @@ export class Scene {
     if (!this.state || !getSettlement(this.state).buildings.some(building => building.id === id)) return;
     this.setActiveFloor(getSlotFloor(getSettlement(this.state).buildings.find(building=>building.id===id)!.slot));
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
-    this.selectedFacilityId = id; this.zone = 'home'; this.villageOverview = false;
+    this.selectedFacilityId = id; this.zone = 'home'; this.resourceFocus=null;this.villageOverview = false;
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
@@ -538,11 +547,13 @@ export class Scene {
   /** Only an explicit new-game reset discards the session's retained position. */
   resetPosition() {
     this.stopWalking(); this.heroLocation=defaultHeroLocation();this.gaitDistance=0;this.heroFacing=1;this.petMotion.clear();this.petYields.clear();this.activeFloor=1;
+    this.resourceFocus=null;this.treeCuts.clear();
     this.clearPetPassageGateOperation();
     this.publishWalking();
   }
   resetMapView() {
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.villageOverview = true;
+    this.resourceFocus=null;
     this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
@@ -552,7 +563,7 @@ export class Scene {
   resumePlayerCamera() {
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
     this.followFloor(this.currentHeroLocation().floor??1);
-    this.villageOverview=true;this.zone='home';
+    this.villageOverview=true;this.zone='home';this.resourceFocus=null;
     this.render();
   }
   /** Explicit overview fits the selected floor and its playable surroundings. */
@@ -565,15 +576,33 @@ export class Scene {
     else this.visibility();
   }
   setZone(zone: 'home' | 'grove', recenter = false) {
+    if(zone==='grove'){this.focusResourceArea('grove');return;}
+    this.resourceFocus=null;
     if (!this.action && zone !== this.zone) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zone = zone; this.villageOverview = false; }
     if (recenter) this.resetMapView();
   }
   /** Recenter the real roadside place; opening its information never moves feet. */
   focusOutdoorSite(id:OutdoorSiteId) {
-    const site=getOutdoorSite(id,this.state?.deckLevel??1);if(!site||this.action)return;
+    this.focusResourceArea(id);
+  }
+  /** Only an explicit place-view command changes the resource camera. */
+  focusResourceArea(id:OutdoorSiteId) {
+    if(!getGroundResourceZone(id)||this.action)return;
+    this.focusResourceView({siteId:id});
+  }
+  focusGroundResource(id:GroundResourceId) {
+    const node=getGroundResourceNode(id);if(!node||this.action)return;
+    this.focusResourceView({siteId:node.siteId,nodeId:node.id});
+    this.focus(`ground:${node.id}`);
+  }
+  private focusResourceView(focus:{siteId:OutdoorSiteId;nodeId?:GroundResourceId}) {
     if(this.activeFloor!==1)this.setActiveFloor(1);
-    // Information sheets and physical travel use the same complete map.
-    this.resumePlayerCamera();
+    this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
+    this.resourceFocus=focus;this.zone=focus.siteId==='grove'?'grove':'home';
+    this.farmFocus=false;this.villageOverview=false;this.selectedFacilityId=null;
+    this.mapPan=[0,0];this.mapZoom=1;this.manualViewport=null;this.cameraFocusRequested=true;
+    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange',{detail:{zoom:this.mapZoom}}));
+    this.render();
   }
   /** Rewards belong to the controller and can commit only after actual work finishes. */
   playPetPassageGate(open: boolean): Promise<void> {
@@ -657,20 +686,33 @@ export class Scene {
   }
   /** Rewards belong to the controller and can commit only after actual work finishes. */
   playOutdoorAction(kind:'chop'|'gather',id:OutdoorSiteId):Promise<void> {
-    if(this.disposed)return Promise.resolve();
+    const now=Date.now(),feet=this.currentHeroLocation().point;
+    const node=GROUND_RESOURCE_NODES.filter(node=>node.siteId===id&&(node.kind==='tree'?'chop':'gather')===kind
+      &&(!this.state||getGatheringNode(this.state,node.id,now)?.ready))
+      .sort((a,b)=>Math.hypot(a.point[0]-feet[0],a.point[1]-feet[1])-Math.hypot(b.point[0]-feet[0],b.point[1]-feet[1]))[0];
+    return node?this.playGroundResourceAction(node.id):Promise.reject(new Error('이곳의 자원이 다시 준비 중이에요. 다른 자원을 눌러 주세요.'));
+  }
+  /** The chosen node never changes between its visible visit and the reward. */
+  playGroundResourceAction(id:GroundResourceId):Promise<void> {
+    if(!this.state||this.disposed||this.suspended)return Promise.reject(new Error('게임 화면을 연 뒤 채집해 주세요.'));
     if(this.action)return Promise.reject(new Error('이미 행동 중이에요.'));
-    const site=getOutdoorSite(id,this.state?.deckLevel??1);if(!site||site.kind!==kind)return Promise.reject(new Error('채집 장소를 확인해 주세요.'));
+    const stock=getGatheringNode(this.state,id),node=stock?.node;
+    if(!node)return Promise.reject(new Error('땅 위의 채집물을 확인해 주세요.'));
+    if(!stock.ready)return Promise.reject(new Error(`${node.name}은 ${stock.remainingSeconds}초 뒤 다시 채집할 수 있어요.`));
     this.stopWalking();
-    const navigation=planWorkNavigation(this.choreWorld(),this.heroLocation,site.approaches.map(point=>({surface:'road',point:[...point]})));
+    const navigation=planWorkNavigation(this.choreWorld(),this.heroLocation,node.approaches.map(point=>({surface:'road',point:[...point]})));
     if(!navigation)return Promise.reject(new Error('채집 장소로 가는 길이 막혔어요. 동료를 회복시키거나 빈 길로 이동해 주세요.'));
+    const kind=node.kind==='tree'?'chop':'gather';
     const route=navigation.motion,walk=route.duration,work=realDuration(kind==='chop'?2.55:2.4);
-    if(kind==='chop')this.treeCutAt=-100;
-    this.zone='home';this.lastFrame=performance.now();
-    return new Promise((resolve,reject)=>{this.action={kind,elapsed:0,duration:walk+work+navigation.returnMotion.duration,
-      walk,work,path:navigation.points,route,navigation,plotIndex:0,cropId:'carrot',outdoorSiteId:id,stalled:0,yieldAt:0,resolve,reject};});
+    if(kind==='chop')this.treeCuts.delete(node.id);
+    this.lastFrame=performance.now();
+    return new Promise((resolve,reject)=>{this.action={kind,elapsed:0,duration:walk+work,stayAtTarget:true,
+      walk,work,path:navigation.points,route,navigation,plotIndex:0,cropId:stock.cropId??'carrot',outdoorSiteId:node.siteId,
+      groundResourceId:node.id,stalled:0,yieldAt:0,resolve,reject};});
   }
   /** Resolves only after the visible walk, work and return have finished. */
   playAction(kind: SceneAction, plotId?: number, selectedCropId?: CropId): Promise<void> {
+    if(kind==='chop'||kind==='gather')return this.playOutdoorAction(kind,kind==='chop'?'grove':'salvage');
     if (this.disposed) return Promise.resolve();
     if (this.action) return Promise.reject(new Error('이미 행동 중이에요.'));
     this.stopWalking();
@@ -682,12 +724,7 @@ export class Scene {
     const [u, v] = this.plotPosition(plotIndex);
     let target: NavigationLocation = { surface: 'deck', floor:1, point: projectDeckPoint([u - 13,v + 39],1) };
     let work = kind === 'expandFarm' ? 1.8 : kind === 'fertilize' ? 1.8 : kind === 'water' ? 1.5 : kind === 'harvest' ? 1.65 : 1.5;
-    if (kind === 'chop' || kind === 'gather') {
-      const grove=getOutdoorSite('grove',this.state?.deckLevel??1)!;
-      target = { surface: 'road', point: kind === 'chop' ? [...grove.approaches[0]] : [211+grove.point[0]-97,578+grove.point[1]-601] };
-      work = kind === 'chop' ? 2.55 : 2.4;
-      if (kind === 'chop') this.treeCutAt = -100;
-    } else if (kind === 'expand') {
+    if (kind === 'expand') {
       target = { surface: 'deck', floor:1, point: projectDeckPoint([-157, this.deckBounds().front - 23],1) };
       work = 1.8;
     }
@@ -695,9 +732,7 @@ export class Scene {
     // A passing pet may temporarily occupy the work approach. The fixed route
     // avoids structures; each accepted frame still waits for full actor clearance.
     let approaches:NavigationLocation[];
-    if(kind==='chop')approaches=getOutdoorSite('grove',this.state?.deckLevel??1)!.approaches.map(point=>({surface:'road' as const,point:[...point]as Point}));
-    else if(target.surface==='road')approaches=[target,...[[-28,0],[28,0],[0,28],[0,-28]].map(([x,y])=>({surface:'road' as const,point:[target.point[0]+x,target.point[1]+y]as Point}))];
-    else if(kind==='expand')approaches=[target,...[-48,48,-96,96].map(shift=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint([-157+shift,this.deckBounds().front-23],1)}))];
+    if(kind==='expand')approaches=[target,...[-48,48,-96,96].map(shift=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint([-157+shift,this.deckBounds().front-23],1)}))];
     else approaches=[target,...[[u+83,v+39],[u+34,v-13],[u+34,v+81]].map(point=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint(point as Point,1)}))];
     const navigation = planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
     if (!navigation) return Promise.reject(new Error('작업 장소로 가는 길이 막혔어요. 트럭 휴식으로 동료를 회복시키거나 빈 길로 이동해 주세요.'));
@@ -742,8 +777,9 @@ export class Scene {
     this.endFarmStroke(false);
     this.endMapGesture(false);
     if(this.action?.kind==='pet-gate')this.action.reject(new Error('게임 화면을 닫아 문 조작을 멈췄어요.'));
+    else if(this.action?.groundResourceId)this.action.reject(new Error('게임 화면을 닫아 채집을 멈췄어요.'));
     else this.action?.resolve();
-    this.action = null;this.clearPetPassageGateOperation();
+    this.action = null;this.treeCuts.clear();this.clearPetPassageGateOperation();
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
     this.canvas.removeEventListener('pointerdown', this.pointerDown);
@@ -805,8 +841,9 @@ export class Scene {
     const rect = this.canvas.getBoundingClientRect();
     const x = (clientX - rect.left - this.dx) / this.scale, y = (clientY - rect.top - this.dy) / this.scale;
     const withinCanvas = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
-    const candidates = withinCanvas ? this.hits.filter(item => item.bounds
-      ? x >= item.bounds[0] && y >= item.bounds[1] && x <= item.bounds[2] && y <= item.bounds[3]
+    const candidates = withinCanvas ? this.hits.filter(item => item.polygon
+      ? circleOverlapsPolygon([x,y],0,item.polygon)
+      : item.bounds ? x >= item.bounds[0] && y >= item.bounds[1] && x <= item.bounds[2] && y <= item.bounds[3]
       : Math.hypot(item.x - x, item.y - y) < Math.max(item.radius, 22 / this.scale)) : [];
     const plots = candidates.filter(item => item.kind === 'farm').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     return { candidates, plots, x, y };
@@ -818,6 +855,7 @@ export class Scene {
       mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null,
       playerFollowing:this.playerCameraFollowing,cameraCenter:{x:round(this.camera.x),y:round(this.camera.y)},
       cameraMode:this.cameraMode,overviewBounds:this.overviewBounds,
+      resourceFocus:this.resourceFocus,
       cameraViewport:{width:round(this.cameraViewport[0]),height:round(this.cameraViewport[1])},
       planningMode: this.planningMode, planningLevel: this.planningLevel, expansionPreview: this.expansionPreview,
       activeFloor:this.activeFloor,floorCount:this.state?getTruckFloorCount(this.state):1,houseMoveMode:false,
@@ -1128,14 +1166,14 @@ export class Scene {
       petGateClosing:this.petGateClosing??false,petGateWaitElapsed:round(this.petGateWaitElapsed??0),waitingPets:waitingForPets?this.petsOnPassage().map(pet=>pet.id):[],
       walk: round(action?.walk ?? 0), work: round(action?.work ?? 0),
       from: action ? { x: action.navigation.start.point[0], y: action.navigation.start.point[1], surface: action.navigation.start.surface, floor:action.navigation.start.floor??1 } : null,
-      returnPoint: action ? { x: action.navigation.returnLocation.point[0], y: action.navigation.returnLocation.point[1], surface: action.navigation.returnLocation.surface, floor:action.navigation.returnLocation.floor??1 } : null,
-      returnWalk: round(action?.navigation.returnMotion.duration ?? 0),
+      returnPoint: action ? (()=>{const point=action.stayAtTarget?action.navigation.target:action.navigation.returnLocation;return{x:point.point[0],y:point.point[1],surface:point.surface,floor:point.floor??1};})() : null,
+      returnWalk: round(action?.stayAtTarget?0:action?.navigation.returnMotion.duration ?? 0),stayAtTarget:action?.stayAtTarget??false,
       route: action?.navigation.points.map(point => ({ x: point[0], y: point[1] })) ?? [], climbSegments: action?.navigation.climbSegments ?? [],
-      floor:this.currentHeroLocation().floor??1,blockedReason:this.blockedReason,outdoorSiteId:action?.outdoorSiteId??null,facilitySlot: action?.facilitySlot ?? null, facilityId: action?.facilitySlot === undefined || !this.state ? null : getSettlement(this.state).buildings.find(building => building.slot === action.facilitySlot)?.id ?? null,
+      floor:this.currentHeroLocation().floor??1,blockedReason:this.blockedReason,outdoorSiteId:action?.outdoorSiteId??null,groundResourceId:action?.groundResourceId??null,facilitySlot: action?.facilitySlot ?? null, facilityId: action?.facilitySlot === undefined || !this.state ? null : getSettlement(this.state).buildings.find(building => building.slot === action.facilitySlot)?.id ?? null,
       pose: hero.pose, climbing: hero.climbing ?? null, progress: round(hero.progress),
       x: round(hero.point[0]), y: round(hero.point[1]), gaitTime: round(hero.time) });
     const progress = action ? Math.min(100, Math.floor(action.elapsed / action.duration * 100)) : 0;
-    const detail = { kind: action?.kind ?? null, phase, progress, climbing: hero.climbing ?? null, pose: hero.pose };
+    const detail = { kind: action?.kind ?? null, phase, progress, climbing: hero.climbing ?? null, pose: hero.pose,groundResourceId:action?.groundResourceId??null };
     const eventState = JSON.stringify(detail);
     if (eventState !== this.actionEventState) {
       this.actionEventState = eventState;
@@ -1165,7 +1203,8 @@ export class Scene {
       return { ...motion, time: motion.distance / 86 };
     }
     const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'idle':'gather' };
-    return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
+    const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
+    return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: node?node.point[0]>=action.navigation.target.point[0]?1:-1:action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
       progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
   private heroOnDeck() {
@@ -1226,7 +1265,6 @@ export class Scene {
     const farmCenter: Point = farmCount <= 3 ? [468, 350]
       : [(Math.min(...farmXs) + Math.max(...farmXs)) / 2, (Math.min(...farmYs) + Math.max(...farmYs)) / 2 - 5];
     let target = showFarm && this.zone === 'home' ? { x: farmCenter[0], y: farmCenter[1], zoom: 1.48 } : { x: homeX, y: homeY, zoom: 1 };
-    if (this.zone === 'grove') { const grove=getOutdoorSite('grove',this.state?.deckLevel??1)!;target = { x: 180+grove.point[0]-97, y: 515+grove.point[1]-601, zoom: 2.15 }; }
     const action = this.action;
     // A stable whole-farm view lets additional taps queue while the hero works.
     if (action && !(this.farmMode && isFarmAction(action.kind))) {
@@ -1236,10 +1274,10 @@ export class Scene {
       const amount = Math.min(entry, exit);
       const targetPoint = action.path[action.path.length - 1];
       const logging = action.kind === 'chop' || action.kind === 'gather';
-      const outdoorSite=action.outdoorSiteId?getOutdoorSite(action.outdoorSiteId,this.state?.deckLevel??1):undefined;
-      const focusX = outdoorSite?outdoorSite.point[0]:logging ? 160 : targetPoint[0] + 35;
-      const focusY = outdoorSite?outdoorSite.point[1]-44:logging ? 523 : targetPoint[1] - 45;
-      const zoom = action.kind === 'expand' ? 1.08 : outdoorSite?1.55:logging ? 2.2 : 1.78;
+      const outdoorNode=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
+      const focusX = outdoorNode?outdoorNode.point[0]:logging ? 160 : targetPoint[0] + 35;
+      const focusY = outdoorNode?outdoorNode.point[1]-44:logging ? 523 : targetPoint[1] - 45;
+      const zoom = action.kind === 'expand' ? 1.08 : outdoorNode?1.55:logging ? 2.2 : 1.78;
       target = { x: target.x + (focusX - target.x) * amount, y: target.y + (focusY - target.y) * amount, zoom: target.zoom + (zoom - target.zoom) * amount };
     }
     const blend = this.reducedMotion ? .6 : .13;
@@ -1283,7 +1321,8 @@ export class Scene {
       const village=fitVillageCamera(bounds,availableWidth,availableHeight);
       viewWidth=village.width;viewHeight=village.height;target={x:village.x,y:village.y,zoom:village.zoom};
     }
-    const overviewView=!!this.state&&!showFarm&&!this.planningMode&&!this.constructionMode&&(this.villageOverview||this.selectedFacilityId===null);
+    const resourceView=this.activeFloor===1&&this.resourceFocus&&!this.planningMode&&!this.constructionMode&&!showFarm;
+    const overviewView=!!this.state&&!resourceView&&!showFarm&&!this.planningMode&&!this.constructionMode&&(this.villageOverview||this.selectedFacilityId===null);
     this.overviewBounds=null;
     if(overviewView&&this.state){
       let bounds=getHomeOverviewBounds(this.state,this.activeFloor,level);
@@ -1297,6 +1336,20 @@ export class Scene {
       this.overviewBounds=bounds;
       const overview=frameHomeOverview(bounds,availableWidth,availableHeight);
       viewWidth=overview.width;viewHeight=overview.height;target={x:overview.x,y:overview.y,zoom:overview.zoom};
+    }
+    if(resourceView&&this.resourceFocus){
+      const zone=getGroundResourceZone(this.resourceFocus.siteId)!,node=this.resourceFocus.nodeId?getGroundResourceNode(this.resourceFocus.nodeId):undefined;
+      const sprite=node?this.groundSpriteBounds(node):null;
+      const bounds=sprite?{left:sprite[0]-36,top:sprite[1]-18,right:sprite[2]+36,bottom:sprite[3]+18}:zone.bounds;
+      const view=frameHomeOverview(bounds,availableWidth,availableHeight);
+      viewWidth=view.width;viewHeight=view.height;target={x:view.x,y:view.y,zoom:view.zoom};
+      const minScale=node&&node.kind!=='tree'?RESOURCE_PROP_FOCUS_MIN_SCALE:RESOURCE_FOCUS_MIN_SCALE;
+      if(view.scale<minScale){
+        viewWidth=availableWidth/minScale;viewHeight=availableHeight/minScale;
+        // A short landscape strip starts at the clearing's entrance. Further
+        // trees remain readable when the player pans down the real forest trail.
+        target.y=node?view.y:zone.bounds.top+viewHeight/2+16/minScale;
+      }
     }
     const planning = this.planningBounds();
     if (planning) {
@@ -1345,15 +1398,14 @@ export class Scene {
     c.translate(this.dx, this.dy); c.scale(this.scale, this.scale);
     this.hits = [];
     this.accessStairPaint=null;
-    this.layoutPaintGeometry=[];this.productionItems=[];
+    this.layoutPaintGeometry=[];this.productionItems=[];this.groundResourcePaint=[];
     this.petPassagePaint={drawn:false,painted:false};
     this.petPassageLeasedPaint=[];
     this.heroDrawn = false;
     this.environment();
+    if(this.activeFloor===1)this.groundTrails();
     this.truck();
-    this.foreground();
-    if(this.activeFloor===1)this.loggingGrove();
-    if(this.activeFloor===1)this.outdoorSites();
+    if(this.activeFloor===1)this.groundResources();
     if(this.activeFloor===1)this.petPassage();
     this.drawPets(true);
     this.drawPets(false);
@@ -1366,13 +1418,13 @@ export class Scene {
     this.publishWalking();
     this.publishPetPassage();
     this.canvas.dataset.sceneHits=JSON.stringify(this.hits.map(hit=>({...hit})));
+    this.canvas.dataset.groundResources=JSON.stringify(this.groundResourcePaint);
     this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway:false,truckOpacity:1,
       roadActorLayer:'normal-world-order',groundPolicy:'outside-truck-body',
-      sites:getOutdoorSites(this.state?.deckLevel??1).map((site,index)=>{const stock=this.state?getRoadsideSite(this.state,site.id):null;return{id:site.id,index,point:{x:site.point[0],y:site.point[1]},
-        x:this.dx+site.point[0]*this.scale,y:this.dy+(site.point[1]-72)*this.scale,resource:site.resource,approaches:site.approaches,
-        ready:stock?.ready??true,yieldAmount:stock?.yieldAmount??null,remainingSeconds:stock?.remainingSeconds??0,
-        bounds:[this.dx+site.point[0]*this.scale-24,this.dy+(site.point[1]-72)*this.scale-24,
-          this.dx+site.point[0]*this.scale+24,this.dy+(site.point[1]-72)*this.scale+24]};}),
+      nodes:this.groundResourcePaint,trails:GROUND_RESOURCE_ZONES,regenerationSeconds:180,
+      sites:GROUND_RESOURCE_ZONES.map((zone,index)=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.siteId===zone.id),
+        readyCount=nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length;
+        return{id:zone.id,index,name:zone.name,bounds:zone.bounds,totalCount:nodes.length,readyCount,ready:readyCount>0};}),
       ladderEntry:{x:this.dx+this.navigationWorld().ladder.bottom[0]*this.scale,y:this.dy+(this.navigationWorld().ladder.bottom[1]-19)*this.scale},accessStairs:this.accessStairPaint});
     // Assets are cached before the next frame; the fallback never hides interactions.
     if (!worldArtReady()) this.label('그림을 불러오는 중…', 470, 45, 13, '#fff2d0');
@@ -1407,9 +1459,10 @@ export class Scene {
     const skyTop=(Math.min(this.height-52,skyInset+12)-this.dy)/this.scale,
       skyBottom=skyTop+Math.min(96,this.height*.18)/this.scale;
     this.canvas.dataset.skyBirds=JSON.stringify(drawSkyBirds(this.ctx,{timeSeconds:this.time/GAME_SPEED_MULTIPLIER,viewport:{left,top,right,bottom},skyTop,skyBottom,night,reducedMotion:this.reducedMotion}));
-    // Foreground trees share the same painted line work as the survivors.
-    this.tree(72, 226, 1.04); this.tree(25, 307, .72); this.tree(891, 196, .88);
-    this.tree(1006, 252, .95);
+    // Distant, faded trees belong to the horizon beyond the playable clearings.
+    this.ctx.save();this.ctx.globalAlpha=.32;
+    this.tree(-450,320,.92);this.tree(-525,350,.67);this.tree(1830,320,.78);
+    this.tree(1920,365,.96);this.ctx.restore();
     this.roadSign(788, 202);
     this.zombie(88 + Math.sin(this.time * .14) * 6, 423, .75, .2);
     this.zombie(970, 507 + Math.sin(this.time * .16) * 5, .55, 1.2);
@@ -1854,72 +1907,106 @@ export class Scene {
     // the finger-sized control without covering this small access ramp.
   }
 
-  private outdoorSites() {
-    for(const[index,site]of getOutdoorSites(this.state?.deckLevel??1).entries()){
-      const[x,y]=site.point;
-      const stock=this.state?getRoadsideSite(this.state,site.id):null,ready=stock?.ready??true;
-      if(site.id==='salvage'){
-        this.ellipse(x,y+3,42,15,'#263c303b');
-        this.resourceIllustration('scrap',x-16,y-17,53);this.resourceIllustration('scrap',x+17,y-8,42);
-        this.grass(x+33,y+5,.8);
-      }else if(site.id==='seed-meadow'){
-        drawWorldSprite(this.ctx,'forest',x,y+8,100,69,.8);
-        drawWorldSprite(this.ctx,'flowers',x-22,y,42,42);drawWorldSprite(this.ctx,'sprout',x+19,y+1,35,52);
-        this.resourceIllustration('seeds',x,y-25,45);
-      }else if(site.id==='spring'){
-        this.ellipse(x,y+3,43,15,'#67949170','#7b9777',1);
-        drawWorldSprite(this.ctx,'tank',x-9,y,48,65);
-        this.line([[x+10,y-21],[x+27,y-21],[x+27,y-7]],'#81a69d',5);
-        this.ellipse(x+27,y-2,9,3,'#accfe4','#5f9ca3',1);
+  private groundTrails() {
+    for(const zone of GROUND_RESOURCE_ZONES){
+      this.line(zone.path,'#72865740',zone.pathWidth+150);
+      this.line(zone.path,'#8093666e',zone.pathWidth+62);
+      this.line(zone.path,'#baab819c',zone.pathWidth);
+      this.line(zone.path,'#d3c29d6b',zone.pathWidth*.68);
+      // Small stones and plants follow the edges of the actual open trail.
+      for(let index=0;index<zone.path.length;index++){
+        const[x,y]=zone.path[index],side=index%2?1:-1;
+        this.ellipse(x+side*(zone.pathWidth*.5+8),y+9,5,2.6,'#a29d81','#858e72',.6);
+        drawWorldSprite(this.ctx,'sprout',x-side*(zone.pathWidth*.5+13),y+7,13,19,.65);
       }
-      const pixel=1/this.scale,badgeY=y-72;
-      this.round(x-24*pixel,badgeY-24*pixel,48*pixel,48*pixel,14*pixel,ready?'#fffae7f2':'#e2e9d7f2',ready?'#b49e70':'#acbaa0');
-      if(site.resource==='seeds'&&stock?.cropId)drawCropSprite(this.ctx,stock.cropId,'seed',x-(ready?5:0)*pixel,badgeY+7*pixel,25*pixel,28*pixel);
-      else this.resourceIllustration(site.resource,x-(ready?5:0)*pixel,badgeY-7*pixel,28*pixel);
-      if(ready&&stock)this.label(`+${stock.yieldAmount}`,x+14*pixel,badgeY-3*pixel,9*pixel,'#637640',800);
-      this.label(ready?'채집':`${Math.ceil(stock?.remainingSeconds??0)}초`,x,badgeY+17*pixel,9*pixel,ready?'#696d43':'#58704f',700);
-      this.label(site.name,x,badgeY+38*pixel,10*pixel,'#435b3e',800);
-      this.hits.push({kind:'outdoor-site',plotId:index,siteId:site.id,x,y:badgeY,radius:0,
-        bounds:[x-24*pixel,badgeY-24*pixel,x+24*pixel,badgeY+24*pixel]});
-      this.pulse(`outdoor:${site.id}`,x,badgeY,26*pixel);
+      const[x,y]=zone.path[0];
+      this.line([[x-21,y-28],[x-21,y+11]],'#8a704f',3);
+      this.round(x-51,y-48,102,26,6,'#eadbb7','#9a825b');
+      this.label(zone.name,x,y-30,11,'#526547',800);
     }
   }
 
-  private loggingGrove() {
-    const c = this.ctx,site=getOutdoorSite('grove',this.state?.deckLevel??1)!,base=OUTDOOR_SITES[0];
-    const shift:Point=[site.point[0]-base.point[0],site.point[1]-base.point[1]],firstHit=this.hits.length;
-    c.save();c.translate(shift[0],shift[1]);
-    drawWorldSprite(c, 'forest', 99, 628, 196, 159);
-    this.tree(34, 574, .87); this.tree(29, 619, .57);
-    const cut = this.time - this.treeCutAt, falling = cut >= 0 && cut < .8, stump = cut >= .8 && cut < 15;
-    const work = this.action?.kind === 'chop' ? this.actionProgress() : 0;
-    drawWorldSprite(c, 'stump', 100, 616, 79, 56);
-    if (!stump) {
-      c.save(); c.translate(97, 601);
-      const swing = falling ? -this.ease(cut / .8) * 1.42 : work > .03 ? Math.sin(work * Math.PI * 24) * .02 : Math.sin(this.time * .7) * .006;
-      c.rotate(swing); drawWorldSprite(c, 'tree', 0, 0, 131, 178); c.restore();
+  private groundSpriteBounds(node:GroundResourceNode):[number,number,number,number] {
+    const[x,y]=node.point,s=node.scale;
+    return node.kind==='tree'?[x-56*s,y-146*s,x+56*s,y+12*s]:[x-43*s,y-66*s,x+43*s,y+18*s];
+  }
+  private groundTreePolygon(node:GroundResourceNode):Point[] {
+    const[x,y]=node.point,w=111*node.scale,h=146*node.scale;
+    return [[-.32,-1],[.20,-.98],[.46,-.83],[.5,-.58],[.41,-.34],[.16,-.20],
+      [.14,0],[-.13,0],[-.19,-.22],[-.43,-.35],[-.5,-.60],[-.46,-.85]]
+      .map(([u,v])=>[x+u*w,y+v*h]);
+  }
+  private groundResources() {
+    const now=Date.now(),visualNow=performance.now()/1000;
+    const order=GROUND_RESOURCE_NODES.map((node,index)=>({node,index})).sort((a,b)=>a.node.point[1]-b.node.point[1]);
+    for(const{node,index}of order){
+      const stock=this.state?getGatheringNode(this.state,node.id,now):undefined,
+        ready=stock?.ready??true,active=this.action?.groundResourceId===node.id,
+        cutAt=this.treeCuts.get(node.id),cut=cutAt===undefined?Infinity:visualNow-cutAt,
+        falling=node.kind==='tree'&&cut>=0&&cut<.65,
+        locallyCut=active&&cutAt!==undefined,
+        available=ready&&!locallyCut,
+        visual=node.kind==='tree'?falling?'falling':available?'tree':'stump':ready?'resource':'depleted';
+      if(ready&&!active&&cut>=.65)this.treeCuts.delete(node.id);
+      const[x,y]=node.point,s=node.scale,bounds=this.groundSpriteBounds(node);
+      this.ellipse(x,y+4*s,node.kind==='tree'?28*s:38*s,12*s,'#294a322c');
+      if(node.kind==='tree'){
+        if(!available||falling)drawWorldSprite(this.ctx,'stump',x,y+9*s,46*s,32*s);
+        if(available||falling){
+          const work=active?this.actionProgress():0;
+          this.ctx.save();this.ctx.translate(x,y);
+          this.ctx.rotate(falling?-this.ease(cut/.65)*1.35:work>.03?Math.sin(work*Math.PI*24)*.018:Math.sin(this.time*.65+index)*.003);
+          if(falling)this.ctx.globalAlpha=Math.max(0,1-(cut/.65)**2);
+          drawWorldSprite(this.ctx,'tree',0,0,111*s,146*s);
+          this.ctx.restore();
+        }
+      }else if(node.kind==='scrap'){
+        if(ready){
+          this.resourceIllustration('scrap',x-10*s,y-22*s,59*s);
+          this.resourceIllustration('scrap',x+16*s,y-7*s,39*s);
+          this.line([[x-20*s,y+5*s],[x+22*s,y+5*s]],'#786f5c',2*s);
+        }else{
+          this.ellipse(x,y+2*s,22*s,7*s,'#8d866851');
+          this.line([[x-10*s,y],[x-2*s,y-3*s],[x+9*s,y+1*s]],'#91836c',2*s);
+        }
+      }else if(node.kind==='seed'){
+        this.ellipse(x,y+2*s,30*s,11*s,ready?'#81996466':'#9b9c6b50');
+        if(ready){
+          drawWorldSprite(this.ctx,'flowers',x-12*s,y+3*s,43*s,44*s);
+          drawWorldSprite(this.ctx,'sprout',x+15*s,y+4*s,30*s,45*s);
+          if(stock?.cropId)drawCropSprite(this.ctx,stock.cropId,'seed',x,y-8*s,17*s,21*s);
+        }else{
+          drawWorldSprite(this.ctx,'sprout',x-7*s,y+2*s,9*s,14*s,.7);
+          this.line([[x+6*s,y],[x+9*s,y-5*s]],'#799467',1.5*s);
+        }
+      }else{
+        this.ellipse(x,y+3*s,34*s,12*s,ready?'#688d985c':'#97957759','#8a977c',1*s);
+        this.ellipse(x,y+2*s,26*s,8*s,ready?'#87c7d8b0':'#baa8856e',ready?'#568d9d':'#958d73',1.2*s);
+        this.ellipse(x-8*s,y-6*s,6*s,3*s,'#aaa58a','#7e927e',.8*s);
+        this.ellipse(x+27*s,y+6*s,5*s,3*s,'#a9aa8b','#849278',.8*s);
+        if(ready){
+          this.line([[x-15*s,y+1*s],[x+4*s,y+1*s]],'#c3edf0',1.4*s);
+          this.line([[x+1*s,y+5*s],[x+14*s,y+5*s]],'#d9f2e7',1.1*s);
+          this.waterDrop(x+4*s,y-15*s,8*s);
+        }
+      }
+      if(!ready){
+        const pixel=Math.min(1/this.scale,2.1),seconds=stock?.remainingSeconds??0;
+        this.round(x-19*pixel,y+17*s,38*pixel,15*pixel,7*pixel,'#e8eeddf0','#9cac8c');
+        this.label(`${seconds}초`,x,y+17*s+10.5*pixel,8.5*pixel,'#55724e',700);
+      }
+      const hitBounds: [number,number,number,number]=node.kind==='tree'?bounds:[x-39*s,y-55*s,x+39*s,y+17*s],
+        polygon=node.kind==='tree'?this.groundTreePolygon(node):undefined,
+        hit=available?'ground-resource':null,
+        target:Point=[x,y-(node.kind==='tree'?72:20)*s];
+      if(hit)this.hits.push({kind:hit,plotId:index,nodeId:node.id,siteId:node.siteId,x:target[0],y:target[1],radius:0,bounds:hitBounds,...(polygon?{polygon}:{})});
+      this.pulse(`ground:${node.id}`,x,y,34*s);
+      const screenBounds=bounds.map((value,i)=>(i%2?this.dy:this.dx)+value*this.scale);
+      this.groundResourcePaint.push({id:node.id,index,siteId:node.siteId,kind:node.kind,resource:node.resource,
+        point:{x,y},approaches:node.approaches,solidBounds:node.bounds,spriteBounds:bounds,screenBounds,hitBounds,hitPolygon:polygon??null,
+        x:this.dx+target[0]*this.scale,y:this.dy+target[1]*this.scale,ready,remainingSeconds:stock?.remainingSeconds??0,
+        yieldAmount:stock?.yieldAmount??null,energyCost:stock?.energyCost??null,visual,hit,active});
     }
-    drawWorldSprite(c, 'stump', 183, 629, 70, 49);
-    // A separate roadside supply pile gives the gathering motion a visible target.
-    this.line([[173, 568], [184, 564], [191, 568]], '#809087', 3);
-    this.sprig(197, 579, .45);
-    this.line([[69, 629], [69, 650]], '#8a693d', 3);
-    this.line([[134, 629], [134, 650]], '#8a693d', 3);
-    this.round(48, 622, 108, 30, 7, '#f4e4b7', '#8f6b3d');
-    this.label('작은 벌목장', 102, 642, 13, '#4d572f', 800);
-    // A tree tap starts work, while the sign opens the grove. Cover the painted canopies too.
-    this.hits.push({kind: 'grove-work', x: 97, y: 512, radius: 0, bounds: [31, 423, 163, 616]});
-    this.hits.push({kind: 'grove-work', x: 34, y: 511, radius: 0, bounds: [-15, 447, 83, 574]});
-    this.hits.push({kind: 'grove-work', x: 29, y: 577, radius: 0, bounds: [-3, 536, 61, 619]});
-    this.hits.push({kind: 'grove', x: 101, y: 636, radius: 44});
-    this.pulse('grove', 100, 588, 74);
-    this.pulse('grove-work', 100, 588, 74);
-    if (this.zone === 'grove' && !this.action) {
-      this.round(16, 421, 182, 30, 12, '#fff9e7f0', '#bcaa7a');
-      this.label('나무를 눌러 벌목을 시작해요', 107, 441, 11, '#4d572f', 700);
-    }
-    c.restore();
-    for(const hit of this.hits.slice(firstHit)){hit.x+=shift[0];hit.y+=shift[1];if(hit.bounds)hit.bounds=[hit.bounds[0]+shift[0],hit.bounds[1]+shift[1],hit.bounds[2]+shift[0],hit.bounds[3]+shift[1]];}
   }
 
   private buildingDeck() {
@@ -1982,16 +2069,13 @@ export class Scene {
         c.restore();
       }
     } else if (action.kind === 'chop') {
-      const grove=getOutdoorSite('grove',this.state?.deckLevel??1)!,shiftX=grove.point[0]-97,shiftY=grove.point[1]-601;
-      const cut = this.time - this.treeCutAt;
-      if (cut < 0 || cut > .8) for (let i = 0; i < 12; i++) {
+      const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
+      if(!node)return;
+      const cutAt=this.treeCuts.get(node.id),cut=cutAt===undefined?Infinity:performance.now()/1000-cutAt;
+      if (cut < 0 || cut > .65) for (let i = 0; i < 12; i++) {
         const t = (progress * 3 + i * .057) % 1;
-        const x = 98+shiftX + Math.cos(i * 1.2) * t * 40, y = 578+shiftY - Math.sin(t * Math.PI) * (15 + i * 2) + t * 21;
+        const x = node.point[0] + Math.cos(i * 1.2) * t * 40, y = node.point[1]-23*node.scale - Math.sin(t * Math.PI) * (15 + i * 2) + t * 21;
         c.save(); c.translate(x, y); c.rotate(t * 6 + i); this.round(-3, -1, 6, 2, 1, '#e0bf81'); c.restore();
-      }
-      if (progress > .8) {
-        this.round(111+shiftX, 514+shiftY - (progress - .8) * 55, 82, 26, 12, '#f6e8be', '#b5a175');
-        this.label('목재 +18', 152+shiftX, 532+shiftY - (progress - .8) * 55, 12, '#617947', 800);
       }
     } else if (action.kind === 'gather') {
       // The recovered bundle travels from the roadside pile to the survivor's bag.
@@ -1999,16 +2083,18 @@ export class Scene {
       const pickedUp = Math.max(0, Math.min(1, (progress - .38) / .24));
       const stowed = Math.max(0, Math.min(1, (progress - .64) / .25));
       if (pickedUp > 0 && stowed < 1) {
-        const site=action.outdoorSiteId?getOutdoorSite(action.outdoorSiteId,this.state?.deckLevel??1):undefined,
-          grove=getOutdoorSite('grove',this.state?.deckLevel??1)!,
-          sourceX=site?site.point[0]:184+grove.point[0]-97,sourceY=site?site.point[1]-24:568+grove.point[1]-601;
+        const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
+        if(!node)return;
+        const sourceX=node.point[0],sourceY=node.point[1]-18;
         const handX = hx - 26 * WORLD_HERO_SCALE, handY = hy - 37 * WORLD_HERO_SCALE;
         const packX = hx + 6 * WORLD_HERO_SCALE, packY = hy - 52 * WORLD_HERO_SCALE;
         const x = sourceX + (handX - sourceX) * pickedUp + (packX - handX) * stowed;
         const y = sourceY + (handY - sourceY) * pickedUp + (packY - handY) * stowed;
         c.save(); c.globalAlpha = Math.min(1, pickedUp * 4) * (1 - stowed * stowed);
-        this.round(x - 4, y - 4, 9, 7, 2, '#ad9b78', '#796c52');
-        this.line([[x - 2, y - 3], [x - 2, y + 2]], '#d9c69a', 1); c.restore();
+        if(node.resource==='seeds')drawCropSprite(c,action.cropId,'seed',x,y+4,13,16);
+        else if(node.resource==='water')this.waterDrop(x,y,5);
+        else this.resourceIllustration(node.resource,x,y,15);
+        c.restore();
       }
     } else if (action.kind === 'expandFarm') {
       // Soil and timber gradually become the new bed. The state adds the usable
@@ -2055,12 +2141,6 @@ export class Scene {
     if (this.focused !== kind || performance.now() > this.focusedUntil) return;
     const c = this.ctx; c.save(); c.globalAlpha = .55 + Math.sin(this.time * 5) * .25; c.setLineDash([4, 6]);
     c.beginPath(); c.ellipse(x, y, radius, radius * .62, 0, 0, Math.PI * 2); c.strokeStyle = '#fff4bd'; c.lineWidth = 3; c.stroke(); c.restore();
-  }
-  private foreground() {
-    for(const tree of getOutdoorTrees(this.state?.deckLevel??1).filter(tree=>!tree.grove))this.tree(tree.point[0],tree.point[1],tree.scale);
-    drawWorldSprite(this.ctx, 'forest', 943, 754, 165, 141);
-    drawWorldSprite(this.ctx, 'forest', 8, 724, 143, 122);
-    this.grass(859, 740, 1.5);
   }
   private fireflies() {
     for (let i = 0; i < 9; i++) {

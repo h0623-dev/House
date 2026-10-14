@@ -8,6 +8,7 @@ import { cloneLayoutDirectionFields, validateLayoutDirections, type LayoutDirect
 import { cloneShopFields, validateShopProgress, type ShopProgress } from './shop';
 import { cloneFarmEconomyFields, FARM_FERTILIZER_COST, getFarmPlotCare, markFarmPlotFertilized, recordFarmHarvest, reconcileFarmEconomyFood, validateFarmEconomy, type FarmEconomyProgress } from './farm-economy';
 import { cloneRoadsideFields, validateRoadsideProgress, type RoadsideProgress } from './roadside';
+import { cloneGatheringFields, validateGatheringProgress, type GatheringProgress } from './gathering';
 import { clonePetPassageFields, validatePetPassage, type PetPassageProgress } from './pet-passage';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
@@ -69,6 +70,8 @@ export interface GameState {
   farmEconomy?: FarmEconomyProgress;
   /** Actually visited outdoor sites; old villages begin with no cooldown or reward grants. */
   roadside?: RoadsideProgress;
+  /** Each ground resource regenerates on an independent, real-time timer. */
+  gathering?: GatheringProgress;
   /** Player-operated animal passage; absent older saves keep the gate closed. */
   petPassage?: PetPassageProgress;
   /** Lifetime construction records stay separate from legacy settlement schemas. */
@@ -167,6 +170,7 @@ function copy(state: GameState): GameState {
     ...cloneShopFields(state),
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
+    ...cloneGatheringFields(state),
     ...clonePetPassageFields(state),
     ...cloneEnergyRecoveryFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
@@ -687,6 +691,7 @@ function validateSave(value: unknown): value is GameState {
   }
   if (Object.hasOwn(value, 'farmEconomy') && !validateFarmEconomy(value.farmEconomy, value as unknown as GameState)) return false;
   if (Object.hasOwn(value, 'roadside') && !validateRoadsideProgress(value.roadside)) return false;
+  if (Object.hasOwn(value, 'gathering') && !validateGatheringProgress(value.gathering)) return false;
   if (Object.hasOwn(value, 'petPassage') && !validatePetPassage(value.petPassage)) return false;
   if (Object.hasOwn(value, 'energyRecovery') && !validateEnergyRecovery(value.energyRecovery)) return false;
   if (!isRecord(value.stats) || !['harvests', 'gathers', 'hunts', 'expansions', 'chops', 'battlesWon', 'defeatedEnemies'].every(key => isInteger((value.stats as Record<string, unknown>)[key], 0, 100_000_000))) return false;

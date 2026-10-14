@@ -8,7 +8,9 @@ import { BUILDINGS, buildFacility, buildTruckFloor, collectProduction, getFloorS
   isFacilitySlotAvailable, startProduction } from '../src/settlement.ts';
 import { getVillageHub, getFarmDeliveryAdvice, type VillageAdvice } from '../src/village-guide.ts';
 import { fulfillFarmOrder, getFarmCropInventory, getFarmOrder, reconcileFarmEconomyFood } from '../src/farm-economy.ts';
-import { performRoadsideAction, getRoadsideSite } from '../src/roadside.ts';
+import { getGatheringArea, getGatheringNode, performGatheringAction } from '../src/gathering.ts';
+
+const GATHER_NOW = 1_800_000_000_000;
 
 function claimCurrent(state: GameState): GameState {
   const quest = getActiveGrowthQuest(state)!;
@@ -283,11 +285,12 @@ test('seed shortages target the actual seed meadow and its paid rotating harvest
   state.seedInventory = { carrot: 0, potato: 0, tomato: 0, corn: 0, strawberry: 0, pumpkin: 0 };
   state.resources.seeds = 0;
   state.plots.forEach(plot => { plot.plantedAt = null; plot.watered = false; });
-  const before = JSON.stringify(state), advice = getVillageHub(state).primary;
+  const before = JSON.stringify(state), advice = getVillageHub(state, GATHER_NOW).primary;
   assert.deepEqual(advice.target, { kind: 'roadside', siteId: 'seed-meadow' });
   assert.match(advice.detail, /씨앗 풀밭/);
+  assert.match(advice.detail, /씨앗 풀 1.*당근 씨앗 3개/);
   assert.equal(JSON.stringify(state), before);
-  const gathered = performRoadsideAction(state, 'seed-meadow');
+  const gathered = performGatheringAction(state, getGatheringArea(state, 'seed-meadow', GATHER_NOW)!.next.node.id, GATHER_NOW);
   assert.equal(gathered.ok, true, gathered.message);
   state = gathered.state;
   assert.equal(state.resources.seeds, 3);
@@ -295,31 +298,63 @@ test('seed shortages target the actual seed meadow and its paid rotating harvest
   assert.deepEqual(getVillageHub(state).primary.target, { kind: 'quest', questId: 'new-seeds' });
 });
 
-test('water advice uses the spring energy cost and records cooldown without inventing water from salvage', () => {
+test('water advice uses each spring node energy cost, another ready node, and the real earliest regeneration without inventing water', () => {
   let state = claimCurrent(action(createGame(), 'gather'));
   state.plots[0].plantedAt = state.totalMinutes;
   state.plots[0].watered = false;
   state.resources.water = 0;
   state.energy = 8;
-  const before = JSON.stringify(state), advice = getVillageHub(state).primary;
+  const before = JSON.stringify(state), advice = getVillageHub(state, GATHER_NOW).primary;
   assert.deepEqual(advice.target, { kind: 'roadside', siteId: 'spring' });
-  assert.match(advice.detail, /도로 샘터/);
+  assert.match(advice.detail, /숲 샘터.*샘물 웅덩이 1.*물 12개/);
   assert.equal(JSON.stringify(state), before);
-  const gathered = performRoadsideAction(state, 'spring');
+  const gathered = performGatheringAction(state, 'water-01', GATHER_NOW);
   assert.equal(gathered.ok, true, gathered.message);
   state = gathered.state;
   assert.equal(state.resources.water, 12);
   assert.equal(state.energy, 0);
-  assert.equal(getRoadsideSite(state, 'spring').ready, false);
-  assert.equal(getVillageHub(state).primary.target.kind, 'energy');
-  // An explicit shortage fixture keeps the real paid spring cooldown.
+  assert.equal(getGatheringNode(state, 'water-01', GATHER_NOW)!.ready, false);
+  assert.equal(getVillageHub(state, GATHER_NOW).primary.target.kind, 'energy');
+  // Consumed-water fixtures retain every real paid node's own cooldown.
   state.resources.water = 0; state.energy = 8;
-  const waiting = getVillageHub(state).primary;
+  const another = getVillageHub(state, GATHER_NOW).primary;
+  assert.match(another.detail, /샘물 웅덩이 2.*물 12개/);
+  assert.doesNotMatch(another.detail, /초 뒤/);
+  state.energy = 32;
+  for (const [index, id] of ['water-02', 'water-03', 'water-04'].entries()) {
+    const result = performGatheringAction(state, id, GATHER_NOW + (index + 1) * 1_000);
+    assert.equal(result.ok, true, result.message); state = result.state;
+  }
+  state.resources.water = 0;
+  const depleted = JSON.stringify(state), waiting = getVillageHub(state, GATHER_NOW + 3_000).primary;
   assert.deepEqual(waiting.target, { kind: 'roadside', siteId: 'spring' });
   assert.equal(waiting.tag, '목표 준비');
-  assert.match(waiting.detail, /20초/);
+  assert.match(waiting.detail, /모든 채집물.*177초 뒤 샘물 웅덩이 1/);
+  assert.match(getVillageHub(state, GATHER_NOW + 179_999).primary.detail, /1초 뒤/);
+  assert.match(getVillageHub(state, GATHER_NOW + 180_000).primary.detail, /샘물 웅덩이 1을 골라 물 12개/);
+  assert.doesNotMatch(getVillageHub(state, GATHER_NOW + 180_000).primary.detail, /초 뒤/);
+  assert.equal(JSON.stringify(state), depleted, 'wall-time guidance never advances or pays the village');
   state.energy = 7;
-  assert.equal(getVillageHub(state).primary.target.kind, 'energy');
+  assert.equal(getVillageHub(state, GATHER_NOW + 180_000).primary.target.kind, 'energy');
+});
+
+test('seed supply guidance names the ready individual variety while preserving crop delivery requirements', () => {
+  let state = reachedProduction();
+  state = startProduction(state, 1).state;
+  state = claimCurrent(collectProduction(advanceTime(state, BUILDINGS.waterworks.minutes), 1).state);
+  state.seedInventory = { carrot: 0, potato: 0, tomato: 0, corn: 0, strawberry: 0, pumpkin: 0 }; state.resources.seeds = 0;
+  state.plots.forEach(plot => { plot.plantedAt = null; plot.watered = false; });
+  const collected = performGatheringAction(state, 'seed-01', GATHER_NOW); assert.equal(collected.ok, true, collected.message);
+  state = collected.state;
+  state.seedInventory!.carrot = 0; state.resources.seeds = 0;
+  const before = JSON.stringify(state), hub = getVillageHub(state, GATHER_NOW), area = getGatheringArea(state, 'seed-meadow', GATHER_NOW)!;
+  assert.equal(area.next.node.id, 'seed-02'); assert.equal(area.next.cropId, 'potato');
+  assert.match(hub.primary.detail, /씨앗 풀 2을 골라 감자 씨앗 3개/);
+  assert.deepEqual(hub.primary.target, { kind: 'roadside', siteId: 'seed-meadow' });
+  assert.equal(getFarmDeliveryAdvice(state).cropId, 'carrot', 'aggregate seed supply does not replace the requested delivery crop');
+  assert.equal(JSON.stringify(state), before);
+  const next = performGatheringAction(state, area.next.node.id, GATHER_NOW); assert.equal(next.ok, true, next.message);
+  assert.equal(next.state.seedInventory!.potato, 3); assert.equal(next.state.seedInventory!.carrot, 0);
 });
 
 test('low energy guidance shows automatic real-time recovery without spending food or changing saved progress', () => {

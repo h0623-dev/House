@@ -8,6 +8,7 @@ import { WALK_SPEED, CLIMB_SPEED } from '../src/scene-motion.ts';
 import { FLOOR_HEIGHT, getFloorStairs, type TruckFloor } from '../src/truck-layout.ts';
 import { createPetPatrol, stepPetPatrol } from '../src/scene-patrol.ts';
 import { getOutdoorSites } from '../src/outdoor-sites.ts';
+import { GROUND_RESOURCE_NODES } from '../src/ground-resources.ts';
 
 
 // Captured v0.21 feet retain their original deck UV or stair-segment progress.
@@ -56,7 +57,8 @@ test('projected ground identifies empty floors and rejects beds, buildings, rail
     assert.equal(groundLocation(world,projectDeckPoint(p)),undefined);
   assert.equal(groundLocation(world,projectDeckPoint([-238,-104]))?.surface,'deck','the removed cottage no longer blocks empty deck');
   assert.equal(groundLocation(world,[270,655])?.surface,'road');
-  for(const p of [[97,601],[999,999],[NaN,20]]as NavigationPoint[])assert.equal(groundLocation(world,p),undefined);
+  for(const p of [GROUND_RESOURCE_NODES[0].point,[world.roadOuter.right+1,999],[NaN,20]]as NavigationPoint[])
+    assert.equal(groundLocation(world,p),undefined);
   assert.deepEqual(groundLocation(world,[184,564]),road(184,564),'removed crate leaves no invisible obstacle');
 });
 
@@ -65,7 +67,7 @@ test('the former road crate allows whole bodies to reach its space while remaini
     const world=createNavigationWorld(1,3,[],{radius});
     assert.equal(world.obstacles.some(obstacle=>obstacle.kind==='crate'),false);
     assert.deepEqual(groundLocation(world,[184,564]),road(184,564));
-    assert.equal(groundLocation(world,[97,601]),undefined,'tree collision remains active');
+    assert.equal(groundLocation(world,GROUND_RESOURCE_NODES[0].point),undefined,'individual forest trunks remain solid');
     const start=road((world.road.left+world.road.right)/2,(world.road.top+world.road.bottom)/2);
     assert.ok(groundLocation(world,start.point),'the actual road interior starts clear for this whole body');
     assertClear(world,requirePath(world,start,road(184,564)));

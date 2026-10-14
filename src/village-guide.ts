@@ -9,7 +9,7 @@ import { gameMinutesToSeconds } from './game-time';
 import { getVillageOrder } from './village-orders';
 import { getReadyTeam } from './units';
 import { getFarmCropInventory, getFarmOrder } from './farm-economy';
-import { getRoadsideSite } from './roadside';
+import { getGatheringArea } from './gathering';
 import { type OutdoorSiteId } from './outdoor-sites';
 
 export type VillageTarget =
@@ -119,7 +119,7 @@ export function getFarmDeliveryAdvice(state: GameState): VillageAdvice {
   }
   return base;
 }
-function supplyAdvice(state: GameState, cost: Cost, purpose: string): VillageAdvice | null {
+function supplyAdvice(state: GameState, cost: Cost, purpose: string, now: number): VillageAdvice | null {
   const shortage = Object.entries(cost).map(([resource, amount]) => ({ resource: resource as Resource, missing: Math.max(0, amount! - state.resources[resource as Resource]) }))
     .filter(item => item.missing > 0).sort((a, b) => b.missing - a.missing)[0];
   if (!shortage) return null;
@@ -145,43 +145,44 @@ function supplyAdvice(state: GameState, cost: Cost, purpose: string): VillageAdv
   const siteIds: Record<Exclude<Resource, 'food'>, OutdoorSiteId> = {
     wood: 'grove', scrap: 'salvage', water: 'spring', seeds: 'seed-meadow',
   };
-  const view = getRoadsideSite(state, siteIds[shortage.resource]);
+  const area = getGatheringArea(state, siteIds[shortage.resource], now)!, view = area.next;
   if (state.energy < view.energyCost) return energyAdvice();
+  const reward = view.cropId ? `${CROPS[view.cropId].seedName} ${view.yieldAmount}개` : `${resourceLabels[shortage.resource]} ${view.yieldAmount}개`;
   return { id: `prepare-${shortage.resource}`, title: `${resourceLabels[shortage.resource]}를 먼저 모아요`,
-    detail: `${prefix} ${view.site.name}에서 ${view.ready ? `${view.yieldAmount}개를 채집해요.` : `${view.remainingSeconds}초 뒤 다시 채집할 수 있어요.`}`,
-    cta: `${view.site.name} 가기`, icon: shortage.resource,
-    target: { kind: 'roadside', siteId: view.site.id }, tag: view.ready ? '성장 준비' : '현장 준비 중' };
+    detail: `${prefix} ${area.zone.name}에서 ${view.ready ? `${view.node.name}을 골라 ${reward}를 채집해요.` : `모든 채집물이 다시 자라는 중이에요. ${area.remainingSeconds}초 뒤 ${view.node.name}에서 ${reward}를 채집할 수 있어요.`}`,
+    cta: `${area.zone.name} 가기`, icon: shortage.resource,
+    target: { kind: 'roadside', siteId: area.zone.id }, tag: view.ready ? '성장 준비' : '현장 준비 중' };
 }
-function prepareInvestment(state: GameState, advice: VillageAdvice, cost: Cost): VillageAdvice {
+function prepareInvestment(state: GameState, advice: VillageAdvice, cost: Cost, now: number): VillageAdvice {
   const energy = advice.target.kind === 'expand' ? 15 : advice.target.kind === 'farm-expand' ? 8 : 0;
-  const supply = state.energy < energy ? energyAdvice() : supplyAdvice(state, cost, advice.title);
+  const supply = state.energy < energy ? energyAdvice() : supplyAdvice(state, cost, advice.title, now);
   return supply ? { ...supply, id: `investment-${supply.id}`, tag: '다음 성장 준비' } : advice;
 }
-function investmentAdvice(state: GameState, freeSlots: number): VillageAdvice {
+function investmentAdvice(state: GameState, freeSlots: number, now: number): VillageAdvice {
   const facilities = getSettlement(state).buildings;
   const floor = getTruckFloorCost(state);
   if (floor && state.deckLevel >= floor.unlockLevel) {
     return prepareInvestment(state, { id: `investment-floor-${floor.floor}`, title: `${floor.floor}층에 새 마을을 열어요`,
-      detail: `목재 ${floor.wood} · 고철 ${floor.scrap}으로 새 플랫폼과 연결 계단을 지어요.`, cta: `${floor.floor}층 증축`, icon: 'expand', target: { kind: 'floors' }, tag: '새 공간' }, { wood: floor.wood, scrap: floor.scrap });
+      detail: `목재 ${floor.wood} · 고철 ${floor.scrap}으로 새 플랫폼과 연결 계단을 지어요.`, cta: `${floor.floor}층 증축`, icon: 'expand', target: { kind: 'floors' }, tag: '새 공간' }, { wood: floor.wood, scrap: floor.scrap }, now);
   }
   if (freeSlots > 0) {
     const missing = BUILDING_TYPES.find(type => BUILDINGS[type].unlockLevel <= state.deckLevel && !facilities.some(building => building.type === type));
     if (missing) {
       const definition = BUILDINGS[missing];
       return prepareInvestment(state, { id: `investment-build-${missing}`, title: `${definition.name}으로 마을을 키워요`,
-        detail: definition.description, cta: '시설 짓기', icon: definition.icon, target: { kind: 'build', buildingType: missing }, tag: '새 시설' }, constructionCost(missing));
+        detail: definition.description, cta: '시설 짓기', icon: definition.icon, target: { kind: 'build', buildingType: missing }, tag: '새 시설' }, constructionCost(missing), now);
     }
   }
   if (state.plots.length < getFarmCapacity(state) && facilities.length >= 2) {
     return prepareInvestment(state, { id: 'investment-farm', title: '새 텃밭을 마련해요',
       detail: `${state.plots.length} / ${getFarmCapacity(state)}밭 사용 중. 빈 농사 공간에 밭을 더 만들어요.`,
-      cta: '밭 늘리기', icon: 'seeds', target: { kind: 'farm-expand' }, tag: '농장 성장' }, farmExpansionCost(state));
+      cta: '밭 늘리기', icon: 'seeds', target: { kind: 'farm-expand' }, tag: '농장 성장' }, farmExpansionCost(state), now);
   }
   if (state.deckLevel < MAX_DECK_LEVEL) {
     const cost = expansionCost(state);
     return prepareInvestment(state, { id: 'investment-deck', title: `데크 Lv.${state.deckLevel + 1}로 넓혀요`,
       detail: '새 밭 1곳과 시설 자리 2곳이 열려요. 새 공간을 채우며 마을을 키워요.', cta: '데크 확장',
-      icon: 'expand', target: { kind: 'expand' }, tag: '마을 확장' }, cost);
+      icon: 'expand', target: { kind: 'expand' }, tag: '마을 확장' }, cost, now);
   }
   const upgrade = facilities.filter(building => building.level < BUILDINGS[building.type].maxLevel).sort((a, b) => a.level - b.level)[0];
   if (upgrade) {
@@ -189,11 +190,11 @@ function investmentAdvice(state: GameState, freeSlots: number): VillageAdvice {
     if (isWorking(state, upgrade)) return { ...workingAdvice(state, upgrade), tag: '개선 준비' };
     return prepareInvestment(state, { id: `investment-upgrade-${upgrade.id}`, title: `${BUILDINGS[upgrade.type].name} Lv.${upgrade.level + 1}`,
       detail: '생산량을 늘리고 다음 묶음의 생산 시간을 줄여요.', cta: '레벨 올리기', icon: 'hammer',
-      target: facilityTarget(upgrade, 'upgrade'), tag: '시설 성장' }, getUpgradeCost(upgrade));
+      target: facilityTarget(upgrade, 'upgrade'), tag: '시설 성장' }, getUpgradeCost(upgrade), now);
   }
   return { id: 'investment-neighbors', title: '풍성한 마을 물자를 나눠요', detail: '이웃 의뢰로 생산품을 보내고 다음 마을 일을 이어가요.', cta: '이웃 의뢰', icon: 'bag', target: { kind: 'orders' }, tag: '마을 생활' };
 }
-function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investment: VillageAdvice, freeSlots: number): VillageAdvice {
+function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investment: VillageAdvice, freeSlots: number, now: number): VillageAdvice {
   if (!quest) return investment;
   const base: VillageAdvice = { id: `quest-${quest.id}`, title: quest.title, detail: quest.description,
     cta: quest.status === 'ready' ? '보상 받기' : '하러 가기', icon: 'flag', target: { kind: 'quest', questId: quest.id },
@@ -203,19 +204,19 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
   let preparation: VillageAdvice | null = null;
   if (kind === 'build') {
     const type = quest.destination.buildingType ?? BUILDING_TYPES.find(type => !getBuiltTypes(state).includes(type));
-    if (type && BUILDINGS[type].unlockLevel > state.deckLevel) preparation = supplyAdvice(state, expansionCost(state), '데크 확장')
+    if (type && BUILDINGS[type].unlockLevel > state.deckLevel) preparation = supplyAdvice(state, expansionCost(state), '데크 확장', now)
       ?? { ...investment, id: 'prepare-unlock', title: '데크를 넓혀 새 시설을 열어요', target: { kind: 'expand' } };
-    else if (type) preparation = supplyAdvice(state, constructionCost(type), BUILDINGS[type].name);
+    else if (type) preparation = supplyAdvice(state, constructionCost(type), BUILDINGS[type].name, now);
     if (!preparation && freeSlots <= 0) preparation = investment;
   } else if (kind === 'expand') {
-    preparation = state.energy < 15 ? energyAdvice() : supplyAdvice(state, expansionCost(state), '데크 확장');
+    preparation = state.energy < 15 ? energyAdvice() : supplyAdvice(state, expansionCost(state), '데크 확장', now);
   } else if (kind === 'collect') {
     const facility = facilities.find(building => canCollect(state, building))
       ?? facilities.find(building => canStart(state, building))
       ?? facilities.find(building => isWorking(state, building));
     if (facility) preparation = isReady(state, facility) ? readyAdvice(facility)
       : isWorking(state, facility) ? workingAdvice(state, facility) : startAdvice(facility);
-    else if (facilities.length) preparation = supplyAdvice(state, getProductionCost(facilities[0]), '시설 생산');
+    else if (facilities.length) preparation = supplyAdvice(state, getProductionCost(facilities[0]), '시설 생산', now);
   } else if (kind === 'upgrade') {
     const targetLevel = quest.metric === 'highestFacilityLevel' ? quest.target : 2;
     const upgraded = new Set(getFacilityHistory(state).upgradedFacilityIds);
@@ -223,7 +224,7 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
       .sort((a, b) => b.level - a.level);
     const facility = eligible.find(building => building.readyAt === null) ?? eligible[0];
     if (facility) preparation = isReady(state, facility) ? readyAdvice(facility) : isWorking(state, facility) ? workingAdvice(state, facility)
-      : supplyAdvice(state, getUpgradeCost(facility), '시설 개선');
+      : supplyAdvice(state, getUpgradeCost(facility), '시설 개선', now);
   } else if (kind === 'harvest' || kind === 'plant' || kind === 'water') {
     const ready = state.plots.some(plot => getCropProgress(state, plot) >= 1);
     const thirsty = state.plots.some(plot => plot.plantedAt !== null && !plot.watered);
@@ -231,15 +232,15 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
     const seeds = CROP_IDS.some(id => getSeedCount(state, id) > 0);
     if (state.energy < (kind === 'water' ? 3 : 4)) preparation = energyAdvice();
     else if (kind === 'harvest' && !ready || kind === 'water' && !thirsty) {
-      if (thirsty) preparation = supplyAdvice(state, { water: 1 }, '텃밭 돌보기') ?? farmAdvice(state, 'water');
+      if (thirsty) preparation = supplyAdvice(state, { water: 1 }, '텃밭 돌보기', now) ?? farmAdvice(state, 'water');
       else if (empty && seeds) preparation = farmAdvice(state, 'plant');
       else if (kind === 'water' && ready) preparation = farmAdvice(state, 'harvest');
-      else if (!seeds && empty) preparation = supplyAdvice(state, { seeds: 1 }, '씨앗 심기');
+      else if (!seeds && empty) preparation = supplyAdvice(state, { seeds: 1 }, '씨앗 심기', now);
       else preparation = { ...investment, id: 'prepare-crops', detail: '작물이 자라는 동안 시설과 다음 마을 성장을 준비해요.' };
     } else if (kind === 'plant' && (!empty || !seeds)) preparation = ready ? farmAdvice(state, 'harvest')
-      : !seeds ? supplyAdvice(state, { seeds: 1 }, '씨앗 심기')
+      : !seeds ? supplyAdvice(state, { seeds: 1 }, '씨앗 심기', now)
       : { ...investment, id: 'prepare-crop-space', detail: '밭의 작물이 자라는 동안 다음 마을 일을 준비해요.' };
-    else if (kind === 'water') preparation = supplyAdvice(state, { water: 1 }, '텃밭 돌보기');
+    else if (kind === 'water') preparation = supplyAdvice(state, { water: 1 }, '텃밭 돌보기', now);
   } else if (kind === 'hunt') {
     if (state.energy < 16) preparation = energyAdvice();
     else if (!getReadyTeam(state).length) preparation = companionAdvice();
@@ -249,16 +250,16 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
 }
 
 /** Read existing progress; no rewards, clocks, placements, or quest records are changed. */
-export function getVillageHub(state: GameState): VillageHubModel {
+export function getVillageHub(state: GameState, now = Date.now()): VillageHubModel {
   const facilities = getSettlement(state).buildings, floorCount = getTruckFloorCount(state);
   const freeSlots = Array.from({ length: floorCount }, (_, index) => getFloorSlots(state, (index + 1) as 1 | 2 | 3))
     .flat().filter(slot => isFacilitySlotAvailable(state, slot)).length;
   const ready = facilities.filter(building => isReady(state, building));
   const readyPlots = state.plots.filter(plot => getCropProgress(state, plot) >= 1).length;
-  const investment = investmentAdvice(state, freeSlots);
+  const investment = investmentAdvice(state, freeSlots, now);
   const primary = state.expedition ? { id: 'return-from-expedition', title: '동물 친구들이 탐험 중이에요',
     detail: '현재 전투를 마무리하고 트럭 마을로 돌아와요.', cta: '탐험 확인', icon: 'hunt', target: { kind: 'hunt' } as VillageTarget, tag: '탐험 중' }
-    : primaryAdvice(state, getActiveGrowthQuest(state), investment, freeSlots);
+    : primaryAdvice(state, getActiveGrowthQuest(state), investment, freeSlots, now);
   const candidates: VillageAdvice[] = [];
   if (!state.expedition) {
     const farmOrder = getFarmOrder(state), farmDelivery = getFarmDeliveryAdvice(state);

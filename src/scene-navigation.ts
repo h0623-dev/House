@@ -1,5 +1,5 @@
 import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRoute } from './scene-motion';
-import { getOutdoorSites, getOutdoorTrees } from './outdoor-sites';
+import { GROUND_RESOURCE_BOUNDS, GROUND_RESOURCE_NODES } from './ground-resources';
 import { getPetPassageGeometry, PET_PASSAGE_LINK_ID, PET_PASSAGE_WIDTH, PET_PASSAGE_MAX_BODY_RADIUS } from './pet-passage';
 import { getTruckGroundFootprint } from './truck-ground';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
@@ -60,12 +60,13 @@ export function getRoadBounds(level:number):NavigationRect {
     [deck.end,deck.front],[deck.left,deck.front]].map(point=>projectDeckPoint(point as NavigationPoint)),
     // A pet parked beyond the ramp landing must leave another full paw body
     // room to pass between it and the road edge beside the solid truck.
-    passingRoom=PET_PASSAGE_WIDTH/2+3*PET_PASSAGE_MAX_BODY_RADIUS+4;
-  return {left:Math.min(-40,getTruckGroundFootprint(level).bounds.left-passingRoom,...corners.map(point=>point[0]-100)),top:360,
-    right:Math.max(1160,...corners.map(point=>point[0]+130)),
+    passingRoom=PET_PASSAGE_WIDTH/2+3*PET_PASSAGE_MAX_BODY_RADIUS+4,
+    groundPassingRoom=2*PET_PASSAGE_MAX_BODY_RADIUS+4;
+  return {left:Math.min(-40,getTruckGroundFootprint(level).bounds.left-passingRoom,GROUND_RESOURCE_BOUNDS.left-groundPassingRoom,
+      ...corners.map(point=>point[0]-100)),top:360,
+    right:Math.max(1160,GROUND_RESOURCE_BOUNDS.right+groundPassingRoom,...corners.map(point=>point[0]+130)),
     bottom:Math.max(880,...corners.map(point=>point[1]+95+105),
-      ...getOutdoorSites(level).flatMap(site=>[site.bounds.bottom+40,...site.approaches.map(point=>point[1]+40)]),
-      ...getOutdoorTrees(level).map(tree=>tree.bounds.bottom+40))};
+      GROUND_RESOURCE_BOUNDS.bottom+groundPassingRoom)};
 }
 
 /** The same physical footprints feed navigation, placement previews and collision checks. */
@@ -79,8 +80,7 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   for(const [u,v]of FARM_POSITIONS.slice(0,plotCount))obstacles.push({surface:'deck',floor:1,kind:'farm',bounds:{left:u,top:v,right:u+69,bottom:v+68}});
   for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}
-  for(const tree of getOutdoorTrees(level))obstacles.push({surface:'road',kind:'tree',bounds:{...tree.bounds}});
-  for(const site of getOutdoorSites(level).filter(site=>site.id!=='grove'))obstacles.push({surface:'road',kind:'outdoor-site',bounds:{...site.bounds}});
+  for(const node of GROUND_RESOURCE_NODES)obstacles.push({surface:'road',kind:node.kind==='tree'?'tree':'outdoor-site',bounds:{...node.bounds}});
   const body=getTruckGroundFootprint(level);obstacles.push({surface:'road',kind:'truck-body',...body});
   const front=getFloorBounds(level).front,ladder={entry:projectDeckPoint([-225,front-60]),top:projectDeckPoint([-225,front-3]),
     bottom:[140,527+.47*(front-getFloorBounds(1).front)]as NavigationPoint};

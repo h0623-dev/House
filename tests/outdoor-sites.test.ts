@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getOutdoorSite, getOutdoorSiteIndex, getOutdoorSites, getOutdoorTrees, OUTDOOR_SITES } from '../src/outdoor-sites';
 import { getTruckGroundFootprint } from '../src/truck-ground';
+import { GROUND_RESOURCE_NODES } from '../src/ground-resources';
 import { getPetPassageGeometry } from '../src/pet-passage';
 import { circleOverlapsPolygon, createNavigationWorld, distanceToSegment, groundLocation, navigationObstaclePolygon,
   planNavigation, sampleNavigation, type NavigationPoint } from '../src/scene-navigation';
@@ -16,49 +17,40 @@ function segmentDistance(a:NavigationPoint,b:NavigationPoint,c:NavigationPoint,d
   return Math.min(distanceToSegment(a,c,d),distanceToSegment(b,c,d),distanceToSegment(c,a,b),distanceToSegment(d,a,b));
 }
 
-test('level-one places retain their identities, valid coordinates and detached geometry',()=>{
+test('legacy places represent stable first individual nodes and return detached geometry copies',()=>{
   const sites=getOutdoorSites(),trees=getOutdoorTrees();
-  assert.deepEqual(sites.map(site=>site.id),OUTDOOR_SITES.map(site=>site.id));
+  assert.deepEqual(sites.map(site=>site.id),['grove','salvage','seed-meadow','spring']);
   for(const[index,site]of sites.entries()){
-    assert.deepEqual(site.point,OUTDOOR_SITES[index].point);assert.deepEqual(site.bounds,OUTDOOR_SITES[index].bounds);
-    assert.deepEqual(site.approaches.slice(site.id==='grove'?1:0),OUTDOOR_SITES[index].approaches.slice(site.id==='grove'?1:0));
+    const node=GROUND_RESOURCE_NODES.find(node=>node.legacySiteId===site.id)!;
+    assert.deepEqual(site.point,node.point);assert.deepEqual(site.bounds,node.bounds);assert.deepEqual(site.approaches,node.approaches);
+    assert.equal(site.kind,node.action);assert.equal(site.resource,node.resource);
     assert.equal(getOutdoorSiteIndex(site.id),index);assert.deepEqual(getOutdoorSite(site.id),site);
   }
-  assert.deepEqual(sites[0].approaches[0],[160,590],'only the old approach clipping a large body against the grove trunk moves');
-  assert.equal(getOutdoorSite('invalid'),undefined);assert.equal(trees.length,5);
+  assert.equal(getOutdoorSite('invalid'),undefined);assert.equal(trees.length,16);
+  assert.deepEqual(trees.map(tree=>tree.id),GROUND_RESOURCE_NODES.filter(node=>node.kind==='tree').map(node=>node.id));
+  const original=JSON.stringify({sites:getOutdoorSites(),trees:getOutdoorTrees()});
   sites[0].point[1]=0;sites[0].approaches[0][0]=0;sites[0].bounds.top=0;trees[0].point[1]=0;
-  assert.deepEqual(getOutdoorSites(1)[0].point,[97,601]);assert.deepEqual(getOutdoorTrees(1)[0].point,[97,601]);
-  assert.deepEqual(OUTDOOR_SITES[0].approaches[0],[142,590]);
+  assert.equal(JSON.stringify({sites:getOutdoorSites(),trees:getOutdoorTrees()}),original);
+  assert.deepEqual(OUTDOOR_SITES[0].point,GROUND_RESOURCE_NODES[0].point);
 });
 
-test('all eight expansions separate complete resources, approaches and grove trunks from the full chassis',()=>{
+test('all eight expansions leave the complete fixed ground places and sixteen individual trunks separate from the chassis',()=>{
   for(let level=1;level<=8;level++){
     const body=getTruckGroundFootprint(level).polygon,sites=getOutdoorSites(level),trees=getOutdoorTrees(level);
-    assert.deepEqual(sites.map(site=>site.id),OUTDOOR_SITES.map(site=>site.id));
+    assert.deepEqual(sites,getOutdoorSites(1),'the truck cannot pull ground resources along as it grows');
+    assert.deepEqual(trees,getOutdoorTrees(1),'the whole forest uses permanent world coordinates');
     for(const site of sites){
       for(const point of [...corners(site.bounds),...site.approaches])
-        assert.equal(circleOverlapsPolygon(point,30.8,body),false,`level ${level} ${site.id} retains the complete largest body outside the truck`);
+        assert.equal(circleOverlapsPolygon(point,30.8,body),false,`level ${level} ${site.id} keeps the complete largest body outside the truck`);
       const footprint=corners(site.bounds);
       for(let edge=0;edge<footprint.length;edge++)for(let bodyEdge=0;bodyEdge<body.length;bodyEdge++)
         assert.ok(segmentDistance(footprint[edge],footprint[(edge+1)%footprint.length],body[bodyEdge],body[(bodyEdge+1)%body.length])>=30.8,
-          `level ${level} ${site.id} keeps the entire prop footprint and full paw margin clear`);
+          `level ${level} ${site.id} keeps the entire prop footprint and paw margin clear`);
       for(const approach of site.approaches)for(const tree of trees)
         assert.equal(circleOverlapsPolygon(approach,30.8,corners(tree.bounds)),false,
-          `level ${level} ${site.id} does not send complete animals into a remaining tree`);
+          `level ${level} ${site.id} does not send complete animals into a tree`);
     }
-    const grove=sites[0],dy=grove.point[1]-OUTDOOR_SITES[0].point[1];
-    for(const tree of trees.filter(tree=>tree.grove)){
-      const original=getOutdoorTrees(1).find(base=>base.id===tree.id)!;
-      assert.deepEqual(tree.point,[original.point[0],original.point[1]+dy]);
-      assert.deepEqual(tree.bounds,{...original.bounds,top:original.bounds.top+dy,bottom:original.bounds.bottom+dy});
-      for(const point of corners(tree.bounds))assert.equal(circleOverlapsPolygon(point,30.8,body),false);
-    }
-    for(const tree of trees.filter(tree=>!tree.grove)){
-      const original=getOutdoorTrees(1).find(base=>base.id===tree.id)!;
-      assert.equal(tree.point[0],original.point[0]);assert.ok(tree.point[1]>=original.point[1]);
-      for(const point of corners(tree.bounds))assert.equal(circleOverlapsPolygon(point,30.8,body),false,
-        `level ${level} ${tree.id} moves only as needed to retain its full trunk outside the cab`);
-    }
+    for(const tree of trees)for(const point of corners(tree.bounds))assert.equal(circleOverlapsPolygon(point,30.8,body),false);
   }
 });
 

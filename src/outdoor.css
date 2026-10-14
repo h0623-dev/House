@@ -13,6 +13,12 @@
 .outdoor-card>div{display:flex;flex:1;min-width:0;flex-direction:column;gap:5px}.outdoor-card strong{font-size:13px;color:#365740}.outdoor-card span:not(.outdoor-card-art){font-size:11px;color:#766f50}.outdoor-card small{font-size:10px;color:#708653;line-height:1.6}
 .outdoor-card button{display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:center;min-width:55px;min-height:52px;padding:6px;border:1px solid #b8b982;border-radius:9px;background:#edf0d5;color:#486544;font-size:10px;font-weight:750}.outdoor-card button .icon{width:21px;height:21px}
 .outdoor-modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:15px}.outdoor-modal-actions .button{min-height:48px;font-size:12px}
+.ground-node-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:16px 0}
+.ground-node-choice{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:92px;padding:8px 3px;border:1px solid #b8bd91;border-radius:12px;background:#faf5df;color:#49633f;font:inherit}
+.ground-node-choice>.icon{width:34px;height:37px}.ground-node-choice strong{font-size:11px}.ground-node-choice small{font-size:10px;line-height:1.5;color:#76784c}
+.ground-node-choice:focus-visible{outline:3px solid #537a45;outline-offset:2px}
+.ground-node-summary{display:grid;justify-items:center;gap:10px;padding:18px;border:1px solid #c8bc93;border-radius:16px;background:#f5efd8}
+.ground-node-summary>.icon{width:64px;height:67px}.ground-node-summary strong{font-size:18px}.ground-node-summary span,.ground-node-summary small{font-size:12px;color:#6b7953}
 .farm-care-button{min-height:44px;font-size:10px;margin-top:6px;gap:4px}.farm-care-button .icon{width:22px;height:24px;flex-shrink:0}.farm-care-button>span{line-height:1.45}
 .farm-all-tools{grid-template-columns:repeat(3,minmax(0,1fr))}.farm-all-tools>.button{font-size:10px;min-height:46px;padding:7px 4px;gap:4px}
 @media(max-width:380px){.road-controls{gap:4px}.outdoor-card{padding:9px;gap:7px}.outdoor-card-art{width:48px;height:55px}.outdoor-card-art>.icon{width:46px;height:51px}.outdoor-card strong{font-size:12px}.outdoor-card span:not(.outdoor-card-art){font-size:10px}.quick-action>small{font-size:8px}}

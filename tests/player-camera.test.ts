@@ -7,7 +7,7 @@ import { frameHomeOverview, getHomeOverviewBounds } from '../src/player-camera.t
 import { createNavigationWorld, defaultHeroLocation, getRoadBounds, planNavigation, sampleNavigation, type NavigationLocation, type NavigationPath } from '../src/scene-navigation.ts';
 import { getFloorBounds, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from '../src/truck-layout.ts';
 import { getPetPassageGeometry } from '../src/pet-passage.ts';
-import { OUTDOOR_SITES } from '../src/outdoor-sites.ts';
+import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from '../src/ground-resources.ts';
 
 const usableViewports = [[344, 390], [360, 440], [390, 470], [844, 112]] as const;
 function expanded(level: number) {
@@ -35,7 +35,9 @@ test('the default first-floor view fits the complete truck, playable road, outdo
     for (const x of [road.left, road.right]) for (const y of [road.top, road.bottom]) points.push([x, y - 81.92], [x, y]);
     for (const point of passage.points) points.push([point[0] - passage.width / 2, point[1] - passage.width / 2],
       [point[0] + passage.width / 2, point[1] + passage.width / 2]);
-    for (const site of OUTDOOR_SITES) points.push(site.point, ...site.approaches, [site.point[0], site.point[1] - (site.id === 'grove' ? 178 : 105)]);
+    for (const node of GROUND_RESOURCE_NODES) points.push(node.point, ...node.approaches,
+      [node.point[0], node.point[1] - (node.kind === 'tree' ? 146 * node.scale : 66 * node.scale)]);
+    for (const zone of GROUND_RESOURCE_ZONES) points.push([zone.bounds.left,zone.bounds.top],[zone.bounds.right,zone.bounds.bottom]);
     const cabin = projectTruckPoint([deck.end + 95, (deck.back + deck.front) / 2], 1, -107);
     points.push([cabin[0] - 126, cabin[1] - 147], [cabin[0] + 134, cabin[1] + 61]);
     for (const [width, height] of usableViewports) {
@@ -138,6 +140,113 @@ test('actual Scene retains deliberate zoom and pan through road commands and gat
     scene.setActiveFloor(3); scene.updateCamera(); scene.showVillageOverview(); scene.updateCamera();
     assert.equal(scene.activeFloor, 3, 'explicit overview preserves the chosen work floor instead of following the resident downstairs');
     assert.deepEqual(scene.heroLocation, retainedFeet); assert.deepEqual(scene.state, before);
+  } finally {
+    hook.deregister(); restorePainting?.();
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete (globalThis as unknown as Record<string, unknown>)[key];
+    }
+  }
+});
+
+test('actual landscape resource focus keeps tree and prop hits readable inside an 88-pixel safe strip', async () => {
+  type GroundPaint = { id: GroundResourceId; x: number; y: number; hit: string | null;
+    screenBounds: number[]; spriteBounds: number[]; hitBounds: number[] };
+  type ResourceScene = CameraScene & {
+    dx: number; dy: number; hits: unknown[]; groundResourcePaint: GroundPaint[];
+    resourceFocus: { siteId: string; nodeId?: GroundResourceId } | null;
+    focusResourceArea(id: 'grove'): void; focusGroundResource(id: GroundResourceId): void;
+    playGroundResourceAction(id: GroundResourceId): Promise<void>; groundResources(): void;
+    pointerHits(x: number, y: number): { candidates: { kind: string; nodeId?: GroundResourceId }[] };
+  };
+  const globals: Record<string, unknown> = {
+    window: { matchMedia: () => ({ matches: false }), addEventListener() {}, devicePixelRatio: 1 },
+    document: { hidden: false, addEventListener() {}, querySelector: () => null },
+    Image: class { complete = false; naturalWidth = 0; }, ResizeObserver: class { observe() {} },
+    requestAnimationFrame: () => 1, cancelAnimationFrame: () => {},
+    getComputedStyle: () => ({ getPropertyValue: (name: string) => name === '--world-safe-top' ? '150' : name === '--world-safe-bottom' ? '152' : '0' }),
+  };
+  const descriptors = Object.fromEntries(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, writable: true, configurable: true });
+  const hook = registerHooks({ load(url, context, next) {
+    if (/\.(png|webp|jpg|svg)$/.test(url)) return { format: 'module', source: `export default ${JSON.stringify(url)};`, shortCircuit: true };
+    return next(url, context);
+  } });
+  let restorePainting: (() => void) | undefined;
+  try {
+    const { Scene } = await import('../src/scene.ts'); hook.deregister();
+    const prototype = Scene.prototype as unknown as { render(): void }, original = prototype.render;
+    prototype.render = () => {}; restorePainting = () => { prototype.render = original; };
+    // Camera framing, the ground painter and its real hit polygons stay live;
+    // only the browser shell and Canvas calls are replaced by this harness.
+    const context = new Proxy({ globalAlpha: 1 }, { get: (target, key) => Reflect.has(target, key) ? Reflect.get(target, key) : () => {} });
+    const canvas = { getContext: () => context, style: {}, dataset: {} as Record<string, string>, setAttribute() {}, addEventListener() {}, dispatchEvent() {},
+      getBoundingClientRect: () => ({ width: 844, height: 390, left: 0, top: 0, right: 844, bottom: 390 }), hasPointerCapture: () => false };
+    const scene = new Scene(canvas as unknown as HTMLCanvasElement, () => {}) as unknown as ResourceScene;
+    scene.setState(createGame());
+    function paintGround() {
+      scene.updateCamera(); scene.hits = []; scene.groundResourcePaint = [];
+      scene.groundResources(); scene.publishGeometry();
+    }
+    function safeHit(id: GroundResourceId, minWidth: number, completeProp = false) {
+      const row = scene.groundResourcePaint.find(row => row.id === id)!;
+      assert.ok(row && row.hit === 'ground-resource');
+      assert.ok((row.hitBounds[2] - row.hitBounds[0]) * scene.scale >= minWidth,
+        `${id} retains a readable native Canvas target`);
+      assert.ok(row.x >= 0 && row.x <= 844 && row.y >= 150 && row.y <= 238,
+        `${id}'s painted tap point stays between the actual landscape HUDs`);
+      assert.ok(scene.pointerHits(row.x, row.y).candidates.some(hit => hit.kind === 'ground-resource' && hit.nodeId === id),
+        'the visible tap point resolves through the real Scene hit test');
+      if (completeProp) assert.ok(row.screenBounds[0] >= 0 && row.screenBounds[2] <= 844
+        && row.screenBounds[1] >= 150 && row.screenBounds[3] <= 238,
+      'explicit node focus displays the complete selected prop inside the safe strip');
+      return row;
+    }
+    paintGround();
+    const overview = structuredClone(scene.camera), overviewScale = scene.scale,
+      feet = structuredClone(scene.heroLocation), before = structuredClone(scene.state);
+    assert.equal(JSON.parse(canvas.dataset.sceneGeometry).viewport.usableHeight, 88);
+    assert.ok(overviewScale < .38, 'the complete-map overview remains independent of explicit resource magnification');
+    scene.focusResourceArea('grove'); paintGround();
+    const zone = getGroundResourceZone('grove')!;
+    assert.ok(Math.abs(scene.scale - .38) < 1e-9);
+    assert.equal(scene.camera.x, (zone.bounds.left + zone.bounds.right) / 2);
+    assert.ok(Math.abs(scene.camera.y - (zone.bounds.top + 88 / .38 / 2 + 16 / .38)) < 1e-9,
+      'a short area view starts at the forest entrance instead of hiding the first trees below a centered fit');
+    const entranceY = scene.dy + zone.path[0][1] * scene.scale;
+    assert.ok(entranceY >= 150 && entranceY <= 238);
+    safeHit('tree-01', 40);
+    const focused = structuredClone(scene.camera), focusedScale = scene.scale;
+    scene.walkOntoRoad(); scene.updateCamera();
+    assert.deepEqual(scene.camera, focused); assert.equal(scene.scale, focusedScale);
+    scene.stopWalking();
+    const gathering = scene.playGroundResourceAction('tree-01');
+    assert.ok(scene.action);
+    scene.action.elapsed = scene.action.walk / 2; scene.updateCamera();
+    assert.deepEqual(scene.camera, focused); assert.equal(scene.scale, focusedScale);
+    scene.action.elapsed = scene.action.walk + scene.action.work / 2; scene.updateCamera();
+    assert.deepEqual(scene.camera, focused); assert.equal(scene.scale, focusedScale);
+    scene.action.resolve(); await gathering; scene.action = null;
+    scene.setMapZoom(1.25); scene.updateCamera();
+    scene.mapPan = [24, 55]; scene.camera.x += 24; scene.camera.y += 55;
+    const manual = structuredClone(scene.camera), manualScale = scene.scale;
+    scene.walkOntoRoad(); scene.updateCamera(); scene.stopWalking();
+    assert.equal(scene.cameraMode, 'manual'); assert.deepEqual(scene.camera, manual); assert.equal(scene.scale, manualScale);
+    assert.deepEqual(scene.mapPan, [24, 55], 'panning can explore later trees without an automatic return to the entrance');
+    for (const [id, minimumScale, hitWidth] of [['tree-16', .38, 40], ['seed-02', .6, 44]] as const) {
+      scene.focusGroundResource(id); paintGround();
+      const node = getGroundResourceNode(id)!, row = safeHit(id, hitWidth, true);
+      assert.deepEqual(scene.resourceFocus, { siteId: node.siteId, nodeId: id });
+      assert.ok(scene.scale >= minimumScale - 1e-9);
+      assert.equal(scene.camera.x, node.point[0]);
+      assert.ok(Math.abs(scene.camera.y - (row.spriteBounds[1] + row.spriteBounds[3]) / 2) < 1e-9,
+        'the selected node is centered on its full painted object');
+    }
+    scene.showVillageOverview(); scene.updateCamera(); scene.publishGeometry();
+    assert.equal(scene.resourceFocus, null); assert.equal(scene.cameraMode, 'overview');
+    assert.deepEqual(scene.camera, overview); assert.equal(scene.scale, overviewScale);
+    assert.equal(scene.mapZoom, 1); assert.equal(scene.manualViewport, null);
+    assert.deepEqual(scene.heroLocation, feet, 'resource framing never moves the retained actor feet');
+    assert.deepEqual(scene.state, before, 'camera and hit rendering never alter resource inventory or saved progress');
   } finally {
     hook.deregister(); restorePainting?.();
     for (const [key, descriptor] of Object.entries(descriptors)) {
