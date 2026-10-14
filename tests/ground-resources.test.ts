@@ -7,6 +7,7 @@ import { circleOverlapsPolygon, createNavigationWorld, groundLocation, navigatio
   planNavigation, sampleNavigation, sweptCircleOverlapsPolygon } from '../src/scene-navigation';
 import { getTruckGroundFootprint } from '../src/truck-ground';
 import { getPetPassageGeometry } from '../src/pet-passage';
+import { getGroundResourceVisual, getGroundSpriteFrame, getGroundVisualBounds, getGroundVisualPolygon } from '../src/ground-visuals';
 
 const rect = (bounds:GroundBounds):GroundPoint[] => [[bounds.left,bounds.top],[bounds.right,bounds.top],
   [bounds.right,bounds.bottom],[bounds.left,bounds.bottom]];
@@ -98,6 +99,51 @@ test('zone bounds include complete work-stop circles and the two-animal forest t
       assert.ok(y-zone.pathWidth/2>=zone.bounds.top&&y+zone.pathWidth/2<=zone.bounds.bottom);
     }
   }
+});
+
+test('meadow, salvage and water resources occupy staggered clearings instead of matching rows',()=>{
+  const midpoint=(a:GroundPoint,b:GroundPoint):GroundPoint=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  for(const id of ['seed-meadow','salvage','spring'] as const){
+    const zone=getGroundResourceZone(id)!,nodes=GROUND_RESOURCE_NODES.filter(node=>node.zoneId===id);
+    assert.equal(nodes.length,4);
+    assert.equal(new Set(nodes.map(node=>node.point[0])).size,4,`${id} does not place its props in two identical columns`);
+    assert.equal(new Set(nodes.map(node=>node.point[1])).size,4,`${id} does not place its props in two identical rows`);
+    // Opposite corners of a rectangle or parallelogram share a midpoint.
+    // Reject that regular four-prop layout even when it has been rotated.
+    for(const [a,b,c,d] of [[0,1,2,3],[0,2,1,3],[0,3,1,2]])assert.ok(
+      distance(midpoint(nodes[a].point,nodes[b].point),midpoint(nodes[c].point,nodes[d].point))>5,
+      `${id}'s props do not form a symmetric four-corner grid`);
+    assert.ok(zone.path.length>=3,`${id} includes an authored bend through the clear space`);
+    assert.ok(new Set(zone.path.map(point=>point[0])).size>=3,`${id}'s clear corridor does not repeat a vertical column`);
+    for(let index=1;index<zone.path.length;index++)for(const node of GROUND_RESOURCE_NODES)assert.equal(
+      sweptCircleOverlapsPolygon(zone.path[index-1],zone.path[index],zone.pathWidth/2,rect(node.bounds)),false,
+      `${id} keeps the full corridor clear despite staggering ${node.id}`);
+  }
+});
+
+test('all measured prop variants retain their contact point and complete artwork outside every truck hull',()=>{
+  const treeVariants=new Set<number>();
+  for(const node of GROUND_RESOURCE_NODES)for(const visual of node.kind==='tree'?[undefined,'stump']:[undefined]){
+    const art=getGroundResourceVisual(node,visual),frame=getGroundSpriteFrame(art.sprite,art.variant),
+      polygon=getGroundVisualPolygon(node,visual),[left,top,right,bottom]=getGroundVisualBounds(node,visual),
+      zone=getGroundResourceZone(node.zoneId)!,envelope=rect({left,top,right,bottom});
+    if(node.kind==='tree'&&visual===undefined)treeVariants.add(art.variant);
+    assert.ok(left>=zone.bounds.left&&right<=zone.bounds.right&&top>=zone.bounds.top&&bottom<=zone.bounds.bottom,
+      `${node.id}'s ${visual??'living'} measured sprite stays inside its actual ground region`);
+    assert.ok(circleOverlapsPolygon(node.point,0,polygon),`${node.id}'s contact remains inside its measured painted silhouette`);
+    assert.ok(frame.anchor[0]>=frame.x&&frame.anchor[0]<=frame.x+frame.width
+      &&frame.anchor[1]>=frame.y&&frame.anchor[1]<=frame.y+frame.height,
+      'the measured contact belongs to the selected atlas crop');
+    assert.ok(Math.abs(left+(frame.anchor[0]-frame.x)*art.width/frame.width-node.point[0])<1e-8
+      &&Math.abs(top+(frame.anchor[1]-frame.y)*art.height/frame.height-node.point[1])<1e-8,
+      `${node.id}'s different crop margins cannot offset the artwork from its physical contact`);
+    for(const point of polygon)assert.ok(point[0]>=left&&point[0]<=right&&point[1]>=top&&point[1]<=bottom,
+      'the actual clipped contour fits inside its measured crop');
+    for(let level=1;level<=8;level++)for(const painted of [polygon,envelope])for(let edge=0;edge<painted.length;edge++)assert.equal(
+      sweptCircleOverlapsPolygon(painted[edge],painted[(edge+1)%painted.length],GROUND_RESOURCE_APPROACH_RADIUS,getTruckGroundFootprint(level).polygon),false,
+      `level ${level}: the full measured ${node.id} ${visual??'living'} artwork stays visually detached from the chassis`);
+  }
+  assert.equal(treeVariants.size,3,'all three differently measured tree variants participate in the hull-clearance audit');
 });
 
 test('all eight truck levels admit full hero and largest-pet swept routes to every independent ground node',()=>{

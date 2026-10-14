@@ -237,7 +237,8 @@ test('actual landscape resource focus keeps tree and prop hits readable inside a
       const node = getGroundResourceNode(id)!, row = safeHit(id, hitWidth, true);
       assert.deepEqual(scene.resourceFocus, { siteId: node.siteId, nodeId: id });
       assert.ok(scene.scale >= minimumScale - 1e-9);
-      assert.equal(scene.camera.x, node.point[0]);
+      assert.ok(Math.abs(scene.camera.x - (row.spriteBounds[0] + row.spriteBounds[2]) / 2) < 1e-9,
+        'the selected camera centers asymmetric painted crowns without moving their trunk contact');
       assert.ok(Math.abs(scene.camera.y - (row.spriteBounds[1] + row.spriteBounds[3]) / 2) < 1e-9,
         'the selected node is centered on its full painted object');
     }

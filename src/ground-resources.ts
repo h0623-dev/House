@@ -35,16 +35,18 @@ export interface GroundResourceZone {
 
 /** Authored world coordinates stay fixed when the truck expands. The dense
  * crowns flank a genuine 132-pixel trail; each trunk remains an individual
- * physical resource rather than belonging to a decorative forest image. */
+ * physical resource rather than belonging to a decorative forest image.
+ * Paths outside the forest describe clear walking corridors, not roads to
+ * paint: the meadow, salvage clearing and stream have their own ground art. */
 export const GROUND_RESOURCE_ZONES: readonly GroundResourceZone[] = [
   {id:'grove',name:'숲 벌목장',bounds:{left:-215,top:755,right:575,bottom:1425},
     path:[[145,845],[145,1045],[220,1180],[260,1350]],pathWidth:132},
-  {id:'seed-meadow',name:'씨앗 풀밭',bounds:{left:475,top:855,right:865,bottom:1230},
-    path:[[660,950],[660,1180]],pathWidth:100},
-  {id:'salvage',name:'고철 수거장',bounds:{left:840,top:850,right:1240,bottom:1215},
-    path:[[1030,905],[1030,1160]],pathWidth:100},
-  {id:'spring',name:'숲 샘터',bounds:{left:1210,top:830,right:1610,bottom:1200},
-    path:[[1400,890],[1400,1145]],pathWidth:100},
+  {id:'seed-meadow',name:'씨앗 풀밭',bounds:{left:455,top:855,right:900,bottom:1250},
+    path:[[647,930],[652,1025],[675,1110],[676,1180]],pathWidth:100},
+  {id:'salvage',name:'고철 수거장',bounds:{left:830,top:840,right:1285,bottom:1250},
+    path:[[1040,920],[1025,1010],[1080,1160]],pathWidth:100},
+  {id:'spring',name:'숲 샘터',bounds:{left:1200,top:830,right:1640,bottom:1260},
+    path:[[1400,900],[1390,995],[1435,1135],[1450,1180]],pathWidth:100},
 ];
 export const GROUND_RESOURCE_BOUNDS: GroundBounds = {
   left: Math.min(...GROUND_RESOURCE_ZONES.map(zone=>zone.bounds.left)),
@@ -68,12 +70,12 @@ const TREE_SPECS: readonly NodeSpec[] = [
   ['tree-15',[465,1200],1.10],['tree-16',[375,1290],1.23],
 ];
 const PATCH_SPECS: readonly NodeSpec[] = [
-  ['seed-01',[585,970],1.04],['seed-02',[740,975],1.12],
-  ['seed-03',[585,1120],.98],['seed-04',[755,1120],1.07],
-  ['scrap-01',[950,955],1.03],['scrap-02',[1110,950],1.12],
-  ['scrap-03',[950,1105],.96],['scrap-04',[1130,1095],1.06],
-  ['water-01',[1320,940],1.04],['water-02',[1480,930],.97],
-  ['water-03',[1320,1090],1.09],['water-04',[1500,1080],1.13],
+  ['seed-01',[568,965],1.04],['seed-02',[745,1000],1.12],
+  ['seed-03',[600,1140],.98],['seed-04',[782,1115],1.07],
+  ['scrap-01',[938,980],1.03],['scrap-02',[1125,942],1.12],
+  ['scrap-03',[976,1138],.96],['scrap-04',[1178,1088],1.06],
+  ['water-01',[1310,950],1.04],['water-02',[1510,975],.97],
+  ['water-03',[1343,1115],1.09],['water-04',[1530,1150],1.13],
 ];
 const kindDetails: Record<GroundResourceKind,{siteId:OutdoorSiteId;resource:GroundResource;name:string;halfWidth:number;halfHeight:number}> = {
   tree:{siteId:'grove',resource:'wood',name:'숲 나무',halfWidth:18,halfHeight:12},

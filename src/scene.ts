@@ -13,7 +13,7 @@ import { planPlacementPetRelocations } from './scene-placement';
 import { getFloorBounds, getFloorSlots, getFloorStairs,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
 import { getSelectedTeam, getUnitRoster, type UnitId } from './units';
-import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady, worldImages } from './world-art';
+import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady } from './world-art';
 import { drawCropSprite } from './crop-art';
 import { BUILDINGS, getSettlement, getUnlockedSlots, isFacilitySlotAvailable, type BuildingType } from './settlement';
 import { drawFacility, facilityArtReady, FACILITY_BASE_SLOPES } from './settlement-art';
@@ -30,6 +30,8 @@ import { layoutProductionBubbles } from './production-bubble-layout';
 import { type OutdoorSiteId } from './outdoor-sites';
 import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId, type GroundResourceNode } from './ground-resources';
 import { getGatheringNode } from './gathering';
+import { drawGroundLandscape, drawGroundSprite, groundArtReady } from './ground-art';
+import { GROUND_LANDSCAPE_BOUNDS, GROUND_BACKGROUND_BOUNDS, getGroundResourceVisual, getGroundVisualBounds, getGroundVisualPolygon } from './ground-visuals';
 import { getFarmPlotCare } from './farm-economy';
 import { getPetPassage, getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
 import { drawPetPassage } from './pet-passage-art';
@@ -1102,14 +1104,14 @@ export class Scene {
       }
     }
   }
-  private drawPets(onDeck:boolean) {
+  private drawPets(onDeck:boolean,onlyId?:UnitId,excludeRoad=false) {
     this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[],telemetry:unknown[]=[];
     for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
       const location=motion.location,[x,y]=location.point,visible=(location.floor??1)===this.activeFloor;
       const options:CompanionOptions={id,x,y,scale:this.petScale(id),time:this.reducedMotion?0:this.time,facing:motion.facing,
         pose:roster[id].health<=0?'down':motion.speed>.05&&!motion.turnRemaining?'walk':'idle',
         gait:{distance:motion.distance,speed:motion.speed,heading:motion.heading,blend:motion.blend,facingBlend:motion.facingBlend,reducedMotion:this.reducedMotion}};
-      if(visible&&(onDeck?location.surface==='deck':location.surface!=='deck')){drawCompanion(this.ctx,options);this.hits.push({kind:'pet',x,y:y-14,radius:24});this.pulse('pet',x,y-15,26);}
+      if(visible&&(!onlyId||onlyId===id)&&(!excludeRoad||location.surface!=='road')&&(onDeck?location.surface==='deck':location.surface!=='deck')){drawCompanion(this.ctx,options);this.hits.push({kind:'pet',x,y:y-14,radius:24});this.pulse('pet',x,y-15,26);}
       telemetry.push({id,x,y,visible,scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,passageLease:motion.passageLease??null,waitingForPassage:motion.waitingForPassage??null,
         body:{x,y,radius:motion.radius,floor:location.floor??1,surface:location.surface,link:location.link??null},blockedReason:motion.blockedReason,
         facing:options.facing,pose:options.pose,turnRemaining:motion.turnRemaining,gait:options.gait,sample:sampleCompanionGait(id,options.gait!,options.scale),contacts:companionPawContacts(options)??null});
@@ -1405,10 +1407,10 @@ export class Scene {
     this.environment();
     if(this.activeFloor===1)this.groundTrails();
     this.truck();
-    if(this.activeFloor===1)this.groundResources();
     if(this.activeFloor===1)this.petPassage();
+    if(this.activeFloor===1)this.groundResources();
     this.drawPets(true);
-    this.drawPets(false);
+    this.drawPets(false,undefined,this.activeFloor===1);
     if(this.freeWalk&&(this.freeWalk.navigation.target.floor??1)===this.activeFloor){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
     this.hero();
     this.workEffects();
@@ -1422,6 +1424,7 @@ export class Scene {
     this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway:false,truckOpacity:1,
       roadActorLayer:'normal-world-order',groundPolicy:'outside-truck-body',
       nodes:this.groundResourcePaint,trails:GROUND_RESOURCE_ZONES,regenerationSeconds:180,
+      terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'fixed-mirrored-background',ready:groundArtReady(),paintedTrailIds:['grove'],capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
       sites:GROUND_RESOURCE_ZONES.map((zone,index)=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.siteId===zone.id),
         readyCount=nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length;
         return{id:zone.id,index,name:zone.name,bounds:zone.bounds,totalCount:nodes.length,readyCount,ready:readyCount>0};}),
@@ -1434,19 +1437,16 @@ export class Scene {
     const backdrop = this.ctx.createLinearGradient(0, -1100, 0, 1200);
     backdrop.addColorStop(0, '#f0edd3'); backdrop.addColorStop(.4, '#e7e5cb'); backdrop.addColorStop(1, '#84956d');
     this.ctx.fillStyle = backdrop; this.ctx.fillRect(-3000, -2500, 7000, 5000);
-    const road = worldImages.road;
     const left = -this.dx / this.scale, right = (this.width - this.dx) / this.scale;
     const top = -this.dy / this.scale, bottom = (this.height - this.dy) / this.scale;
-    // Fit the original painting beyond every camera edge when the expanded map zooms out.
-    const coverage = Math.max(1, (500 - left) / 1100, (right - 500) / 1100, (298.335 - top) / 733.335, (bottom - 298.335) / 733.335);
-    if (coverage > 1 && road.complete && road.naturalWidth) {
-      this.ctx.drawImage(road, 500 - 1100 * coverage, 298.335 - 733.335 * coverage, 2200 * coverage, 1466.67 * coverage);
-    } else if (!drawWorldRoad(this.ctx)) {
+    // Ground artwork has fixed world coordinates. Camera movement never scales
+    // the highway beneath independently positioned actors and terrain.
+    if (!drawGroundLandscape(this.ctx) && !drawWorldRoad(this.ctx)) {
       const sky = this.ctx.createLinearGradient(0, -200, 0, 800); sky.addColorStop(0, '#efe8cc'); sky.addColorStop(1, '#7e8060');
       this.ctx.fillStyle = sky; this.ctx.fillRect(-1000, -600, 3000, 2000);
     }
-    // A quiet road separates the playable wooden village from its backdrop.
-    this.ctx.fillStyle = '#e8ead267'; this.ctx.fillRect(left, top, right-left, bottom-top);
+    // Keep the painted road and interactive ground props under the same warm light.
+    this.ctx.fillStyle = '#e8ead214'; this.ctx.fillRect(left, top, right-left, bottom-top);
     const night=skyNightAmount(this.state?.minutes??660);
     if(night>0){this.ctx.fillStyle=`rgba(19,31,57,${night*.58})`;this.ctx.fillRect(left,top,right-left,bottom-top);}
     const canvasBounds=this.canvas.getBoundingClientRect();
@@ -1459,10 +1459,6 @@ export class Scene {
     const skyTop=(Math.min(this.height-52,skyInset+12)-this.dy)/this.scale,
       skyBottom=skyTop+Math.min(96,this.height*.18)/this.scale;
     this.canvas.dataset.skyBirds=JSON.stringify(drawSkyBirds(this.ctx,{timeSeconds:this.time/GAME_SPEED_MULTIPLIER,viewport:{left,top,right,bottom},skyTop,skyBottom,night,reducedMotion:this.reducedMotion}));
-    // Distant, faded trees belong to the horizon beyond the playable clearings.
-    this.ctx.save();this.ctx.globalAlpha=.32;
-    this.tree(-450,320,.92);this.tree(-525,350,.67);this.tree(1830,320,.78);
-    this.tree(1920,365,.96);this.ctx.restore();
     this.roadSign(788, 202);
     this.zombie(88 + Math.sin(this.time * .14) * 6, 423, .75, .2);
     this.zombie(970, 507 + Math.sin(this.time * .16) * 5, .55, 1.2);
@@ -1908,38 +1904,50 @@ export class Scene {
   }
 
   private groundTrails() {
-    for(const zone of GROUND_RESOURCE_ZONES){
-      this.line(zone.path,'#72865740',zone.pathWidth+150);
-      this.line(zone.path,'#8093666e',zone.pathWidth+62);
-      this.line(zone.path,'#baab819c',zone.pathWidth);
-      this.line(zone.path,'#d3c29d6b',zone.pathWidth*.68);
-      // Small stones and plants follow the edges of the actual open trail.
-      for(let index=0;index<zone.path.length;index++){
-        const[x,y]=zone.path[index],side=index%2?1:-1;
-        this.ellipse(x+side*(zone.pathWidth*.5+8),y+9,5,2.6,'#a29d81','#858e72',.6);
-        drawWorldSprite(this.ctx,'sprout',x-side*(zone.pathWidth*.5+13),y+7,13,19,.65);
+    const grove = getGroundResourceZone('grove')!, points: Point[] = [];
+    // The 132-wide clear corridor is navigation space. The worn earth is a
+    // narrower, irregular footpath with grass at its edges, never a UI shape.
+    for (let segment = 0; segment < grove.path.length - 1; segment++) {
+      const from = grove.path[segment], to = grove.path[segment + 1];
+      const count = Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / 17);
+      for (let i = 0; i < count; i++) {
+        const t = i / count;
+        points.push([from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t]);
       }
-      const[x,y]=zone.path[0];
-      this.line([[x-21,y-28],[x-21,y+11]],'#8a704f',3);
-      this.round(x-51,y-48,102,26,6,'#eadbb7','#9a825b');
-      this.label(zone.name,x,y-30,11,'#526547',800);
     }
+    points.push([...grove.path[grove.path.length - 1]]);
+    const edge = (side: number) => points.map((point, index): Point => {
+      const before = points[Math.max(0, index - 1)], after = points[Math.min(points.length - 1, index + 1)];
+      const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx, dy) || 1;
+      const taper = Math.min(1, (index + 1) / 4, (points.length - index) / 5);
+      const width = (29 + Math.sin(index * 1.37 + side) * 5 + Math.sin(index * .43) * 3) * taper;
+      return [point[0] - dy / length * width * side, point[1] + dx / length * width * side];
+    });
+    const left = edge(1), right = edge(-1);
+    this.poly([...left, ...right.reverse()], '#ad916352', '', 0);
+    for (let i = 2; i < points.length - 2; i++) {
+      const [x,y] = points[i], drift = Math.sin(i * 2.43) * 21;
+      this.ellipse(x + drift, y + Math.cos(i * 1.81) * 5, 1.8 + i % 3, .9 + i % 2, i % 2 ? '#82745b55' : '#e1c79d63');
+      if (i % 4 === 0) drawGroundSprite(this.ctx, 'underbrush', x + (i % 8 ? 45 : -44), y + 11, 28, 19, .76);
+    }
+    // One modest woodland waymarker belongs to the ground, not each resource.
+    const [x,y] = grove.path[0];
+    this.ctx.save();this.ctx.translate(x - 53, y + 35);this.ctx.rotate(-.09);
+    this.ellipse(0, 3, 14, 4, '#283d3020');
+    this.line([[0,-25],[0,3]],'#806944',3);
+    this.poly([[-29,-40],[28,-38],[30,-18],[-28,-20]],'#ad9870','#7a6849',1);
+    this.line([[-23,-34],[23,-33]],'#d1bb873d',1);
+    this.label('숲길',0,-26,8,'#4b4b34',700);this.ctx.restore();
   }
 
   private groundSpriteBounds(node:GroundResourceNode):[number,number,number,number] {
-    const[x,y]=node.point,s=node.scale;
-    return node.kind==='tree'?[x-56*s,y-146*s,x+56*s,y+12*s]:[x-43*s,y-66*s,x+43*s,y+18*s];
-  }
-  private groundTreePolygon(node:GroundResourceNode):Point[] {
-    const[x,y]=node.point,w=111*node.scale,h=146*node.scale;
-    return [[-.32,-1],[.20,-.98],[.46,-.83],[.5,-.58],[.41,-.34],[.16,-.20],
-      [.14,0],[-.13,0],[-.19,-.22],[-.43,-.35],[-.5,-.60],[-.46,-.85]]
-      .map(([u,v])=>[x+u*w,y+v*h]);
+    return getGroundVisualBounds(node);
   }
   private groundResources() {
-    const now=Date.now(),visualNow=performance.now()/1000;
-    const order=GROUND_RESOURCE_NODES.map((node,index)=>({node,index})).sort((a,b)=>a.node.point[1]-b.node.point[1]);
-    for(const{node,index}of order){
+    const now=Date.now(),visualNow=performance.now()/1000,artReady=groundArtReady();
+    const heroLocation=this.currentHeroLocation();
+    const cooldownLabels: {node:GroundResourceNode;seconds:number}[]=[];
+    const paintNode=(node:GroundResourceNode,index:number)=>{
       const stock=this.state?getGatheringNode(this.state,node.id,now):undefined,
         ready=stock?.ready??true,active=this.action?.groundResourceId===node.id,
         cutAt=this.treeCuts.get(node.id),cut=cutAt===undefined?Infinity:visualNow-cutAt,
@@ -1949,63 +1957,62 @@ export class Scene {
         visual=node.kind==='tree'?falling?'falling':available?'tree':'stump':ready?'resource':'depleted';
       if(ready&&!active&&cut>=.65)this.treeCuts.delete(node.id);
       const[x,y]=node.point,s=node.scale,bounds=this.groundSpriteBounds(node);
-      this.ellipse(x,y+4*s,node.kind==='tree'?28*s:38*s,12*s,'#294a322c');
+      const art=getGroundResourceVisual(node,visual);
+      let painted=false;
       if(node.kind==='tree'){
-        if(!available||falling)drawWorldSprite(this.ctx,'stump',x,y+9*s,46*s,32*s);
+        if(!available||falling){
+          const stump=getGroundResourceVisual(node,'stump');
+          painted=drawGroundSprite(this.ctx,'stump',x,y,stump.width,stump.height,1,stump.variant);
+        }
         if(available||falling){
           const work=active?this.actionProgress():0;
+          // A tree in front of the hero keeps its depth, but lets the working
+          // character remain visible through the foliage.
+          const behind=heroLocation.surface==='road'&&heroLocation.point[1]<y&&
+            heroLocation.point[0]>bounds[0]-12&&heroLocation.point[0]<bounds[2]+12&&
+            heroLocation.point[1]>bounds[1];
           this.ctx.save();this.ctx.translate(x,y);
           this.ctx.rotate(falling?-this.ease(cut/.65)*1.35:work>.03?Math.sin(work*Math.PI*24)*.018:Math.sin(this.time*.65+index)*.003);
-          if(falling)this.ctx.globalAlpha=Math.max(0,1-(cut/.65)**2);
-          drawWorldSprite(this.ctx,'tree',0,0,111*s,146*s);
+          const alpha=(falling?Math.max(0,1-(cut/.65)**2):1)*(behind?.65:1);
+          painted=drawGroundSprite(this.ctx,'tree',0,0,art.width,art.height,alpha,art.variant)||painted;
           this.ctx.restore();
         }
-      }else if(node.kind==='scrap'){
-        if(ready){
-          this.resourceIllustration('scrap',x-10*s,y-22*s,59*s);
-          this.resourceIllustration('scrap',x+16*s,y-7*s,39*s);
-          this.line([[x-20*s,y+5*s],[x+22*s,y+5*s]],'#786f5c',2*s);
-        }else{
-          this.ellipse(x,y+2*s,22*s,7*s,'#8d866851');
-          this.line([[x-10*s,y],[x-2*s,y-3*s],[x+9*s,y+1*s]],'#91836c',2*s);
-        }
-      }else if(node.kind==='seed'){
-        this.ellipse(x,y+2*s,30*s,11*s,ready?'#81996466':'#9b9c6b50');
-        if(ready){
-          drawWorldSprite(this.ctx,'flowers',x-12*s,y+3*s,43*s,44*s);
-          drawWorldSprite(this.ctx,'sprout',x+15*s,y+4*s,30*s,45*s);
-          if(stock?.cropId)drawCropSprite(this.ctx,stock.cropId,'seed',x,y-8*s,17*s,21*s);
-        }else{
-          drawWorldSprite(this.ctx,'sprout',x-7*s,y+2*s,9*s,14*s,.7);
-          this.line([[x+6*s,y],[x+9*s,y-5*s]],'#799467',1.5*s);
-        }
+      }else if(ready){
+        painted=drawGroundSprite(this.ctx,art.sprite,x,y,art.width,art.height,1,art.variant);
+      }else if(node.kind==='water'){
+        // The rock-lined spring remains in the landscape while replenishing.
+        painted=drawGroundSprite(this.ctx,'water',x,y,art.width,art.height,.45,art.variant);
       }else{
-        this.ellipse(x,y+3*s,34*s,12*s,ready?'#688d985c':'#97957759','#8a977c',1*s);
-        this.ellipse(x,y+2*s,26*s,8*s,ready?'#87c7d8b0':'#baa8856e',ready?'#568d9d':'#958d73',1.2*s);
-        this.ellipse(x-8*s,y-6*s,6*s,3*s,'#aaa58a','#7e927e',.8*s);
-        this.ellipse(x+27*s,y+6*s,5*s,3*s,'#a9aa8b','#849278',.8*s);
-        if(ready){
-          this.line([[x-15*s,y+1*s],[x+4*s,y+1*s]],'#c3edf0',1.4*s);
-          this.line([[x+1*s,y+5*s],[x+14*s,y+5*s]],'#d9f2e7',1.1*s);
-          this.waterDrop(x+4*s,y-15*s,8*s);
-        }
+        this.ellipse(x,y+2*s,20*s,6*s,'#7e735628');
+        painted=drawGroundSprite(this.ctx,art.sprite,x,y,art.width,art.height,.55,art.variant);
       }
-      if(!ready){
-        const pixel=Math.min(1/this.scale,2.1),seconds=stock?.remainingSeconds??0;
-        this.round(x-19*pixel,y+17*s,38*pixel,15*pixel,7*pixel,'#e8eeddf0','#9cac8c');
-        this.label(`${seconds}초`,x,y+17*s+10.5*pixel,8.5*pixel,'#55724e',700);
-      }
-      const hitBounds: [number,number,number,number]=node.kind==='tree'?bounds:[x-39*s,y-55*s,x+39*s,y+17*s],
-        polygon=node.kind==='tree'?this.groundTreePolygon(node):undefined,
-        hit=available?'ground-resource':null,
-        target:Point=[x,y-(node.kind==='tree'?72:20)*s];
-      if(hit)this.hits.push({kind:hit,plotId:index,nodeId:node.id,siteId:node.siteId,x:target[0],y:target[1],radius:0,bounds:hitBounds,...(polygon?{polygon}:{})});
+      if(!ready&&(active||this.resourceFocus?.nodeId===node.id))cooldownLabels.push({node,seconds:stock?.remainingSeconds??0});
+      const hitBounds=bounds,polygon=getGroundVisualPolygon(node),hit=available?'ground-resource':null;
+      const target:Point=[(bounds[0]+bounds[2])/2,(bounds[1]+bounds[3])/2];
+      if(hit)this.hits.push({kind:hit,plotId:index,nodeId:node.id,siteId:node.siteId,x:target[0],y:target[1],radius:0,bounds:hitBounds,polygon});
       this.pulse(`ground:${node.id}`,x,y,34*s);
       const screenBounds=bounds.map((value,i)=>(i%2?this.dy:this.dx)+value*this.scale);
       this.groundResourcePaint.push({id:node.id,index,siteId:node.siteId,kind:node.kind,resource:node.resource,
-        point:{x,y},approaches:node.approaches,solidBounds:node.bounds,spriteBounds:bounds,screenBounds,hitBounds,hitPolygon:polygon??null,
+        point:{x,y},approaches:node.approaches,solidBounds:node.bounds,spriteBounds:bounds,screenBounds,hitBounds,hitPolygon:polygon,
+        art:{sprite:art.sprite,variant:art.variant,width:art.width,height:art.height,ready:artReady,painted,sourceAtlas:'ground-props',anchor:{x,y},bounds:getGroundVisualBounds(node,visual)},
         x:this.dx+target[0]*this.scale,y:this.dy+target[1]*this.scale,ready,remainingSeconds:stock?.remainingSeconds??0,
         yieldAmount:stock?.yieldAmount??null,energyCost:stock?.energyCost??null,visual,hit,active});
+    };
+    // Feet decide depth on the ground, so an actor behind a trunk cannot
+    // float over its crown. Deck and passage actors retain their own layers.
+    const order=GROUND_RESOURCE_NODES.map((node,index)=>({y:node.point[1],paint:()=>paintNode(node,index)}));
+    if(heroLocation.surface==='road')order.push({y:heroLocation.point[1],paint:()=>this.hero()});
+    this.ensurePets();
+    for(const id of this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[]){
+      const motion=this.petMotion.get(id);
+      if(motion?.location.surface==='road'&&(motion.location.floor??1)===this.activeFloor)
+        order.push({y:motion.location.point[1],paint:()=>this.drawPets(false,id)});
+    }
+    order.sort((a,b)=>a.y-b.y).forEach(item=>item.paint());
+    for(const{node,seconds}of cooldownLabels){
+      const[x,y]=node.point,pixel=Math.min(1/this.scale,2.1);
+      this.round(x-19*pixel,y+17*node.scale,38*pixel,15*pixel,7*pixel,'#e8eeddf0','#9cac8c');
+      this.label(`${seconds}초`,x,y+17*node.scale+10.5*pixel,8.5*pixel,'#55724e',700);
     }
   }
 
