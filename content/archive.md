@@ -160,3 +160,12 @@ v0.24·v0.25 APK와 체크섬만 아래 공개 커밋의 고정 주소에 보관
 | --- | ---: | --- |
 | [v0.24 APK](https://raw.githubusercontent.com/h0623-dev/House/7569da701cd53d294dc97abd7124759260083908/downloads/road-haven-0.24.0-debug.apk) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/7569da701cd53d294dc97abd7124759260083908/downloads/road-haven-0.24.0-debug.apk.sha256) | 61,106,167 | `729e7c3b5a37d8a608606d340dc926d9b4d497e4a89b4d02161e9824195670a0` |
 | [v0.25 APK](https://raw.githubusercontent.com/h0623-dev/House/7569da701cd53d294dc97abd7124759260083908/downloads/road-haven-0.25.0-debug.apk) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/7569da701cd53d294dc97abd7124759260083908/downloads/road-haven-0.25.0-debug.apk.sha256) | 61,105,819 | `a21f72a1e6bf111eac4e1a281ff2bdd7a50b56f3ff4e896063c3082adaee19c8` |
+
+## v0.32 보관
+
+v0.26·v0.27 APK와 체크섬만 아래 공개 커밋의 고정 주소에 보관합니다. 정상 HTTPS로 전체 파일을 받아 바이트 수와 SHA-256 일치를 확인했습니다. 과거 콘텐츠·APK, 캐시된 자산과 Git 이력을 유지합니다. 아래 주소는 자동 롤백 대상이 아닙니다.
+
+| 보관 파일 | 바이트 | SHA-256 |
+| --- | ---: | --- |
+| [v0.26 APK](https://raw.githubusercontent.com/h0623-dev/House/589fc8a4dbc2325c375e3de7b7e63915a809a19c/downloads/road-haven-0.26.0-debug.apk) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/589fc8a4dbc2325c375e3de7b7e63915a809a19c/downloads/road-haven-0.26.0-debug.apk.sha256) | 61,119,345 | `f6b655c08ae61906b6683cd445a9a3ab0a0321ff1817cd90b8d00546bd6b9572` |
+| [v0.27 APK](https://raw.githubusercontent.com/h0623-dev/House/589fc8a4dbc2325c375e3de7b7e63915a809a19c/downloads/road-haven-0.27.0-debug.apk) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/589fc8a4dbc2325c375e3de7b7e63915a809a19c/downloads/road-haven-0.27.0-debug.apk.sha256) | 61,134,699 | `b1b26fdc6800fe16250301755b5e28f5dd788720d64a2ff968ef9a1424e36647` |
