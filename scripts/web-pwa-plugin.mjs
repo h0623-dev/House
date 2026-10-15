@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { createWebEntry } from './create-web-entry.mjs';
 
 const hash = data => createHash('sha256').update(data).digest('hex');
 const normalizeBase = base => `/${String(base).replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
@@ -9,6 +10,9 @@ async function listFiles(folder, prefix = '') {
   const result = [];
   for (const entry of await readdir(folder, { withFileTypes: true })) {
     const name = prefix + entry.name;
+    // Compatibility aliases are a network entry for old controllers, not a
+    // second atomic release. Exclude them on repeated finalization as well.
+    if (name === 'play.html' || name === 'play') continue;
     if (entry.isDirectory()) result.push(...await listFiles(path.join(folder, entry.name), name + '/'));
     else if (entry.isFile() && !['sw.js', 'web-update.json'].includes(name)) result.push(name);
   }
@@ -36,6 +40,7 @@ export async function createPwaRelease(outDir, { version, contentVersion, base =
   const manifest = { schema: 1, buildId, version, contentVersion, base, files };
   await writeFile(path.join(outDir, 'web-update.json'), JSON.stringify(manifest, null, 2) + '\n');
   await writeFile(path.join(outDir, 'sw.js'), generateServiceWorker(manifest));
+  await createWebEntry(outDir, { base, version });
   return manifest;
 }
 
@@ -238,7 +243,7 @@ function serviceWorkerRuntime(manifest) {
     const relative = url.pathname.slice(new URL(base).pathname.length);
     if (relative === 'sw.js' || relative === 'web-update.json') return;
     event.respondWith((async () => {
-      if (request.mode === 'navigate' && (relative === '' || relative === 'index.html')) {
+      if (request.mode === 'navigate' && (relative === '' || relative === 'index.html' || relative === 'play.html')) {
         await pin(event.resultingClientId, manifest.buildId);
         return await (await caches.open(cacheName)).match(new URL('index.html', base).href)
           || new Response('The verified game cache is unavailable.', { status: 503 });

@@ -20,7 +20,7 @@ export function supportsWebUpdates(value:WebUpdateEnvironment):boolean {
 interface WorkerReply {buildId?:string;state?:LiveUpdateState;accepted?:boolean;reason?:string}
 export interface WebUpdateClientOptions {
  supported:boolean;base:string;serviceWorker:ServiceWorkerContainer;
- renderedBuildId:()=>string|undefined;reload:()=>void;
+ renderedBuildId:()=>string|undefined;renderedContentVersion?:number;reload:()=>void;
  beforePeerApply:()=>boolean|Promise<boolean>;onApplying:(value:boolean)=>void;
  finalSave?:()=>boolean|Promise<boolean>;
  onState:(state:LiveUpdateState)=>void;onDiagnostics?:(diagnostics:WebUpdateDiagnostics)=>void;
@@ -72,10 +72,17 @@ export function createWebUpdateClient(options:WebUpdateClientOptions){
   const delay=5000+Math.floor(Math.random()*2000);nextActivationAllowedAt=Date.now()+delay;
   activationRetry=setTimeout(()=>{if(!applying&&state.status==='ready')void inspect().catch(failure);},delay);
  }
- async function rememberBoot(){
+ async function pinRenderedBuild(type:'WEB_UPDATE_BOOT'|'WEB_UPDATE_ACK'){
   const worker=options.serviceWorker.controller??registration?.active;
   const buildId=options.renderedBuildId();
-  if(worker&&buildId)await request(worker,{type:'WEB_UPDATE_BOOT',buildId});
+  if(!worker||!buildId)return;
+  const result=await request(worker,{type:'WEB_UPDATE_GET_STATE',waiting:false});
+  // A network-loaded entry can run newer code under an older controller.
+  // Pin only the controller's own verified cache, including when acknowledging.
+  if(result.buildId===buildId)await request(worker,{type,buildId});
+ }
+ async function rememberBoot(){
+  await pinRenderedBuild('WEB_UPDATE_BOOT');
  }
  async function reloadIfApproved(){
   const worker=expectedWorker;
@@ -117,9 +124,12 @@ export function createWebUpdateClient(options:WebUpdateClientOptions){
    controllerBuildId=options.serviceWorker.controller?result.buildId:undefined;
    waitingBuildId=undefined;
    const next=parseWebUpdateState(result.state);
-   // A first-load document can remain uncontrolled. If another release became
-   // active naturally, its document still reloads only through the saved gate.
-   if(result.buildId&&options.renderedBuildId()&&result.buildId!==options.renderedBuildId()){
+   // A first-load document can remain uncontrolled. Only a newer active release
+   // may replace it; a network-loaded entry can already be ahead of its controller.
+   // Waiting workers still support web fixes within the same content version.
+   const newerActive=options.renderedContentVersion===undefined
+    ||(next.contentVersion!==undefined&&next.contentVersion>options.renderedContentVersion);
+   if(newerActive&&result.buildId&&options.renderedBuildId()&&result.buildId!==options.renderedBuildId()){
     waitingBuildId=result.buildId;next.status='ready';next.progress=100;
     next.message='새 게임이 준비됐어요. 안전하게 저장한 뒤 자동으로 이어갈게요.';
    }
@@ -211,9 +221,7 @@ export function createWebUpdateClient(options:WebUpdateClientOptions){
   }catch{unlock();failure();return false;}
  }
  async function acknowledge():Promise<void>{
-  const worker=options.serviceWorker.controller??registration?.active;
-  const buildId=options.renderedBuildId();
-  if(worker&&buildId)await request(worker,{type:'WEB_UPDATE_ACK',buildId});
+  await pinRenderedBuild('WEB_UPDATE_ACK');
  }
  function canActivate(){return Boolean(options.supported&&(registration?.waiting??registration?.active)&&!applying&&state.status==='ready'&&waitingBuildId&&Date.now()>=nextActivationAllowedAt);}
  diagnostics();
@@ -235,8 +243,10 @@ export function isWebUpdateSupported(native=Capacitor.isNativePlatform()):boolea
   serviceWorkerAvailable:'serviceWorker' in navigator});
 }
 export function getWebUpdateClient(onState:(state:LiveUpdateState)=>void){
+ const contentVersion=Number(import.meta.env.VITE_APP_VERSION_CODE);
  if(!client)client=createWebUpdateClient({supported:isWebUpdateSupported(),base:import.meta.env.BASE_URL??'/House/',
   serviceWorker:navigator.serviceWorker,renderedBuildId:()=>document.querySelector<HTMLMetaElement>('meta[name="road-haven-build"]')?.content,
+  renderedContentVersion:Number.isSafeInteger(contentVersion)&&contentVersion>0?contentVersion:undefined,
   reload:()=>location.reload(),beforePeerApply:()=>guard(),onApplying:value=>applyingHook(value),finalSave:()=>finalSave(),onState,
   onDiagnostics:value=>{const app=document.querySelector<HTMLElement>('#app');if(app)app.dataset.webUpdateDiagnostics=JSON.stringify(value);}});
  return client;

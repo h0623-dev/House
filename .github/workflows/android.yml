@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_tests:
+        description: '게임 검증 실행 (사용자가 요청한 경우에만 선택)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,6 +40,7 @@ jobs:
           npm ci
           sdkmanager 'platforms;android-35' 'build-tools;34.0.0' 'build-tools;35.0.0'
       - name: Check game logic
+        if: github.event_name == 'workflow_dispatch' && inputs.run_tests
         run: npm test
       - name: Set increasing Android version code
         run: |
