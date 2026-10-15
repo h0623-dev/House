@@ -38,11 +38,22 @@ public final class ContentArtifactChecks {
         return hex.toString();
     }
     public static URL trustedContentUrl(String value) throws Exception {
+        return trustedContentUrl(value, "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/game-update.json");
+    }
+    public static URL trustedContentUrl(String value, String manifestUrl) throws Exception {
+        URI manifest = new URI(manifestUrl);
+        if (!"https".equalsIgnoreCase(manifest.getScheme()) || !"raw.githubusercontent.com".equalsIgnoreCase(manifest.getHost())
+            || (manifest.getPort() != -1 && manifest.getPort() != 443) || manifest.getRawUserInfo() != null
+            || manifest.getRawQuery() != null || manifest.getRawFragment() != null
+            || !manifest.getRawPath().matches("/h0623-dev/House/(?:gh-pages|landscape-releases)/[A-Za-z0-9][A-Za-z0-9._-]{0,120}\\.json"))
+            throw new SecurityException("허용되지 않은 콘텐츠 설명 주소예요.");
+        String basePath = manifest.getRawPath().substring(0, manifest.getRawPath().lastIndexOf('/') + 1) + "content/";
         URI uri = new URI(value);
         if (!"https".equalsIgnoreCase(uri.getScheme()) || !"raw.githubusercontent.com".equalsIgnoreCase(uri.getHost())
             || (uri.getPort() != -1 && uri.getPort() != 443) || uri.getRawUserInfo() != null
             || uri.getRawQuery() != null || uri.getRawFragment() != null
-            || !uri.getRawPath().matches("/h0623-dev/House/gh-pages/content/[A-Za-z0-9][A-Za-z0-9._-]{0,120}\\.zip"))
+            || !uri.getRawPath().startsWith(basePath)
+            || !uri.getRawPath().substring(basePath.length()).matches("[A-Za-z0-9][A-Za-z0-9._-]{0,120}\\.zip"))
             throw new SecurityException("허용되지 않은 콘텐츠 다운로드 주소예요.");
         return uri.toURL();
     }

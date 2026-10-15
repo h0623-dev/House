@@ -7,12 +7,75 @@ if (!(androidVersionCode ==~ /[1-9][0-9]*/) || androidVersionCode.toBigInteger()
     throw new GradleException('APP_VERSION_CODE must be an integer from 1 to 2100000000.')
 }
 def releaseStore = System.getenv('ANDROID_KEYSTORE_PATH')
+def releaseSetting = { String name ->
+    def property = providers.gradleProperty(name).orNull
+    property != null ? property : System.getenv(name)
+}
+def legacyApplicationId = 'com.roadhaven.game'
+def legacyContentManifest = 'https://raw.githubusercontent.com/h0623-dev/House/gh-pages/game-update.json'
+def legacyContentPublicKey = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAELHPgvnbTdcAhXmHJKWxONcIMOTTqGLgGJe2cJPtFiPlQohAZOxQ6m5mK/4VYJtYTt0Hr8QqylDM0BvOOqt2zog=='
+def applicationIdOverride = releaseSetting('ROAD_HAVEN_APP_ID')
+def appLabelOverride = releaseSetting('ROAD_HAVEN_APP_LABEL')
+def androidApplicationId = applicationIdOverride != null ? applicationIdOverride : legacyApplicationId
+def androidAppLabel = appLabelOverride != null ? appLabelOverride : '로드헤이븐'
+def contentManifestOverride = releaseSetting('ROAD_HAVEN_CONTENT_MANIFEST_URL')
+def contentPublicKeyOverride = releaseSetting('ROAD_HAVEN_CONTENT_PUBLIC_KEY_BASE64')
+if (!(androidApplicationId ==~ /[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+/)) {
+    throw new GradleException('ROAD_HAVEN_APP_ID must be a valid Android application ID.')
+}
+if (androidAppLabel.trim().isEmpty() || androidAppLabel.length() > 80 || androidAppLabel.any { (it as char) < 32 || (it as char) == 127 }) {
+    throw new GradleException('ROAD_HAVEN_APP_LABEL must be a nonempty label without control characters (up to 80 characters).')
+}
+// A separately installed app must not inherit the original app's update trust or channel.
+if (androidApplicationId != legacyApplicationId && (!contentManifestOverride || !contentPublicKeyOverride)) {
+    throw new GradleException('A separate app requires ROAD_HAVEN_CONTENT_MANIFEST_URL and ROAD_HAVEN_CONTENT_PUBLIC_KEY_BASE64.')
+}
+if ((contentManifestOverride != null) != (contentPublicKeyOverride != null)) {
+    throw new GradleException('Content manifest URL and public key overrides must be supplied together.')
+}
+if (contentManifestOverride != null && (contentManifestOverride.isEmpty() || contentPublicKeyOverride.isEmpty())) {
+    throw new GradleException('Content update overrides must not be empty.')
+}
+def contentManifest = contentManifestOverride ?: legacyContentManifest
+def contentPublicKey = contentPublicKeyOverride ?: legacyContentPublicKey
+if (androidApplicationId == legacyApplicationId &&
+        (contentManifest != legacyContentManifest || contentPublicKey != legacyContentPublicKey)) {
+    throw new GradleException('The original app must retain its original content channel and pinned public key.')
+}
+if (androidApplicationId != legacyApplicationId && contentPublicKey == legacyContentPublicKey) {
+    throw new GradleException('A separate app must have its own content signing public key.')
+}
+try {
+    def uri = new java.net.URI(contentManifest)
+    def expectedBranch = androidApplicationId == legacyApplicationId ? 'gh-pages' : 'landscape-releases'
+    def expectedManifestPath = '/h0623-dev/House/' + expectedBranch + '/[A-Za-z0-9][A-Za-z0-9._-]{0,120}\\.json'
+    if (uri.scheme != 'https' || uri.host != 'raw.githubusercontent.com' ||
+            (uri.port != -1 && uri.port != 443) || uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null ||
+            !(uri.rawPath ==~ expectedManifestPath)) {
+        throw new IllegalArgumentException('Untrusted content manifest URL')
+    }
+    def key = java.security.KeyFactory.getInstance('EC').generatePublic(
+        new java.security.spec.X509EncodedKeySpec(java.util.Base64.decoder.decode(contentPublicKey)))
+    if (!(key instanceof java.security.interfaces.ECPublicKey) || key.params.curve.field.fieldSize != 256 ||
+            key.params.order != new BigInteger('ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551', 16)) {
+        throw new IllegalArgumentException('The content signing key must use P-256')
+    }
+} catch (Exception error) {
+    throw new GradleException('Content update configuration must contain a trusted HTTPS manifest URL and a valid P-256 public key.', error)
+}
+def appLabelResource = '"' + androidAppLabel.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'") + '"'
 
 android {
     namespace "com.roadhaven.game"
     compileSdk rootProject.ext.compileSdkVersion
+    buildFeatures {
+        buildConfig true
+    }
     defaultConfig {
-        applicationId "com.roadhaven.game"
+        applicationId androidApplicationId
+        resValue 'string', 'road_haven_app_label', appLabelResource
+        buildConfigField 'String', 'ROAD_HAVEN_CONTENT_MANIFEST_URL', groovy.json.JsonOutput.toJson(contentManifest)
+        buildConfigField 'String', 'ROAD_HAVEN_CONTENT_PUBLIC_KEY_BASE64', groovy.json.JsonOutput.toJson(contentPublicKey)
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode Integer.parseInt(androidVersionCode)

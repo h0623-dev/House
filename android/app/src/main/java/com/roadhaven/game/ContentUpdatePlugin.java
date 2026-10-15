@@ -26,8 +26,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Signed game content changes the private web root while retaining https://localhost and its save data. */
 @CapacitorPlugin(name = "ContentUpdater")
 public class ContentUpdatePlugin extends Plugin {
-    private static final String MANIFEST_URL = "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/game-update.json";
-    private static final String PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAELHPgvnbTdcAhXmHJKWxONcIMOTTqGLgGJe2cJPtFiPlQohAZOxQ6m5mK/4VYJtYTt0Hr8QqylDM0BvOOqt2zog==";
+    // Gradle keeps the original app's defaults pinned and requires a separate trust root for a separate app.
+    private static final String MANIFEST_URL = BuildConfig.ROAD_HAVEN_CONTENT_MANIFEST_URL;
+    private static final String PUBLIC_KEY = BuildConfig.ROAD_HAVEN_CONTENT_PUBLIC_KEY_BASE64;
     private static final String PREFS = "road-haven-content-update";
     private static final int MAX_MANIFEST_BYTES = 64 * 1024;
     private static final long MAX_DOWNLOAD_BYTES = 100L * 1024 * 1024;
@@ -100,7 +101,7 @@ public class ContentUpdatePlugin extends Plugin {
             throw new SecurityException("잘못된 콘텐츠 릴리스 정보예요.");
         long contentVersion = integer(data, "contentVersion"), min = integer(data, "minNativeVersionCode"), max = integer(data, "maxNativeVersionCode");
         if (min > max) throw new SecurityException("콘텐츠와 앱의 호환 범위가 올바르지 않아요.");
-        ContentArtifactChecks.trustedContentUrl(url);
+        ContentArtifactChecks.trustedContentUrl(url, MANIFEST_URL);
         JSONObject rawFiles = data.getJSONObject("files");
         Map<String,String> files = new LinkedHashMap<>();
         Iterator<String> names = rawFiles.keys();
@@ -287,7 +288,7 @@ public class ContentUpdatePlugin extends Plugin {
         for (int redirects = 0; redirects <= 4; redirects++) {
             if (manifest) {
                 if (!url.toString().equals(MANIFEST_URL)) throw new SecurityException("잘못된 콘텐츠 설명 주소예요.");
-            } else ContentArtifactChecks.trustedContentUrl(url.toString());
+            } else ContentArtifactChecks.trustedContentUrl(url.toString(), MANIFEST_URL);
             HttpsURLConnection connection = (HttpsURLConnection)url.openConnection();
             connection.setInstanceFollowRedirects(false); connection.setConnectTimeout(15_000); connection.setReadTimeout(15_000);
             connection.setRequestProperty("Cache-Control", "no-cache");
@@ -332,7 +333,7 @@ public class ContentUpdatePlugin extends Plugin {
                 } catch (Exception ignored) { }
                 File base = root(getContext()); archive = new File(base, "download-" + UUID.randomUUID() + ".zip");
                 state("downloading", 0, "게임 그림과 콘텐츠를 내려받고 있어요.", manifest);
-                HttpsURLConnection download = connection(ContentArtifactChecks.trustedContentUrl(manifest.url), false);
+                HttpsURLConnection download = connection(ContentArtifactChecks.trustedContentUrl(manifest.url, MANIFEST_URL), false);
                 try {
                     long length = -1;
                     String contentLength = download.getHeaderField("Content-Length");

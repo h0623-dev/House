@@ -33,7 +33,8 @@ if(statSync(archive).size>100*1024*1024)throw Error('Content archive exceeds the
 const payload=Buffer.from(JSON.stringify({version,contentVersion,minNativeVersionCode,maxNativeVersionCode,url:url.href,sha256:hash(readFileSync(archive)),files,publishedAt:new Date().toISOString()}));
 const keyPath=process.env.CONTENT_SIGNING_KEY_PATH||'/workspace/.road-haven-signing/content-update-private.pem';
 const privateKey=readFileSync(keyPath),signature=sign('sha256',payload,privateKey);
-const pinnedKey=readFileSync(join(root,'android/app/src/main/java/com/roadhaven/game/ContentUpdatePlugin.java'),'utf8').match(/(?:PINNED_)?PUBLIC_KEY\s*=\s*"([A-Za-z0-9+/=]+)"/)?.[1];
+const pinnedKey=readFileSync(join(root,'android/app/src/main/java/com/roadhaven/game/ContentUpdatePlugin.java'),'utf8').match(/(?:PINNED_)?PUBLIC_KEY\s*=\s*"([A-Za-z0-9+/=]+)"/)?.[1]
+  ||readFileSync(join(root,'android/app/build.gradle'),'utf8').match(/legacyContentPublicKey\s*=\s*'([A-Za-z0-9+/=]+)'/)?.[1];
 if(!pinnedKey||!verify('sha256',payload,createPublicKey({key:Buffer.from(pinnedKey,'base64'),format:'der',type:'spki'}),signature))throw Error('Content signing key does not match the native pinned key.');
 const envelope={payload:payload.toString('base64'),signature:signature.toString('base64')};
 writeFileSync(join(artifacts,'game-update.json'),JSON.stringify(envelope,null,2)+'\n');
