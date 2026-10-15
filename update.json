@@ -1,9 +1,9 @@
 {
-  "version": "0.35.0",
-  "versionCode": 35,
+  "version": "0.36.0",
+  "versionCode": 36,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.35.0-debug.apk",
-  "sha256": "9ed2ee7f42be3a11587770d2ae2db33cdb7fb300df80bcdf0bb5a1bc77699db8",
-  "notes": "지면 원화를 교체하고 채집물의 색감과 접지 그림자를 맞췄습니다. 도로·개울의 반사 반복을 없애고 사람 계단·동물 통로를 바랜 널판과 얇은 프레임으로 다듬었습니다. 기존 저장·개별 180초 재생·자동 기력 회복·게임 속도·자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-15T11:02:44.714Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.36.0-debug.apk",
+  "sha256": "d71b13ae5cfe5be2531292d0b3c636435de6a01f2535cd214559720c38c9c771",
+  "notes": "지면과 채집물의 질감을 자연스럽게 연결하고 숲·고철·개울 주변의 표현을 정리했습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-15T11:52:47.692Z"
 }
