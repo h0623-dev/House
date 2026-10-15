@@ -145,6 +145,27 @@ export interface GroundResourceVisual {
   readonly height: number;
 }
 
+export interface GroundContactShadow {
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly radiusX: number;
+  readonly radiusY: number;
+  readonly opacity: number;
+}
+
+/** Small world-space shadows touch the measured root/prop anchor. Their
+ * ground-plane proportions never inherit the height of a tree crown. */
+export function getGroundContactShadow(sprite: GroundSprite, width: number, height: number): GroundContactShadow {
+  const tree = sprite === 'tree', pool = sprite === 'water';
+  return {
+    offsetX: width * .025,
+    offsetY: height * (pool ? .10 : .018),
+    radiusX: width * (tree ? .29 : pool ? .43 : .37),
+    radiusY: width * (tree ? .095 : pool ? .13 : .10),
+    opacity: pool ? .15 : tree ? .23 : .19,
+  };
+}
+
 export function getGroundResourceVisual(node: GroundResourceNode, visual?: string): GroundResourceVisual {
   const variant = getGroundTreeVariant(node.id);
   if (node.kind === 'tree') {

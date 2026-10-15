@@ -17,19 +17,23 @@ test('actual ramp canvas geometry paints an active old lease before the current 
   globalThis.Image = class { complete = false; naturalWidth = 0 } as unknown as typeof Image;
   let drawPetPassage: typeof import('../src/pet-passage-art').drawPetPassage;
   let drawTruckAccessStairs: typeof import('../src/truck-stair-art').drawTruckAccessStairs;
+  let worldImages: typeof import('../src/world-art').worldImages;
   let Scene: typeof import('../src/scene').Scene;
   try {
     ({ drawPetPassage } = await import('../src/pet-passage-art'));
     ({ drawTruckAccessStairs } = await import('../src/truck-stair-art'));
+    ({ worldImages } = await import('../src/world-art'));
     ({ Scene } = await import('../src/scene'));
   } finally { hook.deregister(); globalThis.Image = priorImage; }
   let points: Point[] = [], closed = false;
-  const wood: Point[][] = [], caps: Point[] = [];
-  const c = { fillStyle: '', save() {}, restore() {}, stroke() {}, clip() {},
+  const wood: Point[][] = [], caps: Point[] = [], textureSpans: number[] = [];
+  const c = { fillStyle: '', globalAlpha: 1, save() {}, restore() {}, stroke() {}, clip() {},
+    transform(_a: number, _b: number, c: number, d: number) { textureSpans.push(Math.hypot(c, d) * 82); },
+    drawImage() {}, fillRect() {},
     ellipse(x:number,y:number,rx:number,ry:number) { if(rx===38&&ry===38)caps.push([x,y]); }, roundRect() {}, fillText() {},
     beginPath() { points = []; closed = false; }, moveTo(x: number, y: number) { points.push([x, y]); },
     lineTo(x: number, y: number) { points.push([x, y]); }, closePath() { closed = true; },
-    fill() { if (closed && this.fillStyle === '#c3a16e') wood.push(points.map(point => [...point])); },
+    fill() { if (closed && this.fillStyle === '#b0a185') wood.push(points.map(point => [...point])); },
   } as unknown as CanvasRenderingContext2D;
   const old = getPetPassageLink(1), retained = structuredClone(old), current = getPetPassageGeometry(8);
   const art = drawPetPassage(c, 8, true, { points: old.points });
@@ -44,6 +48,16 @@ test('actual ramp canvas geometry paints an active old lease before the current 
     assert.ok(distance(midpoint(quad[2], quad[3]), reversed[index + 1]) < 1e-7);
     assert.ok(Math.abs(distance(quad[0], quad[1]) - 76) < 1e-7, 'the actual painted landing keeps full body width');
   }
+  const atlas = worldImages.atlas as unknown as { complete: boolean; naturalWidth: number };
+  const atlasBefore = { complete: atlas.complete, naturalWidth: atlas.naturalWidth };
+  try {
+    atlas.complete = true; atlas.naturalWidth = 2048;
+    const decoded = drawPetPassage(c, 8, true, { points: old.points });
+    assert.equal(decoded.painted, true);
+    assert.ok(textureSpans.length > 12, 'the actual canvas paints individual small timber boards');
+    assert.ok(textureSpans.every(span => span > 0 && span <= 15.001),
+      'no atlas patch is stretched along a complete flight or across the turn landing');
+  } finally { Object.assign(atlas, atlasBefore); }
   assert.ok(distance(art.geometry.entry, current.entry) > 90, 'the override really retains the old expanded-edge displacement');
   const top: Point = [182.79, 313.36], bottom: Point = [140, 527], preservedEndpoints = structuredClone({ top, bottom });
   const access = drawTruckAccessStairs(c, top, bottom);

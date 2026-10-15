@@ -1423,6 +1423,13 @@ export class Scene {
     if(this.freeWalk&&(this.freeWalk.navigation.target.floor??1)===this.activeFloor){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
     this.hero();
     this.workEffects();
+    // Ground, residents, timber and foliage share one ambient light pass.
+    // Shading only environment() left daytime trees pasted onto a night road.
+    c.save(); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = '#e8ead214'; c.fillRect(0, 0, this.width, this.height);
+    const night = skyNightAmount(this.state?.minutes ?? 660);
+    if (night > 0) { c.fillStyle = `rgba(19,31,57,${night * .58})`; c.fillRect(0, 0, this.width, this.height); }
+    c.restore();
     this.groundMarkers();
     this.fireflies();
     this.publishGeometry();
@@ -1435,7 +1442,7 @@ export class Scene {
       roadActorLayer:'normal-world-order',groundPolicy:'outside-truck-body',
       nodes:this.groundResourcePaint,markers:this.groundMarkerPaint,trails:GROUND_RESOURCE_ZONES,regenerationSeconds:180,
       regions:GROUND_REGIONS.map(region=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===region.id);return{...region,nodeIds:nodes.map(node=>node.id),totalCount:nodes.length,readyCount:nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length};}),
-      terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'fixed-mirrored-background',ready:groundArtReady(),paintedTrailIds:['grove','west-grove','north-ruins','east-creek'],capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
+      terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'single-painting-soft-terrain-border',ready:groundArtReady(),paintedTrailIds:['grove','west-grove','north-ruins','east-creek'],capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
       sites:GROUND_RESOURCE_ZONES.map((zone,index)=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===zone.id),
         readyCount=nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length;
         return{id:zone.id,index,name:zone.name,bounds:zone.bounds,totalCount:nodes.length,readyCount,ready:readyCount>0};}),
@@ -1456,10 +1463,7 @@ export class Scene {
       const sky = this.ctx.createLinearGradient(0, -200, 0, 800); sky.addColorStop(0, '#efe8cc'); sky.addColorStop(1, '#7e8060');
       this.ctx.fillStyle = sky; this.ctx.fillRect(-1000, -600, 3000, 2000);
     }
-    // Keep the painted road and interactive ground props under the same warm light.
-    this.ctx.fillStyle = '#e8ead214'; this.ctx.fillRect(left, top, right-left, bottom-top);
     const night=skyNightAmount(this.state?.minutes??660);
-    if(night>0){this.ctx.fillStyle=`rgba(19,31,57,${night*.58})`;this.ctx.fillRect(left,top,right-left,bottom-top);}
     const canvasBounds=this.canvas.getBoundingClientRect();
     let skyInset=this.safeViewport.top;
     for(const element of document.querySelectorAll<HTMLElement>('.scene-top,.truck-floor-controls,.settlement-objective')){
@@ -1932,25 +1936,25 @@ export class Scene {
       const before = points[Math.max(0, index - 1)], after = points[Math.min(points.length - 1, index + 1)];
       const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx, dy) || 1;
       const taper = Math.min(1, (index + 1) / 4, (points.length - index) / 5);
-      const width = (29 + Math.sin(index * 1.37 + side) * 5 + Math.sin(index * .43) * 3) * taper;
+      const width = (24 + Math.sin(index * 1.37 + side) * 7 + Math.sin(index * .43) * 4) * taper;
       return [point[0] - dy / length * width * side, point[1] + dx / length * width * side];
     });
     const left = edge(1), right = edge(-1);
-    this.poly([...left, ...right.reverse()], '#ad916352', '', 0);
+    this.poly([...left, ...right.reverse()], '#a5966e18', '', 0);
     for (let i = 2; i < points.length - 2; i++) {
       const [x,y] = points[i], drift = Math.sin(i * 2.43) * 21;
-      this.ellipse(x + drift, y + Math.cos(i * 1.81) * 5, 1.8 + i % 3, .9 + i % 2, i % 2 ? '#82745b55' : '#e1c79d63');
-      if (i % 4 === 0) drawGroundSprite(this.ctx, 'underbrush', x + (i % 8 ? 45 : -44), y + 11, 28, 19, .76);
+      if (i % 2 === 0) this.ellipse(x + drift, y + Math.cos(i * 1.81) * 5, 1.4 + i % 3, .8 + i % 2, i % 4 ? '#716f5630' : '#d4c6a438');
+      if (i % 5 === 0) drawGroundSprite(this.ctx, 'underbrush', x + (i % 10 ? 39 : -41), y + 11, 25, 17, .66);
     }
     // One modest woodland waymarker belongs to the ground, not each resource.
     const [x,y] = grove.path[0];
     this.ctx.save();this.ctx.translate(x - 53, y + 35);this.ctx.rotate(-.09);
     this.ellipse(0, 3, 14, 4, '#283d3020');
-    this.line([[0,-25],[0,3]],'#806944',3);
-    this.poly([[-29,-40],[28,-38],[30,-18],[-28,-20]],'#ad9870','#7a6849',1);
-    this.line([[-23,-34],[23,-33]],'#d1bb873d',1);
+    this.line([[0,-25],[0,3]],'#7b7960',2.6);
+    this.poly([[-29,-40],[28,-38],[30,-18],[-28,-20]],'#b0a385','#72735b',.85);
+    this.line([[-23,-34],[23,-33]],'#d0c5a44d',.7);
     const name=({'grove':'숲길','west-grove':'서쪽 숲','north-ruins':'북쪽 쉼터','east-creek':'동쪽 샘가'}as Record<string,string>)[grove.id];
-    this.label(name,0,-26,8,'#4b4b34',700);this.ctx.restore();
+    this.label(name,0,-26,8,'#495744',700);this.ctx.restore();
     }
   }
 
