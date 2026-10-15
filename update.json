@@ -1,9 +1,9 @@
 {
-  "version": "0.37.0",
-  "versionCode": 37,
+  "version": "0.38.0",
+  "versionCode": 38,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.37.0-debug.apk",
-  "sha256": "2928beb232d5b47a92f1a1518c2470500b01f5a527921f84c77c6ef7be661546",
-  "notes": "맵의 밝기와 게임 화면·팝업의 표현을 정리했습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-15T12:20:41.201Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.38.0-debug.apk",
+  "sha256": "bcc7f4bdcbd8c69558e5fbe1f8773099cce8a24bc6ca9d22f346d85b63a36196",
+  "notes": "트럭의 빈 공간을 활용하는 자유 격자 건설을 적용했습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-15T12:49:55.741Z"
 }
