@@ -1,9 +1,9 @@
 {
-  "version": "0.38.0",
-  "versionCode": 38,
+  "version": "0.39.0",
+  "versionCode": 39,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.38.0-debug.apk",
-  "sha256": "bcc7f4bdcbd8c69558e5fbe1f8773099cce8a24bc6ca9d22f346d85b63a36196",
-  "notes": "트럭의 빈 공간을 활용하는 자유 격자 건설을 적용했습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-15T12:49:55.741Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.39.0-debug.apk",
+  "sha256": "c9efd0431dbf4831ea386c702156322b13a80e330973dfaa56c2f8ef65d77838",
+  "notes": "채집 도구와 작업 동작의 애니메이션을 다듬었습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-15T13:22:39.943Z"
 }
