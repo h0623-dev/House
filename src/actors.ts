@@ -1,18 +1,20 @@
 import { heroFrame, heroImages, type SurvivorFrame } from './character-art';
 import { drawSurvivorOutfit, type OutfitDrawLayer } from './outfit-art';
 import type { EquippedOutfitId } from './shop';
+import { drawGatheringBody, drawGatheringLimbs, isGatheringRigPose } from './gathering-rig';
 
 /** The village and expeditions share one compact, painted survivor. */
-export type HeroPose = 'idle' | 'walk' | 'climb' | 'gather' | 'sow' | 'water' | 'harvest' | 'chop' | 'attack' | 'skill' | 'hurt' | 'celebrate';
+export type HeroPose = 'idle' | 'walk' | 'climb' | 'gather' | 'sow' | 'water' | 'harvest' | 'chop' | 'mine' | 'pluck' | 'scoop' | 'attack' | 'skill' | 'hurt' | 'celebrate';
 export interface HeroOptions {
   x: number; y: number; scale: number; time: number;
   gender: 'female' | 'male'; pose: HeroPose; facing: 1 | -1; progress?: number;
   climbing?: 'up' | 'down';
   outfit?: EquippedOutfitId;
+  reducedMotion?: boolean;
 }
-export interface HeroDrawResult { outfit: EquippedOutfitId; gender: 'female' | 'male'; frame: string; imageReady: boolean; layers: OutfitDrawLayer[] }
+export interface HeroDrawResult { outfit: EquippedOutfitId; gender: 'female' | 'male'; frame: string; imageReady: boolean; layers: OutfitDrawLayer[]; toolContact?: { x: number; y: number } }
 const TAU = Math.PI * 2;
-const WORK_POSES = new Set<HeroPose>(['gather', 'sow', 'water', 'harvest', 'chop']);
+const WORK_POSES = new Set<HeroPose>(['gather', 'sow', 'water', 'harvest', 'chop', 'mine', 'pluck', 'scoop']);
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 
 /** A stationary, warm contact shadow keeps the boots on the painted deck. */
@@ -88,16 +90,16 @@ export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawR
     return {outfit,gender:o.gender,frame:frameId,imageReady:false,layers:[]};
   }
   const t = o.time, walking = o.pose === 'walk', climbing = o.pose === 'climb', working = WORK_POSES.has(o.pose);
+  const gathering = isGatheringRigPose(o.pose) ? o.pose : undefined;
   const combat = o.pose === 'attack' || o.pose === 'skill';
   const phase = o.progress === undefined ? (t * (o.pose === 'chop' ? 1.45 : 1.1)) % 1 : clamp(o.progress);
   const impulse = Math.sin(phase * Math.PI), stride = Math.sin(t * 9);
   const bob = walking ? -Math.abs(stride) * .8
     : o.pose === 'celebrate' ? -Math.abs(Math.sin(t * 6)) * 4 : 0;
-  const lean = o.pose === 'chop' ? -.035 + impulse * .075
-    : o.pose === 'sow' || o.pose === 'harvest' ? Math.sin(t * 4.4) * .011
+  const lean = o.pose === 'sow' || o.pose === 'harvest' ? Math.sin(t * 4.4) * .011
     : combat ? -.022 + impulse * .055 : o.pose === 'hurt' ? -.045 : 0;
-  const breath = walking || climbing || combat ? 0 : Math.sin(t * 2.2) * .0025;
-  const press = working ? Math.sin(phase * TAU) * .006 : combat ? -impulse * .012 : 0;
+  const breath = walking || climbing || combat || gathering ? 0 : Math.sin(t * 2.2) * .0025;
+  const press = gathering ? 0 : working ? Math.sin(phase * TAU) * .006 : combat ? -impulse * .012 : 0;
   c.save(); c.translate(o.x, o.y); c.scale(o.scale * o.facing, o.scale);
   // Climbing feet grip ladder rungs; a ground shadow here looked detached.
   if (!climbing) drawContactShadow(c, combat || o.pose === 'chop' ? 1.08 : o.pose === 'gather' ? .9 : 1);
@@ -105,8 +107,12 @@ export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawR
   c.translate(0, bob); c.rotate(lean); c.scale(1 - breath * .35, 1 + breath + press);
   if (o.pose === 'hurt') c.globalAlpha *= .72 + Math.abs(Math.sin(t * 16)) * .28;
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-  drawIllustration(c, frame);
+  const articulated = gathering && drawGatheringBody(c, o.gender, frame, gathering);
+  if (!articulated) drawIllustration(c, frame);
   const layers=drawSurvivorOutfit(c,o.gender,frame,outfit);
+  const contact = articulated && gathering
+    ? drawGatheringLimbs(c, o.gender, frame, gathering, o.progress === undefined ? (t / 2.3) % 1 : clamp(o.progress), o.reducedMotion)
+    : undefined;
 
   const unit = 128 / (frame.referenceHeight ?? frame.footY - frame.y);
   const originX = frame.effectAnchor ? (frame.effectAnchor.x - frame.footX) * unit : 25;
@@ -141,15 +147,6 @@ export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawR
     }
     c.restore();
   }
-  if (o.pose === 'chop' && impulse > .6) {
-    c.save(); c.globalAlpha *= (impulse - .6) * 1.4;
-    for (let n = 0; n < 4; n++) {
-      const p = (t * 1.6 + n * .19) % 1;
-      c.fillStyle = n % 2 ? '#c49f66' : '#8b704b';
-      c.fillRect(originX + p * 18, originY - Math.sin(p * Math.PI) * 11 + n, 2.3, 1.3);
-    }
-    c.restore();
-  }
   if (combat && impulse > .3) {
     c.save(); c.globalAlpha *= impulse * .5;
     c.strokeStyle = o.pose === 'skill' ? '#c7dcb3' : '#e9d5a5';
@@ -157,5 +154,6 @@ export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawR
     c.beginPath(); c.ellipse(18, -60, 39, 31, -.4, -1.1, 1.2); c.stroke(); c.restore();
   }
   c.restore();
-  return {outfit,gender:o.gender,frame:frameId,imageReady:true,layers};
+  return {outfit,gender:o.gender,frame:frameId,imageReady:true,layers,
+    ...(contact ? {toolContact:{x:o.x + contact.x * o.scale * o.facing, y:o.y + contact.y * o.scale}} : {})};
 }

@@ -81,6 +81,10 @@ export function heroFrame(gender: SurvivorGender, pose: string, time: number, pr
   if (pose === 'walk') return frames[gender][Math.sin(time * 9) >= 0 ? 'walkA' : 'walkB'];
   if (pose === 'climb') return frames[gender][Math.sin(time * 6 * (climbing === 'down' ? -1 : 1)) >= 0 ? 'climbA' : 'climbB'];
   if (pose === 'gather') return frames[gender][(progress ?? ((time / 3.8) % 1)) < .6 ? 'gatherReach' : 'gatherStow'];
+  // The rig moves the original painted limbs; its body never swaps to a
+  // second static drawing halfway through a tool stroke.
+  if (pose === 'mine') return frames[gender].chop;
+  if (pose === 'pluck' || pose === 'scoop') return frames[gender].gatherReach;
   if (pose === 'attack' || pose === 'skill') return frames[gender].attack;
   if (pose === 'sow' || pose === 'water' || pose === 'harvest' || pose === 'chop') return frames[gender][pose];
   return frames[gender].idle;

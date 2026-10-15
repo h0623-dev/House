@@ -33,6 +33,7 @@ import { type OutdoorSiteId } from './outdoor-sites';
 import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId, type GroundResourceNode } from './ground-resources';
 import { GROUND_REGIONS, getGroundRegion, type GroundRegionId } from './ground-regions';
 import { getGatheringNode } from './gathering';
+import { gatheringKindForResource, sampleGatheringMotion, gatheringFinalContactProgress, GATHERING_CONTACT_PHASE } from './gathering-motion';
 import { layoutGroundMarkers, type GroundMarker, type GroundMarkerInput } from './ground-marker-layout';
 import { drawGroundLandscape, drawGroundSprite, groundArtReady } from './ground-art';
 import { GROUND_LANDSCAPE_BOUNDS, GROUND_BACKGROUND_BOUNDS, getGroundResourceVisual, getGroundVisualBounds, getGroundVisualPolygon } from './ground-visuals';
@@ -50,6 +51,7 @@ type PlanningMode = 'catalog' | 'placement' | 'expansion';
 type WorldBounds = { left: number; top: number; right: number; bottom: number };
 type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
+type HeroSceneState = { point: Point; pose: HeroPose; facing: 1 | -1; progress: number; time: number; climbing?: 'up' | 'down' };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'fertilize' || kind === 'harvest';
 type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; facilityPlacement?:FacilityPlacement; facilityId?:number; outdoorSiteId?:OutdoorSiteId; groundResourceId?:GroundResourceId; stayAtTarget?:boolean; gaitOffset?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
 const CHORE_STALL_TIMEOUT=16;
@@ -143,8 +145,10 @@ export class Scene {
   private plantingCropId: CropId = 'carrot';
   private itemAtlas = (() => { const image = new Image(); image.decoding = 'async'; image.src = itemAtlasUrl; return image; })();
   private camera = { x: 480, y: 350, zoom: 1 };
-  private treeCuts = new Map<GroundResourceId, number>();
+  private treeCuts = new Map<GroundResourceId, { at: number; direction: 1 | -1 }>();
   private heroDrawn = false;
+  private heroToolContact: Point | null = null;
+  private gatheringContact: { nodeId: GroundResourceId; cycle: number; point: Point } | null = null;
   private actionEventState = '';
   private disposed = false;
   private suspended = false;
@@ -196,10 +200,13 @@ export class Scene {
           if(action.groundResourceId)this.treeCuts.delete(action.groundResourceId);
           action.reject(new Error(this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT?'동물이 통로에 있어 문을 닫지 않았어요. 친구가 통로를 벗어난 뒤 다시 해 주세요.':'동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
         }else{
-          if (action.kind === 'chop' && action.groundResourceId && action.elapsed >= action.walk + action.work * .78 && !this.treeCuts.has(action.groundResourceId))
-            this.treeCuts.set(action.groundResourceId, performance.now() / 1000);
+          if (action.kind === 'chop' && action.groundResourceId && action.elapsed >= action.walk + action.work * gatheringFinalContactProgress('chop') && !this.treeCuts.has(action.groundResourceId)) {
+            const node=getGroundResourceNode(action.groundResourceId);
+            this.treeCuts.set(action.groundResourceId,{at:performance.now()/1000,direction:node&&node.point[0]<action.navigation.target.point[0]?-1:1});
+          }
           if (action.elapsed >= action.duration) {
             const destination=action.stayAtTarget?action.navigation.target:action.navigation.returnLocation;
+            if(action.groundResourceId)this.heroFacing=this.heroState().facing;
             this.heroLocation = { ...destination, point: [...destination.point] };
             this.action = null; this.zone = 'home'; action.resolve();
           }
@@ -752,11 +759,20 @@ export class Scene {
     if(!node)return Promise.reject(new Error('땅 위의 채집물을 확인해 주세요.'));
     if(!stock.ready)return Promise.reject(new Error(`${node.name}은 ${stock.remainingSeconds}초 뒤 다시 채집할 수 있어요.`));
     this.stopWalking();
-    const navigation=planWorkNavigation(this.choreWorld(),this.heroLocation,node.approaches.map(point=>({surface:'road',point:[...point]})));
+    // Work within arm's reach of the trunk or pile. The wider authored stops
+    // remain available for animal traffic, while the hero uses a clear side.
+    const clearance=HERO_BODY_RADIUS+3,nearby:Point[]=[];
+    for(const offsetY of [8,14,-2])nearby.push([node.bounds.left-clearance,node.point[1]+offsetY],[node.bounds.right+clearance,node.point[1]+offsetY]);
+    nearby.sort((a,b)=>Math.hypot(a[0]-this.heroLocation.point[0],a[1]-this.heroLocation.point[1])-Math.hypot(b[0]-this.heroLocation.point[0],b[1]-this.heroLocation.point[1]));
+    const navigation=planWorkNavigation(this.choreWorld(),this.heroLocation,[...nearby,...node.approaches].map(point=>({surface:'road',point:[...point]})));
     if(!navigation)return Promise.reject(new Error('채집 장소로 가는 길이 막혔어요. 동료를 회복시키거나 빈 길로 이동해 주세요.'));
     const kind=node.kind==='tree'?'chop':'gather';
-    const route=navigation.motion,walk=route.duration,work=realDuration(kind==='chop'?2.55:2.4);
+    // Preparation, visible repeated contact and putting the tool away all fit
+    // inside this work window; the reward still resolves once at its end.
+    const workSeconds={tree:4.6,scrap:4.2,seed:4,water:4.2}[node.kind];
+    const route=navigation.motion,walk=route.duration,work=realDuration(workSeconds);
     if(kind==='chop')this.treeCuts.delete(node.id);
+    this.gatheringContact=null;
     this.lastFrame=performance.now();
     return new Promise((resolve,reject)=>{this.action={kind,elapsed:0,duration:walk+work,stayAtTarget:true,
       walk,work,path:navigation.points,route,navigation,plotIndex:0,cropId:stock.cropId??'carrot',outdoorSiteId:node.siteId,
@@ -1239,7 +1255,7 @@ export class Scene {
   private plotPosition(index: number): Point {
     return FARM_POSITIONS[index] ?? FARM_POSITIONS[0];
   }
-  private heroState(): { point: Point; pose: HeroPose; facing: 1 | -1; progress: number; time: number; climbing?: 'up' | 'down' } {
+  private heroState(): HeroSceneState {
     const action = this.action;
     if (!action) {
       if(this.freeWalk){const motion=sampleNavigation(this.freeWalk.navigation,this.freeWalk.elapsed);return {...motion,facing:motion.distance>.01?motion.facing:this.heroFacing,time:(this.freeWalk.gaitOffset+motion.distance)/86};}
@@ -1255,7 +1271,8 @@ export class Scene {
     }
     const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'idle':'gather' };
     const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
-    return { point: action.path[action.path.length - 1], pose: poses[action.kind], facing: node?node.point[0]>=action.navigation.target.point[0]?1:-1:action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
+    const pose=node?gatheringKindForResource(node.resource):poses[action.kind];
+    return { point: action.path[action.path.length - 1], pose, facing: node?node.point[0]>=action.navigation.target.point[0]?1:-1:action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
       progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
   private heroOnDeck() {
@@ -1440,6 +1457,7 @@ export class Scene {
     this.petPassagePaint={drawn:false,painted:false};
     this.petPassageLeasedPaint=[];
     this.heroDrawn = false;
+    this.heroToolContact = null;
     this.environment();
     if(this.activeFloor===1)this.groundTrails();
     this.truck();
@@ -1913,17 +1931,19 @@ export class Scene {
     if (this.heroDrawn) return;
     this.heroDrawn = true;
     const hero = this.heroState(), [x, y] = hero.point;
-    let progress = hero.progress;
-    if (hero.pose === 'chop') progress = (progress * 3) % 1;
+    const progress = hero.progress;
     const outfit=this.state?getEquippedOutfit(this.state):'default';
-    const drawn=drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: hero.time, progress, climbing: hero.climbing,outfit });
+    const drawn=drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: hero.time, progress, climbing: hero.climbing,outfit,reducedMotion:this.reducedMotion });
+    if(drawn.toolContact)this.heroToolContact=[drawn.toolContact.x,drawn.toolContact.y];
     this.canvas.dataset.survivorOutfit=JSON.stringify({...drawn,pose:hero.pose,facing:hero.facing,floor:this.currentHeroLocation().floor??1,activeFloor:this.activeFloor,scale:WORLD_HERO_SCALE,x,y});
     this.hits.push({ kind: 'character', x, y: y - 64 * WORLD_HERO_SCALE, radius: 60 * WORLD_HERO_SCALE });
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
       const cropName = CROPS[this.action.cropId].name;
       const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', fertilize:'흙에 영양을 나눠요', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'친구가 지나가길 기다려요':this.petGatePendingOpen?'동물 문을 열어요':'동물 문을 닫아요' };
-      const label = labels[this.action.kind];
+      const node=this.action.groundResourceId?getGroundResourceNode(this.action.groundResourceId):undefined;
+      const workLabels={tree:'도끼로 차근차근 벌목',scrap:'고철을 두드려 모아요',seed:'씨앗을 따서 담아요',water:'샘물을 떠서 담아요'};
+      const label = node?workLabels[node.kind]:labels[this.action.kind];
       const top = y - 128 * WORLD_HERO_SCALE - 32;
       this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
       this.label(label, x, top + 15, 10, '#526750', 700);
@@ -2045,7 +2065,7 @@ export class Scene {
     const paintNode=(node:GroundResourceNode,index:number)=>{
       const stock=this.state?getGatheringNode(this.state,node.id,now):undefined,
         ready=stock?.ready??true,active=this.action?.groundResourceId===node.id,
-        cutAt=this.treeCuts.get(node.id),cut=cutAt===undefined?Infinity:visualNow-cutAt,
+        cutState=this.treeCuts.get(node.id),cutAt=cutState?.at,cut=cutAt===undefined?Infinity:visualNow-cutAt,
         falling=node.kind==='tree'&&cut>=0&&cut<.65,
         locallyCut=active&&cutAt!==undefined,
         available=ready&&!locallyCut,
@@ -2061,19 +2081,28 @@ export class Scene {
         }
         if(available||falling){
           const work=active?this.actionProgress():0;
+          const motion=sampleGatheringMotion('chop',work);
           // A tree in front of the hero keeps its depth, but lets the working
           // character remain visible through the foliage.
           const behind=heroLocation.surface==='road'&&heroLocation.point[1]<y&&
             heroLocation.point[0]>bounds[0]-12&&heroLocation.point[0]<bounds[2]+12&&
             heroLocation.point[1]>bounds[1];
           this.ctx.save();this.ctx.translate(x,y);
-          this.ctx.rotate(falling?-this.ease(cut/.65)*1.35:work>.03?Math.sin(work*Math.PI*24)*.018:Math.sin(this.time*.65+index)*.003);
+          const fallDirection=cutState?.direction??(x>=heroLocation.point[0]?1:-1);
+          const recoil=motion.impact*Math.sin((motion.phase-GATHERING_CONTACT_PHASE)*Math.PI*9)*.024;
+          this.ctx.rotate(falling?fallDirection*this.ease(cut/.65)*(this.reducedMotion ? .15 : 1.35):
+            work>0?recoil*(this.reducedMotion ? .3 : 1):this.reducedMotion?0:Math.sin(this.time*.65+index)*.003);
           const alpha=(falling?Math.max(0,1-(cut/.65)**2):1)*(behind?.65:1);
           painted=drawGroundSprite(this.ctx,'tree',0,0,art.width,art.height,alpha,art.variant)||painted;
           this.ctx.restore();
         }
       }else if(ready){
-        painted=drawGroundSprite(this.ctx,art.sprite,x,y,art.width,art.height,1,art.variant);
+        const motion=active?sampleGatheringMotion(gatheringKindForResource(node.resource),this.actionProgress()):undefined;
+        this.ctx.save();this.ctx.translate(x,y);
+        if(motion&&!this.reducedMotion&&node.kind!=='water')
+          this.ctx.rotate(motion.impact*Math.sin((motion.phase-GATHERING_CONTACT_PHASE)*Math.PI*8)*(node.kind==='seed'?.045:.018));
+        painted=drawGroundSprite(this.ctx,art.sprite,0,0,art.width,art.height,1,art.variant);
+        this.ctx.restore();
       }else if(node.kind==='water'){
         // The rock-lined spring remains in the landscape while replenishing.
         painted=drawGroundSprite(this.ctx,'water',x,y,art.width,art.height,.45,art.variant);
@@ -2233,34 +2262,9 @@ export class Scene {
         if (!drawCropSprite(c, action.cropId, 'produce', 0, 9, produceSize[0], produceSize[1])) drawWorldSprite(c, 'carrot', 0, 9, 16, 30);
         c.restore();
       }
-    } else if (action.kind === 'chop') {
+    } else if (action.kind === 'chop' || action.kind === 'gather') {
       const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
-      if(!node)return;
-      const cutAt=this.treeCuts.get(node.id),cut=cutAt===undefined?Infinity:performance.now()/1000-cutAt;
-      if (cut < 0 || cut > .65) for (let i = 0; i < 12; i++) {
-        const t = (progress * 3 + i * .057) % 1;
-        const x = node.point[0] + Math.cos(i * 1.2) * t * 40, y = node.point[1]-23*node.scale - Math.sin(t * Math.PI) * (15 + i * 2) + t * 21;
-        c.save(); c.translate(x, y); c.rotate(t * 6 + i); this.round(-3, -1, 6, 2, 1, '#e0bf81'); c.restore();
-      }
-    } else if (action.kind === 'gather') {
-      // The recovered bundle travels from the roadside pile to the survivor's bag.
-      // It never appears as a completed reward before the return journey finishes.
-      const pickedUp = Math.max(0, Math.min(1, (progress - .38) / .24));
-      const stowed = Math.max(0, Math.min(1, (progress - .64) / .25));
-      if (pickedUp > 0 && stowed < 1) {
-        const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
-        if(!node)return;
-        const sourceX=node.point[0],sourceY=node.point[1]-18;
-        const handX = hx - 26 * WORLD_HERO_SCALE, handY = hy - 37 * WORLD_HERO_SCALE;
-        const packX = hx + 6 * WORLD_HERO_SCALE, packY = hy - 52 * WORLD_HERO_SCALE;
-        const x = sourceX + (handX - sourceX) * pickedUp + (packX - handX) * stowed;
-        const y = sourceY + (handY - sourceY) * pickedUp + (packY - handY) * stowed;
-        c.save(); c.globalAlpha = Math.min(1, pickedUp * 4) * (1 - stowed * stowed);
-        if(node.resource==='seeds')drawCropSprite(c,action.cropId,'seed',x,y+4,13,16);
-        else if(node.resource==='water')this.waterDrop(x,y,5);
-        else this.resourceIllustration(node.resource,x,y,15);
-        c.restore();
-      }
+      if(node)this.gatheringEffects(node,hero,progress);
     } else if (action.kind === 'expandFarm') {
       // Soil and timber gradually become the new bed. The state adds the usable
       // plot only once the character has finished and returned home.
@@ -2300,6 +2304,58 @@ export class Scene {
         this.line([[x - 3, y], [x + 3, y]], '#fff4b0', 2); this.line([[x, y - 3], [x, y + 3]], '#fff4b0', 2);
       }
     }
+  }
+
+  /** Small physical responses begin when the animated hand or tool connects. */
+  private gatheringEffects(node:GroundResourceNode,hero:HeroSceneState,progress:number) {
+    const motion=sampleGatheringMotion(gatheringKindForResource(node.resource),progress);
+    if(!motion.contact)return;
+    if(this.gatheringContact?.nodeId!==node.id||this.gatheringContact.cycle!==motion.cycle){
+      const fallback:Point=[hero.point[0]+hero.facing*34*WORLD_HERO_SCALE,hero.point[1]-24*WORLD_HERO_SCALE];
+      this.gatheringContact={nodeId:node.id,cycle:motion.cycle,point:this.heroToolContact?[...this.heroToolContact]:fallback};
+    }
+    const [sx,sy]=this.gatheringContact.point,c=this.ctx;
+    const age=Math.max(0,Math.min(1,(motion.phase-GATHERING_CONTACT_PHASE)/(1-GATHERING_CONTACT_PHASE)));
+    const fade=(1-age)**2,amount=this.reducedMotion ? .45 : 1;
+    c.save();c.globalAlpha=fade*amount;
+    if(node.kind==='tree'){
+      for(let i=0;i<(this.reducedMotion?3:8);i++){
+        const toss=this.seed(i+motion.cycle*17+Number(node.id.slice(-2))),
+          x=sx+hero.facing*(9+toss*25)*age+(i%3-1)*age*5,
+          y=sy-(11+toss*20)*age+36*age*age;
+        c.save();c.translate(x,y);c.rotate((i%2?1:-1)*age*5+i);
+        this.poly([[-2.3,-.9],[1.9,-1.3],[3,.4],[-1.6,1.2]],i%3?'#d1b37d':'#a38253','#806746',.45);
+        c.restore();
+      }
+    }else if(node.kind==='scrap'){
+      for(let i=0;i<(this.reducedMotion?2:5);i++){
+        const angle=-Math.PI*.87+i*.39,x=sx+Math.cos(angle)*age*(17+i*3),y=sy+Math.sin(angle)*age*21+age*age*19;
+        this.line([[x,y],[x+Math.cos(angle)*2.8,y+Math.sin(angle)*2.8]],i%2?'#d9ba7c':'#9d7950',1.2);
+      }
+      if(motion.impact>.3){
+        this.line([[sx-3,sy-1],[sx+2,sy+1]],'#eddbad',1.2);
+        this.line([[sx,sy-4],[sx,sy+2]],'#eddbad',1.2);
+      }
+    }else if(node.kind==='seed'){
+      // Picked pods arc into the carried pouch after each visible hand pull.
+      const settle=this.ease(age),packX=hero.point[0]-hero.facing*7*WORLD_HERO_SCALE,packY=hero.point[1]-41*WORLD_HERO_SCALE;
+      for(let i=0;i<2;i++){
+        const x=sx+(packX-sx)*settle+i*3,y=sy+(packY-sy)*settle-Math.sin(age*Math.PI)*(10+i*3);
+        this.ellipse(x,y,1.3,2,i?'#b59c63':'#d5bd80','#8d7a4e',.5);
+      }
+      if(motion.impact>.1)this.line([[sx-3,sy-1],[sx-1,sy-4],[sx+1,sy-1]],'#a9b67a',1);
+    }else{
+      // The dipped vessel disturbs its own bank, rather than emitting a
+      // constant stream before the scoop reaches the water.
+      const radius=4+age*17;
+      this.ellipse(sx,sy+3,radius,radius*.32,'','#afc8b2',1.15);
+      this.ellipse(sx+1,sy+4,radius*.64,radius*.21,'','#d2dcc3',.8);
+      for(let i=0;i<(this.reducedMotion?2:4);i++){
+        const x=sx+(i-1.5)*age*7,y=sy-Math.sin(age*Math.PI)*(8+i%2*5)+age*4;
+        this.ellipse(x,y,.9,1.6,i%2?'#a7c6bf':'#d5dfce');
+      }
+    }
+    c.restore();
   }
 
   private pulse(kind: string, x: number, y: number, radius: number) {

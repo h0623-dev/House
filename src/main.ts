@@ -231,7 +231,7 @@ document.querySelector('#world')!.addEventListener('sceneactionchange',event=>{
  const detail=(event as CustomEvent<{phase:string;progress:number;climbing:'up'|'down'|null}>).detail;
  const status=document.querySelector<HTMLElement>('.chore-status')!;if(status.hidden)return;
  const phase=status.querySelector('[data-chore-phase]'),track=status.querySelector<HTMLElement>('.chore-track');
- const text=detail.climbing==='down'?'사다리 내려가는 중':detail.climbing==='up'?'사다리 올라가는 중':detail.phase==='waiting'?'친구가 지나가길 기다리는 중':detail.phase==='working'?'작업 중':detail.phase==='returning'?'돌아오는 중':'이동 중';
+ const text=detail.climbing==='down'?'사다리 내려가는 중':detail.climbing==='up'?'사다리 올라가는 중':detail.phase==='waiting'?'친구가 지나가길 기다리는 중':detail.phase==='working'?(phase?.getAttribute('data-working-label')??'작업 중'):detail.phase==='returning'?'돌아오는 중':'이동 중';
  if(phase&&phase.textContent!==text)phase.textContent=text;
  if(track){track.setAttribute('aria-valuenow',String(detail.progress));track.querySelector<HTMLElement>('i')!.style.width=`${detail.progress}%`;}
 });
@@ -1020,9 +1020,9 @@ async function gatherGroundResource(id:GroundResourceId):Promise<boolean>{
  state=recoverEnergy(state);
  const before=performGatheringAction(state,id);if(!before.ok){toast(before.message);return false;}
  if(!prepareRoadWalk(true))return false;
- const node=getGroundResourceNode(id)!;actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
+ const node=getGroundResourceNode(id)!;const gatheringLabels={tree:['도끼질하는 중','도끼로 나무를 베어 목재를 모아요'],scrap:['고철을 캐는 중','도구로 고철을 캐고 쓸 만한 부품을 챙겨요'],seed:['씨앗을 따는 중','몸을 숙여 씨앗을 따고 가방에 담아요'],water:['물을 뜨는 중','용기로 샘물을 떠서 생활용 물을 모아요']} as const;const [workLabel,workDescription]=gatheringLabels[node.kind];actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
  const status=document.querySelector<HTMLElement>('.chore-status')!;
- status.innerHTML=`<span class="chore-pulse">${icon(node.resource)}</span><div><strong>${escape(node.name)}<small data-chore-phase>이동 중</small></strong><span>직접 걸어가서 ${node.kind==='tree'?'나무를 베고 있어요':'물자를 모으고 있어요'}</span><div class="chore-track" role="progressbar" aria-label="이동과 채집 진행" aria-valuemin="0" aria-valuemax="100"><i style="width:0%"></i></div></div>`;status.hidden=false;
+ status.innerHTML=`<span class="chore-pulse">${icon(node.resource)}</span><div><strong>${escape(node.name)}<small data-chore-phase data-working-label="${workLabel}">이동 중</small></strong><span>${workDescription}</span><div class="chore-track" role="progressbar" aria-label="이동과 채집 진행" aria-valuemin="0" aria-valuemax="100"><i style="width:0%"></i></div></div>`;status.hidden=false;
  let failure:unknown;
  try{await scene.playGroundResourceAction(id);}catch(error){failure=error;}finally{actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');}
  if(failure){render();finishDeferredUpdate();toast(failure instanceof Error?failure.message:'통로를 확인하고 다시 채집해 주세요.');return false;}
