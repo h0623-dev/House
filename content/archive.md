@@ -232,3 +232,13 @@ v0.32·v0.33 APK와 체크섬만 아래 공개 커밋의 고정 주소에 보관
 | --- | ---: | --- | --- |
 | [v0.38 APK](https://raw.githubusercontent.com/h0623-dev/House/cec2e98bcc3cbca1d5bb9e5b52f2b7b88e74ab56/downloads/road-haven-0.38.0-debug.apk) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/cec2e98bcc3cbca1d5bb9e5b52f2b7b88e74ab56/downloads/road-haven-0.38.0-debug.apk.sha256) | 65,977,862 | `bcc7f4bdcbd8c69558e5fbe1f8773099cce8a24bc6ca9d22f346d85b63a36196` | `bd709bde63463f125905598c8f5358b0e4686248` |
 | [v0.24 콘텐츠](https://raw.githubusercontent.com/h0623-dev/House/cec2e98bcc3cbca1d5bb9e5b52f2b7b88e74ab56/content/road-haven-0.24.0-content.zip) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/cec2e98bcc3cbca1d5bb9e5b52f2b7b88e74ab56/content/road-haven-0.24.0-content.zip.sha256) | 52,738,033 | `b37386bb5bec2ff4f333f9ecb39dc63b7aaf85db77da0e268658dc0c6c044d25` | `be7a33b7a4774a820b2bd63c959ca4aae47b64a2` |
+
+## v0.40 보관
+
+최신 트리의 v0.39 APK·v0.25·v0.26 콘텐츠 ZIP과 각각의 체크섬을 이전 공개 커밋의 고정 주소로 보관합니다. 다른 콘텐츠 ZIP·캐시 자산·Git 이력은 유지합니다. 아래 SHA-256은 해당 공개 커밋의 체크섬 파일에 기록된 값입니다.
+
+| 보관 파일 | 바이트 | SHA-256 | Git blob |
+| --- | ---: | --- | --- |
+| [v0.39 APK](https://raw.githubusercontent.com/h0623-dev/House/2c553e8dc6b8affe9a61f2a9e3e65a9dec51a494/downloads/road-haven-0.39.0-debug.apk) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/2c553e8dc6b8affe9a61f2a9e3e65a9dec51a494/downloads/road-haven-0.39.0-debug.apk.sha256) | 65,986,054 | `c9efd0431dbf4831ea386c702156322b13a80e330973dfaa56c2f8ef65d77838` | `86f5c2804c022c3c45363a695b293ae6d4f4726c` |
+| [v0.25 콘텐츠](https://raw.githubusercontent.com/h0623-dev/House/2c553e8dc6b8affe9a61f2a9e3e65a9dec51a494/content/road-haven-0.25.0-content.zip) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/2c553e8dc6b8affe9a61f2a9e3e65a9dec51a494/content/road-haven-0.25.0-content.zip.sha256) | 52,737,739 | `fe8282b3ef76dc0214e6f898c45c58cb3c11cc019615552e3a7fa39371c75b6d` | `30c948439c9c948d66d18bf82249662d42bb985b` |
+| [v0.26 콘텐츠](https://raw.githubusercontent.com/h0623-dev/House/2c553e8dc6b8affe9a61f2a9e3e65a9dec51a494/content/road-haven-0.26.0-content.zip) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/2c553e8dc6b8affe9a61f2a9e3e65a9dec51a494/content/road-haven-0.26.0-content.zip.sha256) | 52,749,042 | `2bfacbd09e0ff12c1e629736981bafc69dde6a210086d47afe34f71ff73c1bef` | `06c89ba721afd325b47e596b6fc0bcf7c587eed0` |

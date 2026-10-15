@@ -1,9 +1,9 @@
 {
-  "version": "0.39.0",
-  "versionCode": 39,
+  "version": "0.40.0",
+  "versionCode": 40,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.39.0-debug.apk",
-  "sha256": "c9efd0431dbf4831ea386c702156322b13a80e330973dfaa56c2f8ef65d77838",
-  "notes": "채집 도구와 작업 동작의 애니메이션을 다듬었습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-15T13:22:39.943Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.40.0-debug.apk",
+  "sha256": "679fb3320bb93b6232ce414d157edfd2b358abc7ca75dd28c7ca01c327d89a65",
+  "notes": "트럭 출입구와 사람·동물 통로의 형태를 다듬었습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-15T13:56:30.713Z"
 }
