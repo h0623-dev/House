@@ -79,6 +79,8 @@ bash scripts/build-android.sh release
 
 0.3.0부터 Android 빌드의 기본 앱 업데이트 주소는 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json`입니다. 이 공개 GitHub 브랜치의 `downloads/`에 같은 서명의 버전별 APK를 두고, `update.json`에는 해당 APK 주소·체크섬·증가하는 버전 코드·필요한 최소 엔진 버전을 기록합니다. 기존 0.1/0.2 APK에는 이 주소가 없으므로 최신 APK를 한 번 직접 설치해야 합니다.
 
+앱 기능 최소 버전은 `native-release.json`에서, 콘텐츠 실행 호환 범위는 `content-release.json`에서 따로 지정합니다. v0.42의 `sensorLandscape`는 앱 기능 최소 버전 42가 필요하며 콘텐츠 패치로 기존 APK의 방향을 바꿀 수 없습니다. 원래 키를 복원해 APK·콘텐츠 서명을 완료하기 전까지 공개 네이티브 배포는 v0.41을 유지합니다. 아래 v0.30 JSON과 명령은 당시 형식의 예시입니다. 새 버전 제작 시 패키지 버전·버전 코드·최소 앱 버전과 파일 이름을 함께 맞춰야 합니다.
+
 공개 파일 응답의 CORS 허용과 실제 APK·매니페스트 내용을 확인한 뒤 사용합니다. raw GitHub 캐시로 새 매니페스트가 보이기까지 약 5분 걸릴 수 있습니다. 웹 개발 및 단일 오프라인 HTML은 별도 환경 값이 없으면 업데이트 서버 미연결 상태를 표시합니다. `VITE_UPDATE_MANIFEST_URL`로 다른 소유한 HTTPS 서버를 지정할 수 있으며, 자체 호스팅에는 적절한 CORS와 `Cache-Control: no-cache` 설정을 권장합니다.
 
 ```json
