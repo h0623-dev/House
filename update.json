@@ -1,9 +1,9 @@
 {
-  "version": "0.40.0",
-  "versionCode": 40,
+  "version": "0.41.0",
+  "versionCode": 41,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.40.0-debug.apk",
-  "sha256": "679fb3320bb93b6232ce414d157edfd2b358abc7ca75dd28c7ca01c327d89a65",
-  "notes": "트럭 출입구와 사람·동물 통로의 형태를 다듬었습니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-15T13:56:30.713Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.41.0-debug.apk",
+  "sha256": "f30dfcb47c14da281f61f9aca7cfe1bf273d1a41b5aebf16a389ff63cd3cae9c",
+  "notes": "동물 통로를 다듬고 반려동물 11종을 각 한 마리씩 기를 수 있게 했습니다. 큰 동물은 트럭 크기에 맞춰 승선합니다. 기존 저장과 자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-15T14:34:48.665Z"
 }

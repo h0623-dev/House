@@ -250,3 +250,13 @@ v0.32·v0.33 APK와 체크섬만 아래 공개 커밋의 고정 주소에 보관
 | 보관 파일 | 바이트 | SHA-256 | Git blob |
 | --- | ---: | --- | --- |
 | [v0.27 콘텐츠 ZIP](https://raw.githubusercontent.com/h0623-dev/House/092d12b8f95ecfed36c0f6604db47b6e9d1360e0/content/road-haven-0.27.0-content.zip) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/092d12b8f95ecfed36c0f6604db47b6e9d1360e0/content/road-haven-0.27.0-content.zip.sha256) | 52,761,414 | `ca1c6cd42b66d0814527f263305323223b2867f13e06ae2c0cb88b0d23f2fc32` | `e5be06050fcf1052a897dbe12a209ef8aded1420` |
+
+## v0.41 보관
+
+최신 트리의 v0.40 APK·v0.28·v0.29 콘텐츠 ZIP과 각각의 체크섬만 이전 공개 커밋의 고정 주소로 보관합니다. 원본 Git 이력·다른 콘텐츠·캐시 자산은 유지합니다. 아래 SHA-256은 해당 공개 커밋의 체크섬 파일에 기록된 값입니다.
+
+| 보관 파일 | 바이트 | SHA-256 | Git blob |
+| --- | ---: | --- | --- |
+| [v0.40 APK](https://raw.githubusercontent.com/h0623-dev/House/b76b7583b7ac54eaea5827e21c085715b5bde8cb/downloads/road-haven-0.40.0-debug.apk) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/b76b7583b7ac54eaea5827e21c085715b5bde8cb/downloads/road-haven-0.40.0-debug.apk.sha256) | 65,986,054 | `679fb3320bb93b6232ce414d157edfd2b358abc7ca75dd28c7ca01c327d89a65` | `318658f66d08fcbf8a0d1bbfd364811f386bbe12` |
+| [v0.28 콘텐츠](https://raw.githubusercontent.com/h0623-dev/House/b76b7583b7ac54eaea5827e21c085715b5bde8cb/content/road-haven-0.28.0-content.zip) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/b76b7583b7ac54eaea5827e21c085715b5bde8cb/content/road-haven-0.28.0-content.zip.sha256) | 52,767,690 | `33214d6086abb8871017b6959ea5c2a52f36ce436fa58249afc6946aaddaa62d` | `1878ebeb48ebb3a54ef8f5c2e21d07309a3fa56e` |
+| [v0.29 콘텐츠](https://raw.githubusercontent.com/h0623-dev/House/b76b7583b7ac54eaea5827e21c085715b5bde8cb/content/road-haven-0.29.0-content.zip) · [SHA-256](https://raw.githubusercontent.com/h0623-dev/House/b76b7583b7ac54eaea5827e21c085715b5bde8cb/content/road-haven-0.29.0-content.zip.sha256) | 52,769,113 | `486aa9f9dd2cd4589edc19443f349d245e5ae2496efb092246a25578a0fa169e` | `25beb0e60e689e61e3e8c8acea8d99874756be00` |

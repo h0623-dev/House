@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "buildId": "f2dbe4501581d4dd82af217245c190933f034e043fc4518baa7fd2466cc4bfb3",
-  "version": "0.40.0",
-  "contentVersion": 40,
+  "buildId": "8d1ad8eaa7ac5b4ccf7e49a5d9a83b01d886c2b2f5ebc342a6f9695e2110d046",
+  "version": "0.41.0",
+  "contentVersion": 41,
   "base": "/House/",
   "files": [
     {
@@ -36,6 +36,11 @@
       "sha256": "c0268d933f6e1f29c76fb20cbc8f32f9f0b29bda2b17f6f7b918b46a27e61e6a"
     },
     {
+      "path": "assets/companions-safari-anime-CJLJE6_y.png",
+      "bytes": 1896676,
+      "sha256": "3508d6681d16fc328e5829068e6afbe0d5f99c8fdf4edec974cbe15e25093f3a"
+    },
+    {
       "path": "assets/creatures-anime-DdNIkJKd.png",
       "bytes": 2493525,
       "sha256": "5d1cf1176a79a677bdd135316f2f24d5abda68748747d78e28e9b16c8e03b060"
@@ -66,14 +71,14 @@
       "sha256": "5d12d1dbea4e34d5b3deb25ae5723be361c121fa487a6f88c50fa66d9d9b405e"
     },
     {
-      "path": "assets/index-B8A9n0Wc.js",
-      "bytes": 559392,
-      "sha256": "acecd3e07601f1181cea197a1d459c7bc8f55f36f81a7d16b26b8697f4382f7f"
+      "path": "assets/index-CWWE4cyZ.js",
+      "bytes": 578096,
+      "sha256": "be021a90d671b3b38493da4e6dee0e8da75c7207db87a71c004f4239f89f1051"
     },
     {
-      "path": "assets/index-DP4DXxPm.css",
-      "bytes": 239364,
-      "sha256": "a7c644faf795225a4bf112a6f61ae365bc8853f114938f7bd63afb0f5dadac99"
+      "path": "assets/index-D9-90I8h.css",
+      "bytes": 239559,
+      "sha256": "eff04cc26e7d8ed217893b4b98f7d581e3b9d070ba454d6988efa6000071f0f0"
     },
     {
       "path": "assets/items-anime-BFjuG2x0.png",
@@ -148,7 +153,7 @@
     {
       "path": "index.html",
       "bytes": 1280,
-      "sha256": "c35bd33a724554afaa1a633f59083f02f516a00d699a276432c84085bbb40b53"
+      "sha256": "12a0382a15bde719c72ed330f52875720be6f4f8125eb2d1215e046c8fe4658c"
     },
     {
       "path": "manifest.webmanifest",
