@@ -4,6 +4,7 @@ import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { realDuration } from './game-speed';
 import { getLegacySettlement, validateSettlement, validateFacilityHistory, validateTruckLayout, type Settlement, type FacilityHistory } from './settlement';
 import { cloneTruckLayoutFields, type TruckLayout } from './truck-layout';
+import { cloneDeckPlacementFields, isNextFarmPlotClear, validateDeckPlacements, type DeckPlacements } from './deck-placement';
 import { cloneLayoutDirectionFields, validateLayoutDirections, type LayoutDirections } from './layout-direction';
 import { cloneShopFields, validateShopProgress, type ShopProgress } from './shop';
 import { cloneFarmEconomyFields, FARM_FERTILIZER_COST, getFarmPlotCare, markFarmPlotFertilized, recordFarmHarvest, reconcileFarmEconomyFood, validateFarmEconomy, type FarmEconomyProgress } from './farm-economy';
@@ -62,6 +63,8 @@ export interface GameState {
   settlement?: Settlement;
   /** Top-level so older APK bundles preserve new floors and actual placement. */
   truckLayout?: TruckLayout;
+  /** Free deck grid locations; absent saves retain their original slot positions. */
+  deckPlacements?: DeckPlacements;
   /** Deck-aligned facing directions; older saves keep their existing appearance. */
   layoutDirections?: LayoutDirections;
   /** Optional legacy-safe game-coin purchases; absent old saves receive no grants. */
@@ -166,6 +169,7 @@ function copy(state: GameState): GameState {
     ...state, resources: { ...state.resources }, seedInventory: getSeedInventory(state),
     ...(state.settlement ? { settlement: getLegacySettlement(state) } : {}),
     ...cloneTruckLayoutFields(state),
+    ...cloneDeckPlacementFields(state),
     ...cloneLayoutDirectionFields(state),
     ...cloneShopFields(state),
     ...cloneFarmEconomyFields(state),
@@ -587,11 +591,13 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       if (next.deckLevel >= MAX_DECK_LEVEL) return fail('현재 만들 수 있는 가장 넓은 트럭이에요!');
       const cost = expansionCost(next);
       if (next.resources.wood < cost.wood || next.resources.scrap < cost.scrap) return fail(`확장하려면 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
+      if (!isNextFarmPlotClear(next)) return fail('새 밭이 생길 곳에 시설이 있어요. 시설을 옮긴 뒤 데크를 확장해 주세요.');
       next.resources.wood -= cost.wood;
       next.resources.scrap -= cost.scrap;
       next.deckLevel += 1;
       next.stats.expansions += 1;
       addEmptyPlot(next);
+      if (next.deckPlacements && !validateDeckPlacements(next.deckPlacements, next)) return fail('확장 후 사다리나 동물 문 앞에 걸리는 시설이 있어요. 통로 주변 시설을 옮겨 주세요.');
       next.morale = clamp(next.morale + 10);
       message = '우리 집이 더 넓어졌어요! 생활 공간과 새 텃밭 +1';
       duration = 60;
@@ -603,6 +609,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       if (next.plots.length >= capacity) return fail(next.deckLevel < MAX_DECK_LEVEL
         ? '지금 데크의 밭을 모두 만들었어요. 트럭을 확장하면 밭을 더 늘릴 수 있어요.'
         : `밭 ${capacity}칸을 모두 만들었어요!`);
+      if (!isNextFarmPlotClear(next)) return fail('새 밭이 생길 곳에 시설이 있어요. 시설을 옮긴 뒤 밭을 늘려 주세요.');
       const cost = farmExpansionCost(next);
       if (next.resources.wood < cost.wood || next.resources.scrap < cost.scrap) return fail(`밭을 늘리려면 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
       next.resources.wood -= cost.wood;
@@ -722,6 +729,7 @@ function validateSave(value: unknown): value is GameState {
   if (!value.quests.every(id => ['first-harvest', 'road-scout', 'bigger-home'].includes(id))) return false;
   if (!Array.isArray(value.log) || value.log.length > 30 || !value.log.every(entry => isText(entry, 400))) return false;
   const candidate = value as unknown as GameState;
+  if (Object.hasOwn(value, 'deckPlacements') && !validateDeckPlacements(value.deckPlacements, candidate)) return false;
   if (Object.hasOwn(value, 'layoutDirections') && !validateLayoutDirections(value.layoutDirections, candidate)) return false;
   if (Object.hasOwn(value, 'facilityHistory') && !validateFacilityHistory(value.facilityHistory, candidate)) return false;
   if (Object.hasOwn(value, 'growthQuests') && !validateGrowthQuests(value.growthQuests, candidate)) return false;

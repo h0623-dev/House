@@ -4,6 +4,8 @@ import { cloneShopFields } from './shop';
 import { cloneFarmEconomyFields } from './farm-economy';
 import { cloneRoadsideFields } from './roadside';
 import { clonePetPassageFields } from './pet-passage';
+import { getFacilityPlacement } from './deck-placement';
+import { getSettlement, moveFacility } from './settlement';
 
 /** Two deck-aligned facing axes; crop rows turn within their existing bed. */
 export type LayoutDirection = 0 | 1;
@@ -17,7 +19,7 @@ export interface LayoutDirections {
   plots: LayoutDirectionEntry[];
 }
 
-type DirectionState = Pick<GameState, 'layoutDirections'>;
+type DirectionState = Pick<GameState, 'layoutDirections' | 'deckPlacements'>;
 type TargetState = Pick<GameState, 'settlement' | 'truckLayout' | 'plots'>;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -29,6 +31,10 @@ const facilityIds = (state: TargetState) => new Set([
 
 /** An untouched old save keeps its original orientation without adding fields. */
 export function getLayoutDirection(state: DirectionState, target: LayoutTarget): LayoutDirection {
+  if (target.kind === 'facility') {
+    const placement = state.deckPlacements?.facilities.find(item => item.id === target.id);
+    if (placement) return placement.rotation;
+  }
   const directions = state.layoutDirections;
   if (!directions) return 0;
   if (target.kind === 'home') return directions.home;
@@ -79,16 +85,22 @@ export function rotateLayoutTarget(state: GameState, target: LayoutTarget): Acti
       || !(target.kind === 'facility' ? facilityIds(state) : new Set(state.plots.map(plot => plot.id))).has(target.id))) {
     return fail('방향을 바꿀 집, 시설 또는 밭을 선택해 주세요.');
   }
+  if (target.kind === 'facility') {
+    const building = getSettlement(state).buildings.find(item => item.id === target.id)!;
+    const placement = getFacilityPlacement(state, building);
+    const result = moveFacility(state, target.id, { ...placement, rotation: placement.rotation === 0 ? 1 : 0 });
+    return result.ok ? { ...result, message: '시설의 방향을 바꿨어요. 생산과 레벨은 그대로 유지돼요.' } : result;
+  }
   const directions: LayoutDirections = cloneLayoutDirectionFields(state).layoutDirections
     ?? { version: 1, home: 0, facilities: [], plots: [] };
   const direction: LayoutDirection = getLayoutDirection(state, target) === 0 ? 1 : 0;
   if (target.kind === 'home') directions.home = direction;
   else {
-    const entries = target.kind === 'facility' ? directions.facilities : directions.plots;
+    const entries = directions.plots;
     const entry = entries.find(item => item.id === target.id);
     if (entry) entry.direction = direction;
     else entries.push({ id: target.id, direction });
   }
-  const label = target.kind === 'home' ? '우리집' : target.kind === 'facility' ? '시설' : '밭고랑';
+  const label = target.kind === 'home' ? '우리집' : '밭고랑';
   return { state: { ...state, ...cloneShopFields(state), ...cloneFarmEconomyFields(state), ...cloneRoadsideFields(state), ...clonePetPassageFields(state), ...cloneEnergyRecoveryFields(state), layoutDirections: directions }, ok: true, message: `${label}의 방향을 바꿨어요.` };
 }

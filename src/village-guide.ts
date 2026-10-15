@@ -2,9 +2,10 @@ import { expansionCost, farmExpansionCost, getCropProgress, getFarmCapacity, get
   MAX_DECK_LEVEL, resourceLabels, type GameState, type Resource } from './game';
 import { CROP_IDS, CROPS, type CropId } from './crops';
 import { getActiveGrowthQuest, type GrowthQuestView } from './growth-quests';
-import { BUILDINGS, BUILDING_TYPES, getBuiltTypes, getFacilityHistory, getFloorSlots, getProductionCost, getSettlement,
-  getTruckFloorCost, getTruckFloorCount, getUpgradeCost, isFacilitySlotAvailable,
+import { BUILDINGS, BUILDING_TYPES, getBuiltTypes, getFacilityHistory, getProductionCost, getSettlement,
+  getTruckFloorCost, getTruckFloorCount, getUpgradeCost,
   type Building, type BuildingType } from './settlement';
+import { findFreeFacilityPlacement, getBuildingFootprint, isNextFarmPlotClear } from './deck-placement';
 import { gameMinutesToSeconds } from './game-time';
 import { getVillageOrder } from './village-orders';
 import { getReadyTeam } from './units';
@@ -158,22 +159,22 @@ function prepareInvestment(state: GameState, advice: VillageAdvice, cost: Cost, 
   const supply = state.energy < energy ? energyAdvice() : supplyAdvice(state, cost, advice.title, now);
   return supply ? { ...supply, id: `investment-${supply.id}`, tag: '다음 성장 준비' } : advice;
 }
-function investmentAdvice(state: GameState, freeSlots: number, now: number): VillageAdvice {
+function investmentAdvice(state: GameState, placeableTypes: BuildingType[], now: number): VillageAdvice {
   const facilities = getSettlement(state).buildings;
   const floor = getTruckFloorCost(state);
   if (floor && state.deckLevel >= floor.unlockLevel) {
     return prepareInvestment(state, { id: `investment-floor-${floor.floor}`, title: `${floor.floor}층에 새 마을을 열어요`,
       detail: `목재 ${floor.wood} · 고철 ${floor.scrap}으로 새 플랫폼과 연결 계단을 지어요.`, cta: `${floor.floor}층 증축`, icon: 'expand', target: { kind: 'floors' }, tag: '새 공간' }, { wood: floor.wood, scrap: floor.scrap }, now);
   }
-  if (freeSlots > 0) {
-    const missing = BUILDING_TYPES.find(type => BUILDINGS[type].unlockLevel <= state.deckLevel && !facilities.some(building => building.type === type));
+  if (placeableTypes.length > 0) {
+    const missing = placeableTypes.find(type => !facilities.some(building => building.type === type));
     if (missing) {
-      const definition = BUILDINGS[missing];
+      const definition = BUILDINGS[missing], size = getBuildingFootprint(missing);
       return prepareInvestment(state, { id: `investment-build-${missing}`, title: `${definition.name}으로 마을을 키워요`,
-        detail: definition.description, cta: '시설 짓기', icon: definition.icon, target: { kind: 'build', buildingType: missing }, tag: '새 시설' }, constructionCost(missing), now);
+        detail: `${size.columns}×${size.rows}칸을 비우고 원하는 위치에 놓아요. ${definition.description}`, cta: '시설 짓기', icon: definition.icon, target: { kind: 'build', buildingType: missing }, tag: '새 시설' }, constructionCost(missing), now);
     }
   }
-  if (state.plots.length < getFarmCapacity(state) && facilities.length >= 2) {
+  if (state.plots.length < getFarmCapacity(state) && facilities.length >= 2 && isNextFarmPlotClear(state)) {
     return prepareInvestment(state, { id: 'investment-farm', title: '새 텃밭을 마련해요',
       detail: `${state.plots.length} / ${getFarmCapacity(state)}밭 사용 중. 빈 농사 공간에 밭을 더 만들어요.`,
       cta: '밭 늘리기', icon: 'seeds', target: { kind: 'farm-expand' }, tag: '농장 성장' }, farmExpansionCost(state), now);
@@ -181,7 +182,7 @@ function investmentAdvice(state: GameState, freeSlots: number, now: number): Vil
   if (state.deckLevel < MAX_DECK_LEVEL) {
     const cost = expansionCost(state);
     return prepareInvestment(state, { id: 'investment-deck', title: `데크 Lv.${state.deckLevel + 1}로 넓혀요`,
-      detail: '새 밭 1곳과 시설 자리 2곳이 열려요. 새 공간을 채우며 마을을 키워요.', cta: '데크 확장',
+      detail: '데크 면적과 재배 공간이 늘어나요. 새 공간에 원하는 크기의 시설을 배치해요.', cta: '데크 확장',
       icon: 'expand', target: { kind: 'expand' }, tag: '마을 확장' }, cost, now);
   }
   const upgrade = facilities.filter(building => building.level < BUILDINGS[building.type].maxLevel).sort((a, b) => a.level - b.level)[0];
@@ -194,7 +195,7 @@ function investmentAdvice(state: GameState, freeSlots: number, now: number): Vil
   }
   return { id: 'investment-neighbors', title: '풍성한 마을 물자를 나눠요', detail: '이웃 의뢰로 생산품을 보내고 다음 마을 일을 이어가요.', cta: '이웃 의뢰', icon: 'bag', target: { kind: 'orders' }, tag: '마을 생활' };
 }
-function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investment: VillageAdvice, freeSlots: number, now: number): VillageAdvice {
+function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investment: VillageAdvice, placeableTypes: BuildingType[], now: number): VillageAdvice {
   if (!quest) return investment;
   const base: VillageAdvice = { id: `quest-${quest.id}`, title: quest.title, detail: quest.description,
     cta: quest.status === 'ready' ? '보상 받기' : '하러 가기', icon: 'flag', target: { kind: 'quest', questId: quest.id },
@@ -207,7 +208,11 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
     if (type && BUILDINGS[type].unlockLevel > state.deckLevel) preparation = supplyAdvice(state, expansionCost(state), '데크 확장', now)
       ?? { ...investment, id: 'prepare-unlock', title: '데크를 넓혀 새 시설을 열어요', target: { kind: 'expand' } };
     else if (type) preparation = supplyAdvice(state, constructionCost(type), BUILDINGS[type].name, now);
-    if (!preparation && freeSlots <= 0) preparation = investment;
+    if (!preparation && type && !placeableTypes.includes(type)) {
+      const size = getBuildingFootprint(type);
+      preparation = { ...investment, id: `prepare-space-${type}`,
+        detail: `${BUILDINGS[type].name}에 ${size.columns}×${size.rows}칸이 필요해요. 기존 시설을 옮기거나 데크를 넓혀 공간을 마련해요.` };
+    }
   } else if (kind === 'expand') {
     preparation = state.energy < 15 ? energyAdvice() : supplyAdvice(state, expansionCost(state), '데크 확장', now);
   } else if (kind === 'collect') {
@@ -252,14 +257,16 @@ function primaryAdvice(state: GameState, quest: GrowthQuestView | null, investme
 /** Read existing progress; no rewards, clocks, placements, or quest records are changed. */
 export function getVillageHub(state: GameState, now = Date.now()): VillageHubModel {
   const facilities = getSettlement(state).buildings, floorCount = getTruckFloorCount(state);
-  const freeSlots = Array.from({ length: floorCount }, (_, index) => getFloorSlots(state, (index + 1) as 1 | 2 | 3))
-    .flat().filter(slot => isFacilitySlotAvailable(state, slot)).length;
+  // A building's actual rectangular footprint determines space, rather than old numbered slots.
+  const placeableTypes = BUILDING_TYPES.filter(type => BUILDINGS[type].unlockLevel <= state.deckLevel
+    && ([1, 2, 3] as const).some(floor => floor <= floorCount && findFreeFacilityPlacement(state, type, floor) !== null));
+  const freeSlots = placeableTypes.length;
   const ready = facilities.filter(building => isReady(state, building));
   const readyPlots = state.plots.filter(plot => getCropProgress(state, plot) >= 1).length;
-  const investment = investmentAdvice(state, freeSlots, now);
+  const investment = investmentAdvice(state, placeableTypes, now);
   const primary = state.expedition ? { id: 'return-from-expedition', title: '동물 친구들이 탐험 중이에요',
     detail: '현재 전투를 마무리하고 트럭 마을로 돌아와요.', cta: '탐험 확인', icon: 'hunt', target: { kind: 'hunt' } as VillageTarget, tag: '탐험 중' }
-    : primaryAdvice(state, getActiveGrowthQuest(state), investment, freeSlots, now);
+    : primaryAdvice(state, getActiveGrowthQuest(state), investment, placeableTypes, now);
   const candidates: VillageAdvice[] = [];
   if (!state.expedition) {
     const farmOrder = getFarmOrder(state), farmDelivery = getFarmDeliveryAdvice(state);

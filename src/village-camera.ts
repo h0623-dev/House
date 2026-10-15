@@ -1,8 +1,8 @@
 import type { GameState } from './game';
 import { getFarmCapacity } from './game';
-import { getSettlement, isFacilitySlotAvailable, type BuildingType } from './settlement';
-import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorSlots,
-  getSlotFloor, getSlotLocalIndex, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
+import { getSettlement, type BuildingType } from './settlement';
+import { getFacilityPlacement } from './deck-placement';
+import { FARM_POSITIONS, getFloorBounds, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
 
 export type VillageBounds = { left:number; top:number; right:number; bottom:number };
 export const VILLAGE_FACILITY_SIZE: Record<BuildingType, [number,number]> = {
@@ -15,8 +15,8 @@ export function mergeVillageBounds(bounds:readonly VillageBounds[]):VillageBound
 /** Camera-only bounds: these never become building or actor collision shapes. */
 export function getVillageContentBounds(state:GameState,floor:TruckFloor):VillageBounds {
   const bounds:VillageBounds[]=[];
-  for(const building of getSettlement(state).buildings.filter(b=>getSlotFloor(b.slot)===floor)){
-    const[x,y]=projectTruckPoint(SETTLEMENT_POSITIONS[getSlotLocalIndex(building.slot)],floor),[w,h]=VILLAGE_FACILITY_SIZE[building.type];
+  for(const building of getSettlement(state).buildings.filter(b=>getFacilityPlacement(state,b).floor===floor)){
+    const placement=getFacilityPlacement(state,building),[x,y]=projectTruckPoint([placement.x,placement.y],floor),[w,h]=VILLAGE_FACILITY_SIZE[building.type];
     // Production bubbles and the finished roof are part of the visible village.
     bounds.push({left:x-w/2-8,top:y-h-44,right:x+w/2+8,bottom:y+25});
   }
@@ -27,14 +27,11 @@ export function getVillageContentBounds(state:GameState,floor:TruckFloor):Villag
       bounds.push({left:x-60,top:y-63,right:x+60,bottom:y+38});
     }
   }
-  const slots=getFloorSlots(state,floor),firstFree=slots.find(slot=>isFacilitySlotAvailable(state,slot));
-  const anchors=firstFree===undefined?[]:[firstFree];
-  // An empty new storey starts at its available construction area, rather than a
-  // distant cab on another floor. The catalogue can still show every open slot.
-  if(!bounds.length)anchors.push(...slots.slice(0,2));
-  for(const slot of new Set(anchors)){
-    const[x,y]=projectTruckPoint(SETTLEMENT_POSITIONS[getSlotLocalIndex(slot)],floor);
-    bounds.push({left:x-73,top:y-138,right:x+73,bottom:y+38});
+  // New storeys show the editable deck instead of an obsolete numbered slot.
+  if(!bounds.length){
+    const deck=getFloorBounds(state.deckLevel,floor),corners=[[deck.left,deck.back],[deck.end,deck.back],[deck.end,deck.front],[deck.left,deck.front]].map(point=>projectTruckPoint(point,floor));
+    bounds.push({left:Math.min(...corners.map(point=>point[0]))-18,top:Math.min(...corners.map(point=>point[1]))-64,
+      right:Math.max(...corners.map(point=>point[0]))+18,bottom:Math.max(...corners.map(point=>point[1]))+18});
   }
   return bounds.length?mergeVillageBounds(bounds):{left:260,top:120-(floor-1)*FLOOR_HEIGHT,right:700,bottom:460-(floor-1)*FLOOR_HEIGHT};
 }

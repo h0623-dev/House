@@ -1,0 +1,81 @@
+/* Small planning cards explain space while leaving the deck available to decorate. */
+.building-footprint-grid{
+ display:inline-block;flex:0 0 auto;width:15px;height:15px;
+ border:1px solid currentColor;border-radius:3px;opacity:.85;
+ background:linear-gradient(90deg,transparent calc(50% - .5px),currentColor calc(50% - .5px),currentColor calc(50% + .5px),transparent calc(50% + .5px)),
+ linear-gradient(transparent calc(50% - .5px),currentColor calc(50% - .5px),currentColor calc(50% + .5px),transparent calc(50% + .5px));
+}
+.building-card .building-footprint{
+ position:absolute;top:7px;left:6px;display:inline-flex;align-items:center;gap:4px;
+ min-height:23px;padding:3px 5px;border:1px solid #95ac74;border-radius:6px;
+ background:#edf3dceb;color:#476441;font-size:11px;line-height:1;font-weight:800;
+ box-shadow:inset 0 1px #fff9;
+}
+.building-footprint .building-footprint-grid{width:12px;height:12px}
+.building-footprint small{font-size:8px;font-weight:600}
+.building-card.locked .building-footprint{background:#e8e8d7;color:#7c8269;border-color:#bdc0a3}
+.building-card .building-card-art{margin-top:10px}
+.building-placement-guide{
+ display:flex;align-items:center;gap:8px;margin:7px 0 9px;padding:7px 9px;
+ border:1px solid #cbd5ac;border-radius:9px;background:#eef0d8;color:#587047;
+ font-size:11px;line-height:1.45;word-break:keep-all;
+}
+.building-placement-guide>.building-footprint-grid{width:19px;height:19px}
+.building-placement-guide small{display:block;margin-top:2px;color:#7c805e;font-size:9px;line-height:1.4}
+.planning-catalog .building-placement-guide{font-size:10px;margin:5px 0 6px;padding:5px 7px}
+.planning-catalog .building-placement-guide small{font-size:8px}
+.planning-catalog .building-card .building-footprint{top:4px;left:4px;min-height:20px;padding:3px 4px;gap:3px;font-size:10px}
+.planning-catalog .building-footprint .building-footprint-grid{width:10px;height:10px}
+.planning-catalog .building-footprint small{font-size:7px}
+.planning-catalog .building-card .building-card-art{margin-top:16px}
+.planning-catalog .building-edit-list{margin:5px 0}
+
+/* The confirmation dock uses the same cream and green materials as the game HUD. */
+.village-shell .scene-card.construction-mode .construction-bar{
+ gap:6px;min-height:96px;max-width:580px;padding:8px;
+ background:linear-gradient(#fffbedf7,#f0e3c4f7);border-color:#bc9e64;
+ box-shadow:inset 0 0 0 2px #fffdf2,0 5px 18px #253e2c40;
+}
+.construction-bar .construction-info{min-width:0}
+.construction-bar .construction-info>strong{margin-bottom:3px;font-size:13px;line-height:1.35;color:#3f5d3e}
+.construction-bar .construction-size{
+ display:inline-flex;align-items:center;gap:4px;width:fit-content;max-width:100%;
+ padding:3px 6px;margin:2px 0;border:1px solid #a9b889;border-radius:6px;
+ background:#e9efd5;color:#526d40;font-size:10px;line-height:1.2;font-weight:800;
+}
+.construction-bar .construction-info :is(.construction-valid,.construction-invalid){
+ display:block;font-size:10px;line-height:1.4;overflow-wrap:break-word;word-break:keep-all;
+}
+.construction-bar .construction-info .construction-valid{color:#537546}
+.construction-bar .construction-info .construction-invalid{color:#a6503d}
+.construction-bar .construction-cost{margin-top:4px;flex-wrap:wrap;white-space:normal;gap:2px 4px;line-height:1.25}
+.construction-bar :is(.placement-confirm,.placement-cancel,.placement-rotate){
+ display:flex;align-items:center;justify-content:center;flex-direction:column;flex:0 0 44px;
+ min-width:44px;min-height:58px;padding:6px 3px;gap:5px;border:1px solid #9eac76;border-radius:10px;
+ background:linear-gradient(#e8efcc,#c4d59b);box-shadow:inset 0 1px #fff9,0 2px 0 #7c955444;
+ color:#506d3b;touch-action:manipulation;
+}
+.construction-bar .placement-rotate{border-color:#bda977;background:linear-gradient(#fff8df,#e9d9ad);color:#797447;box-shadow:inset 0 1px #fff9,0 2px 0 #ad996644}
+.construction-bar .placement-cancel{border-color:#c7ad85;background:linear-gradient(#fff7e5,#eddbbc);color:#936c46;box-shadow:inset 0 1px #fff9,0 2px 0 #b09a7344}
+.construction-bar :is(.placement-confirm,.placement-cancel,.placement-rotate)>.icon{width:23px;height:23px}
+.construction-bar :is(.placement-confirm,.placement-cancel,.placement-rotate) small{font-size:9px;line-height:1.15;font-weight:800;white-space:nowrap}
+.construction-bar :is(.placement-confirm,.placement-cancel,.placement-rotate):active{transform:translateY(1px)}
+.construction-bar :is(.placement-confirm,.placement-cancel,.placement-rotate):focus-visible{outline:3px solid #6d9858;outline-offset:3px}
+.construction-bar .placement-confirm:disabled{opacity:.6;filter:saturate(.35);box-shadow:none}
+@media(max-width:420px){
+ .village-shell .scene-card.construction-mode .construction-bar{gap:5px;padding:7px;min-height:96px}
+ .construction-bar .construction-art{display:none}
+ .construction-bar .construction-info>strong{font-size:12px}
+ .construction-bar .construction-info :is(.construction-valid,.construction-invalid){font-size:9px}
+ .construction-bar .construction-size{font-size:9px;padding:2px 5px}
+ .construction-bar .construction-cost{font-size:8px}
+}
+@media(orientation:landscape) and (max-height:600px){
+ .village-shell .scene-card.construction-mode .construction-bar{width:min(410px,calc(100% - 140px));left:8px;right:auto;min-height:88px;padding:6px}
+ .construction-bar .construction-art{width:38px;height:45px}
+ .construction-bar .construction-art>.icon{width:40px;height:44px}
+ .construction-bar .construction-info>strong{font-size:11px}
+ .construction-bar .construction-info :is(.construction-valid,.construction-invalid){font-size:9px}
+ .construction-bar .construction-size{font-size:9px;padding:2px 5px}
+ .planning-catalog .building-placement-guide{font-size:9px;padding:5px 6px}
+}

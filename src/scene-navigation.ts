@@ -38,6 +38,8 @@ export interface NavigationPath {
 export interface NavigationWorldOptions {
   floors?: readonly TruckFloor[]; home?: HomeLocation; activeFloor?: TruckFloor; radius?: number; actors?: NavigationActor[];
   actor?: 'hero' | 'pet'; petPassageOpen?: boolean; petPassageLease?: NavigationLink;
+  /** Actual editable deck footprints. Omitted only for older callers and saves. */
+  facilityFootprints?: readonly { floor: TruckFloor; bounds: NavigationRect }[];
 }
 export const isNavigationLinkSurface = (surface: NavigationSurface) => surface === 'ladder' || surface === 'ramp';
 /** A lease admits only the animal already crossing; it never reopens entry. */
@@ -78,7 +80,10 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   // The truck is the home. Legacy cottage coordinates never reserve deck space.
   const obstacles:NavigationObstacle[]=[];
   for(const [u,v]of FARM_POSITIONS.slice(0,plotCount))obstacles.push({surface:'deck',floor:1,kind:'farm',bounds:{left:u,top:v,right:u+69,bottom:v+68}});
-  for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
+  if(options.facilityFootprints)for(const facility of options.facilityFootprints){
+    if(ids.includes(facility.floor))obstacles.push({surface:'deck',floor:facility.floor,kind:'facility',bounds:{...facility.bounds}});
+  }
+  else for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}
   for(const node of GROUND_RESOURCE_NODES)obstacles.push({surface:'road',kind:node.kind==='tree'?'tree':'outdoor-site',bounds:{...node.bounds}});
   const body=getTruckGroundFootprint(level);obstacles.push({surface:'road',kind:'truck-body',...body});

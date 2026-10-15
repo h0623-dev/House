@@ -8,6 +8,8 @@ import { cloneFarmEconomyFields, reconcileFarmEconomyFood, validateFarmEconomy }
 import { cloneRoadsideFields } from './roadside';
 import { clonePetPassageFields } from './pet-passage';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
+import { checkFacilityPlacement, cloneDeckPlacementFields, getFacilityPlacement, snapFacilityPlacement,
+  validateDeckPlacements, type FacilityPlacement } from './deck-placement';
 import { cloneTruckLayoutFields, getAllUnlockedSlots, getFloorSlots, getHomeLocation, getHomeSlots, getHouseFootprint,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCost, getTruckFloorCount, getTruckLayout, getFloorStairs, SETTLEMENT_POSITIONS,
   HOME_POSITIONS, type HomeLocation, type TruckLayout, type TruckRect } from './truck-layout';
@@ -147,17 +149,18 @@ function validProduction(building: Record<string, unknown>, state: Pick<GameStat
 }
 
 /** The top-level sidecar never inserts incompatible IDs or slots into legacy settlement/history. */
-export function validateTruckLayout(value: unknown, state: Pick<GameState, 'deckLevel' | 'totalMinutes' | 'settlement'>): value is TruckLayout {
+export function validateTruckLayout(value: unknown, state: Pick<GameState, 'deckLevel' | 'totalMinutes' | 'settlement' | 'deckPlacements'>): value is TruckLayout {
   if (!isRecord(value) || Object.keys(value).some(key => !['version', 'floors', 'home', 'placements', 'upperBuildings', 'nextBuildingId', 'facilityHistory'].includes(key))
     || value.version !== 1 || !isInteger(value.floors, 1, 3)
     || value.floors >= 2 && state.deckLevel < 4 || value.floors === 3 && state.deckLevel < 7
     || !isRecord(value.home) || Object.keys(value.home).length !== 2 || !isInteger(value.home.floor, 1, value.floors)
     || !isInteger(value.home.slot, 0, HOME_POSITIONS.length - 1) || !Array.isArray(value.placements) || !Array.isArray(value.upperBuildings)
-    || !isInteger(value.nextBuildingId, 17, 49) || value.nextBuildingId !== 17 + value.upperBuildings.length) return false;
+    || !isInteger(value.nextBuildingId, 17, 785) || value.nextBuildingId !== 17 + value.upperBuildings.length) return false;
   const candidate = { ...state, truckLayout: value as unknown as TruckLayout };
   if (!getHomeSlots(candidate, value.home.floor as HomeLocation['floor']).includes(value.home.slot)) return false;
   const legacy = getLegacySettlement(state), legacyIds = new Set(legacy.buildings.map(building => building.id));
-  if (value.placements.length > legacyIds.size || value.upperBuildings.length > 32) return false;
+  if (value.placements.length > legacyIds.size || value.upperBuildings.length > 768) return false;
+  const freeIds = new Set(Array.isArray(state.deckPlacements?.facilities) ? state.deckPlacements.facilities.map(item => item?.id) : []);
   const placementIds = new Set<number>();
   const validSlot = (slot: unknown): slot is number => isInteger(slot, 0, 47)
     && getFloorSlots(candidate, getSlotFloor(slot)).includes(slot);
@@ -173,10 +176,10 @@ export function validateTruckLayout(value: unknown, state: Pick<GameState, 'deck
     extraIds.add(building.id);
   }
   const buildings = getSettlement(candidate).buildings, slots = new Set<number>();
-  if (buildings.length > getAllUnlockedSlots(candidate)) return false;
+  if (!freeIds.size && buildings.length > getAllUnlockedSlots(candidate)) return false;
   for (const building of buildings) {
-    if (!validSlot(building.slot) || slots.has(building.slot) || !fitsStairs(candidate, building.slot)) return false;
-    slots.add(building.slot);
+    if (!validSlot(building.slot) || !freeIds.has(building.id) && (slots.has(building.slot) || !fitsStairs(candidate, building.slot))) return false;
+    if (!freeIds.has(building.id)) slots.add(building.slot);
   }
   if (Object.hasOwn(value, 'facilityHistory')) {
     const history = value.facilityHistory;
@@ -185,7 +188,7 @@ export function validateTruckLayout(value: unknown, state: Pick<GameState, 'deck
       || history.builtTypes.length > BUILDING_TYPES.length || new Set(history.builtTypes).size !== history.builtTypes.length
       || !history.builtTypes.every(type => isBuildingType(type) && BUILDINGS[type].unlockLevel <= state.deckLevel)
       || history.upgradedFacilityIds.length > extraIds.size || new Set(history.upgradedFacilityIds).size !== history.upgradedFacilityIds.length
-      || !history.upgradedFacilityIds.every(id => isInteger(id, 17, 48) && extraIds.has(id))) return false;
+      || !history.upgradedFacilityIds.every(id => isInteger(id, 17, 784) && extraIds.has(id))) return false;
     if (Object.hasOwn(history, 'highestFacilityLevel') && (!isInteger(history.highestFacilityLevel, 1, 5)
       || history.highestFacilityLevel < Math.max(1, ...value.upperBuildings.map(building => (building as Building).level)))) return false;
   }
@@ -219,6 +222,7 @@ function copy(state: GameState): GameState {
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory,
       builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...cloneTruckLayoutFields(state),
+    ...cloneDeckPlacementFields(state),
     ...cloneLayoutDirectionFields(state),
     ...cloneShopFields(state),
     ...cloneFarmEconomyFields(state),
@@ -240,6 +244,7 @@ function blocked(state: GameState): SettlementResult | null {
   if (Object.hasOwn(state, 'settlement') && !validateSettlement(state.settlement, state)) return fail(state, '생활 시설 정보를 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   if (Object.hasOwn(state, 'facilityHistory') && !validateFacilityHistory(state.facilityHistory, state)) return fail(state, '시설 성장 기록을 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   if (Object.hasOwn(state, 'truckLayout') && !validateTruckLayout(state.truckLayout, state)) return fail(state, '트럭 층과 배치 정보를 확인할 수 없어요. 저장 상태를 확인해 주세요.');
+  if (Object.hasOwn(state, 'deckPlacements') && !validateDeckPlacements(state.deckPlacements, state)) return fail(state, '시설의 자유 배치 정보를 확인할 수 없어요. 저장 상태를 확인해 주세요.');
   return null;
 }
 function overlaps(a: TruckRect, b: TruckRect): boolean { return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top; }
@@ -274,6 +279,7 @@ export function buildTruckFloor(state: GameState): SettlementResult {
   if (state.deckLevel < cost.unlockLevel) return fail(state, `${cost.floor}층은 데크 ${cost.unlockLevel}단계에서 지을 수 있어요.`);
   if (state.resources.wood < cost.wood || state.resources.scrap < cost.scrap) return fail(state, `${cost.floor}층에 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
   const next = copy(state); next.truckLayout = getTruckLayout(next); next.truckLayout.floors = cost.floor;
+  if (next.deckPlacements && !validateDeckPlacements(next.deckPlacements, next)) return fail(state, '새 층의 계단 자리에 시설이 있어요. 계단 주변 시설을 옮긴 뒤 층을 올려 주세요.');
   next.resources.wood -= cost.wood; next.resources.scrap -= cost.scrap;
   return success(next, `${cost.floor}층 플랫폼과 연결 계단을 지었어요. 새 층에도 생활 시설을 놓을 수 있어요.`);
 }
@@ -308,31 +314,49 @@ export function getProductionCost(building: Building): Partial<Record<Resource, 
   return recipe;
 }
 
-export function buildFacility(state: GameState, type: BuildingType, slot: number): SettlementResult {
+function chosenPlacement(state: GameState, type: BuildingType, value: number | FacilityPlacement): FacilityPlacement | null {
+  if (typeof value !== 'number') return value && snapFacilityPlacement(state, type, value);
+  if (!isInteger(value, 0, 47) || !getFloorSlots(state, getSlotFloor(value)).includes(value)) return null;
+  const [x, y] = SETTLEMENT_POSITIONS[getSlotLocalIndex(value)];
+  return snapFacilityPlacement(state, type, { floor: getSlotFloor(value), x, y, rotation: 0 });
+}
+function putPlacement(state: GameState, id: number, placement: FacilityPlacement): void {
+  state.deckPlacements ??= { version: 1, facilities: [] };
+  state.deckPlacements.facilities = [...state.deckPlacements.facilities.filter(item => item.id !== id), { id, ...placement }];
+}
+export function buildFacility(state: GameState, type: BuildingType, value: number | FacilityPlacement): SettlementResult {
   const unavailable = blocked(state); if (unavailable) return unavailable;
   if (!isBuildingType(type)) return fail(state, '건설할 생활 시설을 선택해 주세요.');
   const definition = BUILDINGS[type];
   if (state.deckLevel < definition.unlockLevel) return fail(state, `${definition.name}은 트럭 데크 ${definition.unlockLevel}단계부터 건설할 수 있어요.`);
-  if (!isFacilitySlotAvailable(state, slot)) return fail(state, '열려 있는 빈 건설 자리를 선택해 주세요.');
+  const placement = chosenPlacement(state, type, value);
+  if (!placement) return fail(state, '시설을 놓을 빈 데크를 선택해 주세요.');
+  const available = checkFacilityPlacement(state, type, placement);
+  if (!available.ok) return fail(state, available.message);
+  const slot = (placement.floor - 1) * 16;
   if (state.resources.wood < definition.wood || state.resources.scrap < definition.scrap) return fail(state, `${definition.name} 건설에 목재 ${definition.wood} · 고철 ${definition.scrap}이 필요해요.`);
   const upperCount = state.truckLayout?.upperBuildings.length ?? 0;
-  // Relocation can leave upper places empty after all 32 sidecar IDs are used.
+  // Legacy IDs remain stable; additional facilities use the existing sidecar on any floor.
   const useLegacy = (state.settlement?.buildings.length ?? 0) < getUnlockedSlots(state)
-    && (getSlotFloor(slot) === 1 || upperCount >= 32);
-  if (!useLegacy && upperCount >= 32) return fail(state, '트럭에 더 놓을 수 있는 시설 자리가 없어요.');
+    && placement.floor === 1;
+  if (!useLegacy && upperCount >= 768) return fail(state, '시설 보관 기록이 가득해요.');
   const next = copy(state), settlement = next.settlement!;
   next.resources.wood -= definition.wood; next.resources.scrap -= definition.scrap;
+  let id: number;
   if (useLegacy) {
     const shadow = Array.from({ length: getUnlockedSlots(state) }, (_, index) => index)
       .find(index => !settlement.buildings.some(building => building.slot === index))!;
     const legacySlot = getSlotFloor(slot) === 1 && !settlement.buildings.some(building => building.slot === slot) ? slot : shadow;
     const building = { id: settlement.nextBuildingId++, type, slot: legacySlot, level: 1, startedAt: null, readyAt: null };
+    id = building.id;
     settlement.buildings.push(building);
     if (legacySlot !== slot) { next.truckLayout = getTruckLayout(next); next.truckLayout.placements.push({ id: building.id, slot }); }
   } else {
     next.truckLayout = getTruckLayout(next);
-    next.truckLayout.upperBuildings.push({ id: next.truckLayout.nextBuildingId++, type, slot, level: 1, startedAt: null, readyAt: null });
+    id = next.truckLayout.nextBuildingId++;
+    next.truckLayout.upperBuildings.push({ id, type, slot, level: 1, startedAt: null, readyAt: null });
   }
+  putPlacement(next, id, placement);
   preserveLegacyHomeCompatibility(next, slot);
   recordFacilityProgress(next);
   return success(next, `${definition.name}을 건설했어요. 생산을 시작해 우리집의 생활 물자를 모아 보세요!`);
@@ -346,22 +370,37 @@ export function replaceFacility(state: GameState, id: number, type: BuildingType
   const definition = BUILDINGS[type];
   if (definition.unlockLevel > state.deckLevel) return fail(state, `${definition.name}은 트럭 데크 ${definition.unlockLevel}단계부터 사용할 수 있어요.`);
   if (building.readyAt !== null) return fail(state, '생산 중인 물자를 먼저 수령한 뒤 시설을 교체해 주세요.');
+  const replacementPlacement = state.deckPlacements?.facilities.some(item => item.id === id)
+    ? snapFacilityPlacement(state, type, getFacilityPlacement(state, building)) : getFacilityPlacement(state, building);
+  const available = checkFacilityPlacement(state, type, replacementPlacement, id);
+  if (!available.ok) return fail(state, `새 시설을 놓을 공간이 부족해요. ${available.message}`);
   if (state.resources.wood < definition.wood || state.resources.scrap < definition.scrap) return fail(state, `시설 교체에 목재 ${definition.wood} · 고철 ${definition.scrap}이 필요해요.`);
   const next = copy(state);
   recordFacilityProgress(next);
   const target = mutableBuilding(next, id)!;
   next.resources.wood -= definition.wood; next.resources.scrap -= definition.scrap;
   target.type = type; target.level = 1;
+  if (next.deckPlacements?.facilities.some(item => item.id === id)) {
+    putPlacement(next, id, snapFacilityPlacement(next, type, getFacilityPlacement(state, building)));
+  }
   recordFacilityProgress(next);
   return success(next, `${BUILDINGS[building.type].name} 자리에 ${definition.name} Lv.1을 새로 지었어요. 이전 마을 성장 실적은 유지돼요.`);
 }
-export function moveFacility(state: GameState, id: number, slot: number): SettlementResult {
+export function moveFacility(state: GameState, id: number, value: number | FacilityPlacement): SettlementResult {
   const unavailable = blocked(state); if (unavailable) return unavailable;
   const building = getSettlement(state).buildings.find(item => item.id === id);
   if (!building) return fail(state, '이동할 생활 시설을 선택해 주세요.');
-  if (building.slot === slot) return fail(state, '시설이 이미 이 자리에 있어요. 다른 빈 자리를 선택해 주세요.');
-  if (!isFacilitySlotAvailable(state, slot, id)) return fail(state, '열려 있는 빈 건설 자리로 시설을 옮겨 주세요.');
+  const placement = chosenPlacement(state, building.type, value);
+  if (!placement) return fail(state, '시설을 옮길 빈 데크를 선택해 주세요.');
+  const available = checkFacilityPlacement(state, building.type, placement, id);
+  if (!available.ok) return fail(state, available.message);
+  const current = getFacilityPlacement(state, building);
+  if (current.floor === placement.floor && current.x === placement.x && current.y === placement.y && current.rotation === placement.rotation) {
+    return fail(state, '시설이 이미 이 위치에 있어요.');
+  }
+  const slot = (placement.floor - 1) * 16;
   const next = copy(state), target = mutableBuilding(next, id)!;
+  putPlacement(next, id, placement);
   if (id >= 17) target.slot = slot;
   else if (getSlotFloor(slot) === 1 && !next.settlement!.buildings.some(item => item.id !== id && item.slot === slot)) {
     target.slot = slot;

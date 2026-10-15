@@ -43,8 +43,7 @@ function nearestClearDeckLocation(world: NavigationWorld, origin: NavigationLoca
 /** Plan every jump before applying any, so a failed placement cannot move one pet or charge materials. */
 export function planPlacementPetRelocations(obstacles: readonly NavigationObstacle[], actors: readonly NavigationActor[],
   createWorld: PlacementWorld): PlacementPetRelocation[] | undefined {
-  if (actors.some(actor => actor.id === 'hero' && actorIntersectsPlacement(actor, obstacles))) return;
-  const moving = actors.filter(actor => actor.id !== 'hero' && actorIntersectsPlacement(actor, obstacles));
+  const moving = actors.filter(actor => actorIntersectsPlacement(actor, obstacles));
   if (!moving.length) return [];
   const movingIds = new Set(moving.map(actor => actor.id));
   const reserved = actors.filter(actor => !movingIds.has(actor.id)).map(actor => ({ ...actor, location: copy(actor.location) }));
