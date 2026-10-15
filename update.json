@@ -1,9 +1,9 @@
 {
-  "version": "0.33.0",
-  "versionCode": 33,
+  "version": "0.34.0",
+  "versionCode": 34,
   "minimumNativeVersionCode": 8,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.33.0-debug.apk",
-  "sha256": "4628c224187307083f8a3a76b436b607ea9b71aebe701c7946ba62af92ecc5de",
-  "notes": "지상의 나무·풀·고철·샘물을 누르면 큰 설명 창 없이 바로 걸어가 채집합니다. 채집 구역에 자원 그림과 이름·개수·재생 시간을 작게 표시합니다. 건설 화면, 기존 저장, 실제 180초 독립 재생, 자동 기력 회복과 자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-15T00:13:00.813Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.34.0-debug.apk",
+  "sha256": "61a243e8e09ec22ef1a219012abe581a6613536e7876cceab63afce4285efbee",
+  "notes": "트럭 주변 여러 장소에 나무·풀·고철·샘물을 나누어 배치했습니다. 채집물을 누르면 바로 이동해 작업하고 장소별 표식에서 자원 종류와 상태를 볼 수 있습니다. 기존 저장·각 자원의 실제 180초 재생·수동 화면 이동·자동 기력 회복·자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-15T07:58:33.132Z"
 }
