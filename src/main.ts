@@ -53,6 +53,8 @@ import './outdoor.css';
 import './hud-layout.css';
 import './game-dialog.css';
 import './deck-placement.css';
+import { initializeGameOrientation, type GameOrientationController, type GameOrientationState } from './game-orientation';
+import './landscape.css';
 
 const stored = loadGame();
 let state = stored ?? createGame('female', '하루');
@@ -108,6 +110,8 @@ let updateInitializing:Promise<void>|null=null;
 let installAfterWork=false;
 let contentActivationPending=false;
 let startupPending=isLiveUpdateSupported();
+let orientationBlocked=false;
+let gameOrientation:GameOrientationController|null=null;
 let toastTimer:ReturnType<typeof setTimeout>;
 let audioContext:AudioContext|undefined;
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -170,7 +174,7 @@ app.innerHTML=`
  <div class="modal-backdrop" id="modal-root" hidden></div>
 `;
 const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number,point?:FacilityPlacement)=>{
- if(startupPending||battleView||contentActivationPending)return;
+ if(startupPending||orientationBlocked||battleView||contentActivationPending)return;
  if(currentModal){if(currentModal==='build'||currentModal==='expand'||currentModal==='floors')closeModal();return;}
  if(kind==='build-placement'){if(point)previewConstruction(point);return;}
  if(kind==='build-slot'){if(!placement&&!actionBusy)openModal('build');return;}
@@ -209,7 +213,7 @@ function resumePlayerView(){
  setZone('home',false,true);setFarmTray(false);scene.setFarmFocus(false);scene.setMapMoveMode(false);scene.showVillageOverview();updateWalkingAvailability();
 }
 function updateWalkingAvailability(){
- scene.setWalkingEnabled(playerConfirmed&&!startupPending&&!contentActivationPending&&!battleView&&!currentModal&&!placement&&selectedFacilityId===null&&!actionBusy);
+ scene.setWalkingEnabled(playerConfirmed&&!startupPending&&!orientationBlocked&&!contentActivationPending&&!battleView&&!currentModal&&!placement&&selectedFacilityId===null&&!actionBusy);
 }
 document.querySelector('#world')!.addEventListener('scenewalkchange',()=>{
  // A menu or a new chore may stop a walk synchronously; assess patch safety
@@ -266,7 +270,7 @@ function renderFloorControls(){
   button.classList.toggle('locked',locked);button.setAttribute('aria-pressed',String(floor===active));
   button.setAttribute('aria-label',locked?`${floor}층 증축 · 데크 Lv.${floor===2?4:7} 필요`:`트럭 ${floor}층 보기`);
   button.innerHTML=`${floor}층${locked?` <small>Lv.${floor===2?4:7}</small>`:''}`;
-  button.disabled=actionBusy||Boolean(battleView)||startupPending||contentActivationPending;
+  button.disabled=actionBusy||Boolean(battleView)||startupPending||orientationBlocked||contentActivationPending;
  });
 }
 function chooseTruckFloor(floor:TruckFloor){
@@ -843,10 +847,10 @@ function startBattle(){
   battleView=new BattleView({gender:state.gender,name:state.name,level:state.level,health:state.health,companions:getCompanions(state),units:getUnitRoster(state),teamIds:state.expedition!.unitParticipantIds??getReadyTeam(state),bonuses:state.expedition!.unitBattleBonuses,stage:selectedStage,onFinish:(result:BattleResult)=>{
    const finished=finishHunt(state,result,expeditionId);state=finished.state;
    if(!finished.ok&&state.expedition?.id===expeditionId)state=cancelHunt(state).state;
-   battleView?.destroy();battleView=null;app.inert=false;document.body.classList.remove('in-battle');scene.setSuspended(false);setZone('home');persist();render();toast(finished.message+(finished.ok&&result.outcome==='victory'?` · 다음 성장: ${getVillageHub(state).investment.title}`:''));finishDeferredUpdate();
+   battleView?.destroy();battleView=null;app.inert=orientationBlocked||startupPending||contentActivationPending;document.body.classList.remove('in-battle');scene.setSuspended(orientationBlocked||startupPending||contentActivationPending);setZone('home');persist();render();toast(finished.message+(finished.ok&&result.outcome==='victory'?` · 다음 성장: ${getVillageHub(state).investment.title}`:''));finishDeferredUpdate();
   }});
  }catch{
-  state=cancelHunt(state).state;battleView?.destroy();battleView=null;app.inert=false;document.body.classList.remove('in-battle');scene.setSuspended(false);persist();render();toast('전투 화면을 열지 못해 트럭으로 돌아왔어요.');
+  state=cancelHunt(state).state;battleView?.destroy();battleView=null;app.inert=orientationBlocked||startupPending||contentActivationPending;document.body.classList.remove('in-battle');scene.setSuspended(orientationBlocked||startupPending||contentActivationPending);persist();render();toast('전투 화면을 열지 못해 트럭으로 돌아왔어요.');
  }
 }
 function huntRecoveryHint(){
@@ -1170,7 +1174,7 @@ function openModal(kind:string){
  if(kind==='guide'){modalShell('WELCOME TO ROAD HAVEN','천천히, 함께 살아가기',`<div class="guide-list">${[['move','원하는 곳으로 화면을 움직여요','빈 바닥을 톡 누르면 캐릭터가 걸어가요. 다시 누르면 방향을 바꾸고 건물은 피해 가요. 도로와 트럭 사이는 계단으로 오가요. 층 버튼으로 1·2·3층을 선택하고 연결 계단을 이용해요. 완성된 시설을 누르면 무료로 재배치할 수 있어요. 손가락으로 끌면 화면이 움직여요. 밭 위에서도 화면을 움직이려면 왼쪽 화면 이동 버튼을 켜 주세요. 이동 모드에서는 씨앗을 쓰거나 시설을 선택하지 않아요. 두 손가락으로 이동·확대도 가능하며, 기본 보기나 우리 트럭 메뉴로 돌아올 수 있어요.'],['seeds','심고, 돌보고, 수확해요','씨앗을 한 번 골라 두면 심기 이어하기로 다시 사용할 수 있어요. 밭을 누르거나 손가락으로 쓸면 차례로 심고 돌봐요. 아래 물 주기·수확·영양 버튼은 한 번 누르면 가능한 밭을 모두 작업해요. 자라는 작물에 식량 1개로 한 번 영양을 주면 수확량이 2개 늘어요. 실제 수확한 작물을 납품하면 코인·경험치·건설 재료를 받아요. 작업 종료는 대기를 취소하고 지금 밭만 마쳐요.'],['wood','도로 너머를 탐색해요','트럭 차체 바깥 도로를 자유롭게 걸어요. 벌목장·고철 수거장·씨앗 풀밭·샘터에서 필요한 물자를 골라 직접 모아요. 계단으로 트럭에 돌아오고, 채집 장소는 표시된 초가 지나면 다시 준비돼요. 사냥은 동물 11종 중 최대 3마리를 편성하는 전투 스테이지에서 진행돼요.'],['hammer','트럭을 우리집으로 만들어요','데크를 확장하면 기본 밭 1칸과 추가 농장 공간이 열려요. 화면 왼쪽 밭 확장에서 재료를 써 새 밭을 만들 수 있어요. 데크 단계마다 최대 밭이 3칸씩 늘어 총 24칸까지 가꿀 수 있어요. 시설은 Lv.5까지 개선할 수 있어요.'],['bolt','기력이 자연스럽게 차올라요','기력은 실제 시간 20초마다 1씩, 1분에 3씩 자동 회복돼요. 게임을 닫아도 최대 100까지 회복됩니다. 동료 화면의 돌보기는 동물 체력을 회복하고, 쓰다듬기는 행복을 채워요.'],['shield','우리의 일상은 저장돼요','진행 상황은 이 기기에 자동 저장돼요. 앱을 삭제하거나 데이터를 지우면 저장도 사라져요.']].map(([i,t,d])=>`<div><span>${icon(i)}</span><article><h3>${t}</h3><p>${d}</p></article></div>`).join('')}</div>`);}
  if(kind==='reset')modalShell('A FRESH START','새로운 여행을 시작할까요?',`<p class="modal-description">현재 기기의 모든 진행 상황이 지워집니다.<br>이 작업은 되돌릴 수 없어요.</p><button class="button button-danger full-width" data-reset>진행 상황을 지우고 새로 시작</button><button class="text-button full-width" data-close>지금의 여행 계속하기</button>`);
 }
-function renderSettings(){modalShell('MAKE YOURSELF AT HOME','우리집 설정',`<div class="settings-row"><div><strong>게임 소리</strong><p>작은 행동에 기분 좋은 소리를 더해요</p></div><button class="toggle ${sound?'on':''}" data-sound aria-label="게임 소리 ${sound?'끄기':'켜기'}" aria-pressed="${sound}"><span></span></button></div><div class="settings-row"><div><strong>시간 흐름</strong><p>현재 ${paused?'쉬어 가는 중':'흘러가는 중'}</p></div><button class="button button-light small" data-pause>${paused?'계속하기':'잠시 멈춤'}</button></div>${updateSettingsContent()}<button class="text-button full-width" data-save>${icon('check')} 지금 저장하기</button><button class="text-button danger full-width" data-open="reset">새로운 여행 시작</button><p class="fine-print">ROAD HAVEN · 로드헤이븐 v${APP_VERSION}<br>당신의 기기에 머무는 작은 세상</p>`);refreshUpdateUI();}
+function renderSettings(){modalShell('MAKE YOURSELF AT HOME','우리집 설정',`<div class="settings-row"><div><strong>게임 소리</strong><p>작은 행동에 기분 좋은 소리를 더해요</p></div><button class="toggle ${sound?'on':''}" data-sound aria-label="게임 소리 ${sound?'끄기':'켜기'}" aria-pressed="${sound}"><span></span></button></div><div class="settings-row"><div><strong>시간 흐름</strong><p>현재 ${paused?'쉬어 가는 중':'흘러가는 중'}</p></div><button class="button button-light small" data-pause>${paused?'계속하기':'잠시 멈춤'}</button></div><button class="button button-light full-width" data-game-landscape>가로 전체 화면으로 플레이</button><p class="fine-print">회전이 지원되지 않으면 자동 회전을 켜고 기기를 옆으로 돌려 주세요.</p>${updateSettingsContent()}<button class="text-button full-width" data-save>${icon('check')} 지금 저장하기</button><button class="text-button danger full-width" data-open="reset">새로운 여행 시작</button><p class="fine-print">ROAD HAVEN · 로드헤이븐 v${APP_VERSION}<br>당신의 기기에 머무는 작은 세상</p>`);refreshUpdateUI();}
 function updateSettingsContent(){
  const native=isNativeUpdateSupported(),supported=isLiveUpdateSupported();
  return `<div class="update-box game-content-update"><div class="update-heading">${icon('check')}<strong>게임 콘텐츠 자동 업데이트</strong><span>v${APP_VERSION}</span></div><p data-live-update-message>${escape(liveUpdate.message)}</p><div class="update-download-progress" data-live-update-progress hidden><i></i></div><p class="update-explanation">${supported?'게임을 열면 새 콘텐츠를 자동으로 준비해요. 진행을 저장한 뒤 적용하고, 이동·농사·전투 중에는 기다려요.':'이 화면은 현재 게임 파일로 실행돼요. 공개 플레이 주소에서 자동 업데이트를 이용할 수 있어요.'}</p><button class="button button-light full-width" data-live-update-check ${supported?'':'hidden'}>게임 업데이트 다시 확인</button></div>${native?`<div class="update-box native-feature-update"><div class="update-heading">${icon('download')}<strong>앱 기능 업데이트</strong><span>Android</span></div><p data-native-update-message>${escape(native?automaticUpdate.message:lastUpdate?.message??'앱을 시작할 때 새 버전을 확인해요.')}</p><div class="update-download-progress" data-native-update-progress hidden><i></i></div><div class="release-notes" data-update-release-notes>${escape(lastUpdate?.release?.notes??'')}</div><button class="button button-light full-width" data-update ${updateBusy?'disabled':''}>${updateBusy?'확인하는 중…':'앱 새 버전 확인'}</button><button class="button full-width" data-install-update hidden>받은 새 버전 설치하기</button><button class="button button-light full-width" data-retry-native-update hidden>다운로드 다시 시도</button><button class="button full-width" data-download ${!native&&lastUpdate?.status==='available'?'':'hidden'}>Android APK 다운로드</button><small>${native?'새 앱 기능이 필요할 때는 설치 확인을 한 번 진행해 주세요. 다운로드는 앱 안에서 자동으로 준비해요.':'브라우저에서는 APK를 내려받아 Android에 설치할 수 있어요.'}</small></div>`:''}${showInstallHelp()?'<button class="button button-light full-width" data-open="install">홈 화면에 추가하는 방법</button>':''}`;
@@ -1198,7 +1202,7 @@ function refreshUpdateUI(){
 }
 function onAutomaticUpdate(next:AutomaticUpdateState){automaticUpdate=next;refreshUpdateUI();}
 function setContentApplying(applying:boolean){
- contentActivationPending=applying;app.inert=startupPending||applying||Boolean(battleView);app.classList.toggle('content-applying',applying);contentApplyingNotice.hidden=!applying;scene.setSuspended(startupPending||applying||Boolean(battleView));
+ contentActivationPending=applying;app.inert=startupPending||orientationBlocked||applying||Boolean(battleView);app.classList.toggle('content-applying',applying);contentApplyingNotice.hidden=!applying;scene.setSuspended(startupPending||orientationBlocked||applying||Boolean(battleView));
  updateWalkingAvailability();
 }
 function onLiveUpdate(next:LiveUpdateState){liveUpdate=next;if(next.status==='error'&&contentActivationPending)setContentApplying(false);refreshUpdateUI();maybeApplyContentUpdate();}
@@ -1247,7 +1251,7 @@ document.addEventListener('pointercancel',event=>{
  const button=(event.target as Element).closest<HTMLElement>('[data-village-advice],[data-next-goal]');if(button)pressedVillageTargets.delete(button);
 },{capture:true});
 document.addEventListener('click',e=>{
- const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||battleView||contentActivationPending)return;
+ const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||orientationBlocked||battleView||contentActivationPending)return;
  if(t.hasAttribute('data-camera-player')){resumePlayerView();return;}
  if(t.dataset.petPassageToggle){void operatePetPassage(t.dataset.petPassageToggle==='open');return;}
  if(t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')){if(prepareRoadWalk()){if(t.hasAttribute('data-road-return'))scene.walkToTruck();else scene.walkOntoRoad();}return;}
@@ -1280,6 +1284,7 @@ document.addEventListener('click',e=>{
  if(t.dataset.facilityCollectRepeat){receiveAndRestartFacility(Number(t.dataset.facilityCollectRepeat));return;}
  if(t.hasAttribute('data-install-update')){void requestAutomaticInstall();return;}
  if(t.hasAttribute('data-update-notice')){if(automaticUpdate.status==='ready'||automaticUpdate.status==='permission')void requestAutomaticInstall();else if(runningFarm&&actionBusy)afterCurrentFarm(()=>openModal('settings'));else if(!actionBusy)openModal('settings');else toast('작업을 마치면 설정에서 업데이트를 확인해요.');return;}
+ if(t.hasAttribute('data-game-landscape')){void gameOrientation?.requestLandscape();return;}
  if(t.hasAttribute('data-live-update-check')){void checkLiveUpdate().then(onLiveUpdate);return;}
  if(t.hasAttribute('data-pwa-install-now')){void installHomeScreenGame().then(installed=>{toast(installed?'홈 화면 아이콘으로 이어서 플레이해요.':'브라우저 메뉴에서 홈 화면에 추가할 수 있어요.');if(currentModal==='install')openModal('install');}).catch(()=>toast('브라우저 메뉴에서 홈 화면에 추가해 주세요.'));return;}
  if(t.hasAttribute('data-retry-native-update')&&lastUpdate?.release){void prepareAutomaticUpdate(lastUpdate.release).then(onAutomaticUpdate).catch(()=>toast('연결을 확인하고 다시 시도해 주세요.'));return;}
@@ -1367,7 +1372,7 @@ modalRoot.addEventListener('pointerdown',e=>{modalBackdropPointer=e.target===mod
 modalRoot.addEventListener('pointerup',e=>{modalBackdropClickPointer=modalBackdropPointer===e.pointerId&&e.target===modalRoot?e.pointerId:null;modalBackdropPointer=null;});
 modalRoot.addEventListener('pointercancel',()=>{modalBackdropPointer=null;modalBackdropClickPointer=null;});
 modalRoot.addEventListener('click',e=>{const backdropGesture=modalBackdropClickPointer!==null&&(!(e instanceof PointerEvent)||e.pointerId===modalBackdropClickPointer);modalBackdropClickPointer=null;if(!startupPending&&e.target===modalRoot&&backdropGesture)closeModal();});
-document.addEventListener('keydown',e=>{if(startupPending||battleView||contentActivationPending)return;if(e.key==='Escape'){if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
+document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
 let saveCounter=0;
 setInterval(()=>{
  if(!startupPending&&!contentActivationPending&&playerConfirmed){
@@ -1375,12 +1380,30 @@ setInterval(()=>{
   if(state.energy!==before){persist();render();}else{renderVitals();updateEnergyPanel();if(paused)renderControls();}
   if(currentModal==='roadside'||currentModal==='outdoor-site'||currentModal==='ground-region')renderLiveRoadside();
  }
- if(startupPending||paused||document.hidden||battleView||contentActivationPending||currentModal==='welcome')return;
+ if(startupPending||orientationBlocked||paused||document.hidden||battleView||contentActivationPending||currentModal==='welcome')return;
  state=tick(state,1);render();if(++saveCounter>=10){persist();saveCounter=0;}
 },1000);
 document.addEventListener('visibilitychange',()=>{if(contentActivationPending)return;if(document.hidden){farmQueue=[];afterFarm=null;renderControls();persist();}else if(!startupPending){state=paused?recoverEnergy({...state,lastSaved:Date.now()}):applyOfflineProgress(state).state;render();persist();void initializeUpdateSystem().then(()=>{if(isNativeUpdateSupported())return runUpdate();});}});
 setInterval(maybeApplyContentUpdate,500);
 window.addEventListener('pagehide',()=>{if(!contentActivationPending)persist();});
+window.addEventListener('gameorientationchange',event=>{
+ orientationBlocked=(event as CustomEvent<GameOrientationState>).detail.blocked;
+ app.inert=orientationBlocked||startupPending||contentActivationPending||Boolean(battleView);
+ scene.setSuspended(orientationBlocked||startupPending||contentActivationPending||Boolean(battleView));
+ battleView?.setOrientationBlocked(orientationBlocked);
+ updateWalkingAvailability();
+});
+window.addEventListener('gameorientationupdate',()=>{
+ if(startupPending||contentActivationPending)return;
+ openModal('settings');
+ void initializeUpdateSystem().then(()=>runUpdate()).then(()=>{
+  if(lastUpdate?.status!=='available')toast('가로 고정 앱 기능 업데이트는 준비 중이에요. 브라우저에서는 기기를 가로로 돌려 플레이할 수 있어요.');
+ });
+});
+gameOrientation=initializeGameOrientation();
+orientationBlocked=gameOrientation.blocked;
+app.inert=orientationBlocked||startupPending||contentActivationPending||Boolean(battleView);
+scene.setSuspended(orientationBlocked||startupPending||contentActivationPending||Boolean(battleView));
 render();
 async function startGame(){
  let loadedAbsenceConsumed=false,offlineSeconds=0;
@@ -1389,7 +1412,7 @@ async function startGame(){
   const offline=applyOfflineProgress(state);state=offline.state;offlineSeconds=offline.secondsApplied;loadedAbsenceConsumed=true;
  };
  const boot=await runStartupPatch({onState:onLiveUpdate,beforeApply:()=>{consumeLoadedAbsence();return !stored||persist();},onPendingChange:pending=>{
-  startupPending=pending;app.inert=pending||contentActivationPending||Boolean(battleView);scene.setSuspended(pending||Boolean(battleView));updateWalkingAvailability();
+  startupPending=pending;app.inert=pending||orientationBlocked||contentActivationPending||Boolean(battleView);scene.setSuspended(pending||orientationBlocked||contentActivationPending||Boolean(battleView));updateWalkingAvailability();
  }});
  if(boot==='applying')return;
  if(boot==='storage-error')toast('저장 공간을 확인한 뒤 게임 업데이트를 다시 적용해 주세요.');

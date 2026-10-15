@@ -61,6 +61,7 @@ export class BattleView {
   private delivered = false;
   private resultShown = false;
   private manualPause = false;
+  private orientationBlocked = false;
   private confirmingRetreat = false;
   private readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -129,6 +130,12 @@ export class BattleView {
     this.frame = requestAnimationFrame(this.animate);
   }
 
+  setOrientationBlocked(blocked: boolean): void {
+    this.orientationBlocked = blocked;
+    this.root.inert = blocked;
+    this.onVisibility();
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -145,10 +152,11 @@ export class BattleView {
 
   private readonly onVisibility = (): void => {
     this.last = 0;
-    this.simulation.setPaused(this.manualPause || this.confirmingRetreat || document.hidden);
+    this.simulation.setPaused(this.manualPause || this.confirmingRetreat || this.orientationBlocked || document.hidden);
   };
 
   private readonly onKey = (event: KeyboardEvent): void => {
+    if (this.orientationBlocked) return;
     if (event.key === 'Tab') {
       const buttons = [...this.root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')].filter(button => button.offsetParent !== null && !button.closest('[inert]'));
       const first = buttons[0], last = buttons[buttons.length - 1];
@@ -169,6 +177,7 @@ export class BattleView {
   };
 
   private readonly onClick = (event: MouseEvent): void => {
+    if (this.orientationBlocked) return;
     const target = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!target || target.disabled) return;
     if (target.dataset.skill) {

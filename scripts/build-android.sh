@@ -54,15 +54,10 @@ else
   # Keep this test signing identity outside the repository and reuse it for test updates.
   export ANDROID_DEBUG_KEYSTORE="${ANDROID_DEBUG_KEYSTORE:-$repo_dir/../.road-haven-signing/debug.keystore}"
   if [[ ! -f "$ANDROID_DEBUG_KEYSTORE" ]]; then
-    if compgen -G 'artifacts/road-haven-*-debug.apk' >/dev/null; then
-      echo 'Restore the original debug signing key before updating an existing test APK; generating another key would break in-place updates.' >&2
-      exit 1
-    fi
-    mkdir -p "$(dirname "$ANDROID_DEBUG_KEYSTORE")"
-    keytool -genkeypair -keystore "$ANDROID_DEBUG_KEYSTORE" -storepass android \
-      -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
-      -dname 'CN=Android Debug,O=Road Haven Development,C=KR' -noprompt
-    chmod 600 "$ANDROID_DEBUG_KEYSTORE"
+    # Ignored artifacts can disappear after cloud restoration even when APKs
+    # have already been distributed. Their absence never authorizes key rotation.
+    echo 'Restore the original debug signing key before building this published app; a replacement key would break in-place updates.' >&2
+    exit 1
   fi
   task=assembleDebug
 fi

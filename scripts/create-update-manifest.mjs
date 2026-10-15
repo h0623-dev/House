@@ -15,16 +15,18 @@ if (!Number.isSafeInteger(versionCode) || versionCode < 1 || versionCode > 21000
   throw new Error('VERSION_CODE must be an integer from 1 to 2100000000.');
 }
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const { minNativeVersionCode } = JSON.parse(readFileSync(new URL('../content-release.json', import.meta.url), 'utf8'));
-if (!Number.isSafeInteger(minNativeVersionCode) || minNativeVersionCode < 1 || minNativeVersionCode > versionCode) {
-  throw new Error('Content compatibility must specify a valid minimum native version.');
+// Native feature requirements are independent of content-patch compatibility.
+// A web patch can support APK 8 while the landscape activity needs APK 42.
+const { minimumNativeVersionCode } = JSON.parse(readFileSync(new URL('../native-release.json', import.meta.url), 'utf8'));
+if (!Number.isSafeInteger(minimumNativeVersionCode) || minimumNativeVersionCode < 1 || minimumNativeVersionCode > versionCode) {
+  throw new Error('Native release must specify a valid minimum native version.');
 }
 const sha256 = createHash('sha256').update(readFileSync(apkPath)).digest('hex');
 const output = join(dirname(apkPath), 'update.json');
 writeFileSync(output, JSON.stringify({
   version,
   versionCode,
-  minimumNativeVersionCode: minNativeVersionCode,
+  minimumNativeVersionCode,
   apkUrl: url.href,
   sha256,
   notes: process.env.RELEASE_NOTES || `로드헤이븐 ${version} 업데이트`,

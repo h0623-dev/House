@@ -7,6 +7,7 @@
   "start_url": "/House/",
   "scope": "/House/",
   "display": "standalone",
+  "orientation": "landscape",
   "background_color": "#173e36",
   "theme_color": "#173e36",
   "icons": [

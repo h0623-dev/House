@@ -1,0 +1,293 @@
+/* Landscape is a real layout: retain the canvas coordinates and touch sizes. */
+@media (orientation: landscape) {
+  .game-shell.village-shell {
+    --landscape-header: 52px;
+    --landscape-nav: 54px;
+    --landscape-panel: 284px;
+    max-width: none;
+    grid-template-columns: minmax(286px, 34%) minmax(0, 1fr);
+    grid-template-rows: var(--landscape-header) minmax(0, 1fr) calc(var(--landscape-nav) + env(safe-area-inset-bottom));
+  }
+
+  .village-shell .game-topbar {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    gap: 6px;
+    z-index: 8;
+  }
+  .village-shell .profile-button,
+  .village-shell .village-menu { width: 44px; height: 44px; min-height: 44px; flex: 0 0 44px; }
+  .village-shell .survivor-name { flex: 1; min-width: 55px; gap: 2px; }
+  .village-shell .survivor-name > strong { max-width: 110px; font-size: 12px; }
+  .village-shell .survivor-name > span { font-size: 10px; }
+  .village-shell .survivor-name i { margin: 0 3px; }
+  .village-shell .vitals { width: 100px; min-height: 44px; justify-content: center; gap: 3px; margin-left: 0; }
+  .village-shell .vital { gap: 4px; }
+  .village-shell .vitals strong { font-size: 11px; width: 23px; }
+  .village-shell .energy-auto-rate { font-size: 10px; line-height: 1.1; }
+
+  .village-shell .resource-bar {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 3px;
+    z-index: 8;
+    border-left: 1px solid #c4aa77;
+    background: linear-gradient(#fff9e9, #f0e2c2);
+  }
+  .village-shell .resource { min-width: 0; min-height: 44px; padding: 3px 2px; gap: 3px; }
+  .village-shell .resource strong { font-size: 12px; }
+  .village-shell .resource-icon,
+  .village-shell .resource-icon .icon { width: 25px; height: 28px; flex: 0 0 25px; }
+  .village-shell .game-main { grid-column: 1 / -1; grid-row: 2; }
+  .village-shell .game-nav {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    padding: 4px max(8px, 6vw) calc(4px + env(safe-area-inset-bottom));
+    gap: 5px;
+  }
+  .village-shell .nav-button { min-width: 44px; min-height: 44px; flex-direction: row; gap: 5px; border-radius: 10px; }
+  .village-shell .nav-button > .icon { width: 27px; height: 27px; }
+  .village-shell .nav-button > span { font-size: 11px; }
+
+  /* One shallow map row, with the current quest anchored at the upper right. */
+  .village-shell .scene-card,
+  .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)),
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-repeat-ready, .construction-mode, .planning-catalog, .planning-expansion) {
+    --world-safe-top: 64px;
+    --world-safe-bottom: 12px;
+  }
+  .village-shell .scene-card.facility-selected.facility-repeat-ready { --world-safe-bottom: 12px; }
+  .village-shell .scene-card .truck-floor-controls { top: 8px; left: 8px; right: auto; }
+  .village-shell .scene-card .truck-floor-controls > button { min-width: 44px; min-height: 44px; }
+  .village-shell .scene-card .truck-floor-controls > button small { font-size: 10px; }
+  .village-shell .scene-card .road-controls {
+    top: 8px;
+    left: 50%;
+    width: max-content;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+  }
+  .village-shell .scene-card .road-controls > button { flex: 0 0 44px; width: 44px; min-width: 44px; min-height: 44px; height: 44px; padding: 2px 0; }
+  .village-shell .scene-card .road-controls > button > .icon { width: 23px; height: 23px; }
+  .village-shell .scene-card .road-controls > button > small { font-size: 10px; line-height: 1.2; }
+  .village-shell .scene-card .settlement-objective,
+  .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)) .settlement-objective {
+    top: 8px;
+    left: auto;
+    right: 8px;
+    width: clamp(164px, 26vw, 300px);
+    min-height: 48px;
+    height: 48px;
+    padding: 4px 5px;
+    gap: 5px;
+  }
+  .village-shell .scene-card .settlement-objective > span { display: none; }
+  .village-shell .scene-card .settlement-objective strong { font-size: 11px; }
+  .village-shell .scene-card .settlement-objective p { font-size: 10px; margin-top: 2px; }
+  .village-shell .scene-card .objective-cta { font-size: 10px; min-width: 44px; min-height: 40px; padding: 4px; }
+  .village-shell .scene-card .objective-progress { margin-top: 2px; }
+
+  /* Full production and delivery cards remain inside the existing town menu. */
+  .village-shell .village-hub { left: 8px; right: auto; bottom: 8px; width: auto; max-width: calc(100% - 80px); }
+  .village-shell .village-hub-dock { min-height: 46px; padding: 0; border-radius: 12px; }
+  .village-shell .village-hub-heading,
+  .village-shell .village-hub-dock[data-village-activity-count="0"] .village-hub-heading { height: 44px; padding: 0; }
+  .village-shell .village-hub-heading > span,
+  .village-shell .village-activity-list { display: none; }
+  .village-shell .village-hub-heading > button,
+  .village-shell .village-hub-dock[data-village-activity-count="0"] .village-hub-heading > button {
+    position: static;
+    width: auto;
+    min-width: 112px;
+    min-height: 44px;
+    padding: 3px 10px;
+    flex-direction: row;
+    gap: 7px;
+    border: 0;
+    border-radius: 11px;
+  }
+  .village-shell .village-hub-heading > button strong { font-size: 11px; }
+  .village-shell .village-hub-heading > button > .icon:first-child { width: 28px; height: 28px; }
+
+  .village-shell .camera-tool,
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-selected.facility-repeat-ready, .construction-mode) .camera-tool { right: 8px; bottom: 8px; min-height: 48px; }
+  .village-shell .camera-tool > span { width: 44px; height: 36px; }
+  .village-shell .camera-tool > small { font-size: 10px; }
+  .village-shell .camera-open .map-controls,
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-selected.facility-repeat-ready, .construction-mode).camera-open .map-controls { bottom: 8px; right: 64px; height: 48px; padding: 1px; gap: 1px; }
+  .village-shell .camera-open .map-move-tool,
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-selected.facility-repeat-ready, .construction-mode).camera-open .map-move-tool { bottom: 62px; right: 64px; min-height: 48px; }
+  .village-shell .scene-card .map-controls > button { min-height: 44px; height: 44px; }
+  .village-shell .scene-card .map-controls > button small,
+  .village-shell .scene-card .map-move-tool > small { font-size: 10px; }
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-selected.facility-repeat-ready, .construction-mode) .camera-tool { right: calc(var(--landscape-panel) + 16px); }
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-selected.facility-repeat-ready, .construction-mode).camera-open :is(.map-controls, .map-move-tool) { right: calc(var(--landscape-panel) + 72px); }
+
+  /* Context tools use the side of a short screen, with every action scrollable. */
+  .village-shell .scene-card .game-controls {
+    left: auto;
+    right: 8px;
+    top: 62px;
+    bottom: 8px;
+    transform: none;
+    width: var(--landscape-panel);
+    max-width: calc(100% - 100px);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 3px 5px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #b6a57a #f3e8cc;
+    border-radius: 13px;
+  }
+  .village-shell .scene-card .farm-context { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); height: auto; min-height: 102px; flex: 0 0 auto; padding: 4px; gap: 3px; }
+  .village-shell .scene-card .plot-selector { grid-column: 1 / -1; min-height: 44px; }
+  .village-shell .scene-card .plot-selector strong { font-size: 12px; }
+  .village-shell .scene-card .plot-selector span { font-size: 10px; line-height: 1.4; }
+  .village-shell .scene-card :is(.context-action, .context-direction, .context-details) { width: 100%; min-width: 44px; min-height: 48px; height: auto; flex-direction: column; justify-content: center; gap: 2px; }
+  .village-shell .scene-card :is(.context-action, .context-direction, .context-details) small { font-size: 10px; }
+  .village-shell .scene-card .quick-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px; gap: 4px; flex: 0 0 auto; }
+  .village-shell .scene-card .quick-action { min-height: 56px; padding: 3px 1px; gap: 3px; }
+  .village-shell .scene-card .quick-action > small { font-size: 10px; line-height: 1.2; }
+  .village-shell .scene-card .quick-action .control-icon { width: 34px; height: 31px; }
+  .village-shell .scene-card .quick-action .icon { width: 28px; height: 28px; }
+  .village-shell .scene-card .planting-toolbar { height: auto; min-height: 110px; flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px; gap: 4px; }
+  .village-shell .scene-card .planting-selection { grid-column: 1 / -1; min-height: 44px; }
+  .village-shell .scene-card .planting-selection strong { font-size: 12px; }
+  .village-shell .scene-card .planting-selection small { font-size: 10px; line-height: 1.4; }
+  .village-shell .scene-card .planting-toolbar .planting-tool { width: 100%; min-height: 48px; }
+  .village-shell .scene-card .planting-tool small { font-size: 10px; }
+  .village-shell .scene-card.planting-mode .farm-context { display: none; }
+
+  .village-shell .scene-card .facility-sheet { left: auto; right: 8px; top: 62px; bottom: auto; width: var(--landscape-panel); max-width: calc(100% - 100px); max-height: calc(100% - 70px); padding: 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .village-shell .scene-card .facility-sheet-heading { position: sticky; top: -8px; z-index: 2; min-height: 52px; padding: 5px 0; background: #fff9e9; }
+  .village-shell .scene-card .facility-sheet-heading h3 { font-size: 13px; }
+  .village-shell .scene-card .facility-sheet-heading small { font-size: 10px; }
+  .village-shell .scene-card .facility-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+  .village-shell .scene-card .facility-primary { grid-column: 1 / -1; min-height: 44px; font-size: 12px; }
+  .village-shell .scene-card .facility-secondary { width: 100%; min-width: 44px; min-height: 48px; }
+  .village-shell .scene-card .facility-secondary small { font-size: 10px; }
+  .village-shell .scene-card .facility-recipe { font-size: 10px; }
+  .village-shell .scene-card .facility-repeat { min-height: 44px; font-size: 11px; }
+
+  .village-shell .scene-card.construction-mode .construction-bar { left: auto; right: 8px; top: 62px; bottom: auto; width: var(--landscape-panel); max-width: calc(100% - 100px); max-height: calc(100% - 70px); min-height: 0; margin: 0; padding: 8px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; overflow-y: auto; overscroll-behavior: contain; }
+  .village-shell .construction-bar .construction-art { display: none; }
+  .village-shell .construction-bar .construction-info { grid-column: 1 / -1; }
+  .village-shell .construction-bar .construction-info > strong { font-size: 13px; }
+  .village-shell .construction-bar .construction-info :is(.construction-valid, .construction-invalid),
+  .village-shell .construction-bar .construction-size,
+  .village-shell .construction-bar .construction-cost { font-size: 10px; }
+  .village-shell .construction-bar :is(.placement-confirm, .placement-cancel, .placement-rotate) { min-height: 52px; width: 100%; }
+  .village-shell .construction-bar :is(.placement-confirm, .placement-cancel, .placement-rotate) small { font-size: 10px; }
+
+  .village-shell .scene-card .chore-status { left: 8px; right: auto; bottom: 62px; max-width: min(310px, calc(100% - 24px)); width: auto; transform: none; }
+  .village-shell .scene-card:is(.farm-tray-open, .work-view, .facility-selected) .chore-status { bottom: 64px; max-width: calc(100% - var(--landscape-panel) - 24px); }
+  .village-shell .scene-card .chore-status strong,
+  .village-shell .scene-card .chore-status [data-chore-phase],
+  .village-shell .scene-card .chore-status > div > span { font-size: 10px; }
+  .toast,
+  .toast.facility-toast { bottom: calc(64px + env(safe-area-inset-bottom)); max-width: calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)); font-size: 12px; }
+
+  /* Close buttons and the entire panel body stay reachable in a short viewport. */
+  #modal-root:not(.planning-catalog):not(.planning-expansion) { padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  #modal-root .modal { max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom))); overflow-y: auto; padding-bottom: 14px; scroll-padding-top: 70px; }
+  #modal-root .game-dialog-heading { min-height: 58px; padding: 6px 9px 6px 12px; margin-bottom: 12px; gap: 8px; }
+  #modal-root .game-dialog-heading h2 { font-size: 18px; }
+  #modal-root .game-dialog-heading .eyebrow { font-size: 10px; }
+  #modal-root .game-dialog-emblem { width: 38px; height: 40px; flex-basis: 38px; }
+  #modal-root .game-dialog-heading .modal-close { min-height: 44px; min-width: 44px; }
+  #modal-root .modal .seed-inventory { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #modal-root .modal .cost-row { flex-direction: row; flex-wrap: wrap; }
+  #modal-root .modal .cost-row > span { flex: 1 1 160px; }
+  #modal-root:is(.planning-catalog, .planning-expansion) > .modal,
+  #modal-root.planning-catalog > .modal-village {
+    left: auto;
+    right: calc(8px + env(safe-area-inset-right));
+    top: calc(60px + env(safe-area-inset-top));
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    width: var(--landscape-dialog-width, 300px);
+    max-width: calc(100vw - 124px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    max-height: none;
+    margin: 0;
+    padding: 9px;
+    border-radius: 14px;
+  }
+  #modal-root:is(.planning-catalog, .planning-expansion) .game-dialog-heading { position: sticky; top: -9px; z-index: 6; min-height: 48px; margin: -9px -9px 8px; padding: 2px 4px 2px 9px; background: #fff9e9; }
+  #modal-root:is(.planning-catalog, .planning-expansion) .game-dialog-heading h2 { font-size: 15px; }
+  #modal-root.planning-catalog .building-card { min-width: 128px; flex-basis: 128px; min-height: 164px; }
+  #modal-root.planning-catalog .building-card > strong { font-size: 12px; }
+  #modal-root.planning-catalog :is(.building-select, .building-output, .building-cost, .building-placement-guide, .building-placement-guide small, .building-unlock) { font-size: 10px; }
+  #modal-root.planning-catalog .building-select { min-height: 30px; }
+}
+
+/* A narrow landscape phone retains one row of controls without overlap. */
+@media (orientation: landscape) and (max-width: 719px) {
+  .village-shell .game-nav { padding-left: 6px; padding-right: 6px; gap: 3px; }
+  .village-shell .nav-button { gap: 3px; }
+  .village-shell .nav-button > .icon { width: 24px; height: 24px; }
+  .village-shell .scene-card .road-controls { left: 8px; transform: none; }
+  .village-shell .scene-card .truck-floor-controls { top: auto; bottom: 8px; left: 128px; }
+  .village-shell .scene-card.camera-open .truck-floor-controls { bottom: 64px; }
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .construction-mode, .planning-catalog, .planning-expansion) .truck-floor-controls { bottom: 64px; }
+  .village-shell .scene-card .settlement-objective,
+  .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)) .settlement-objective { width: 164px; }
+  .village-shell .scene-card .settlement-objective p { display: none; }
+  .village-shell .scene-card .settlement-objective strong { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
+
+@media (orientation: landscape) and (max-width: 599px) {
+  .village-shell .resource { flex-direction: column; gap: 0; padding: 2px 0; }
+  .village-shell .resource-icon,
+  .village-shell .resource-icon .icon { width: 22px; height: 23px; flex-basis: auto; }
+  .village-shell .resource strong { font-size: 11px; }
+}
+
+/* On tablets use the additional width, rather than enlarging the phone HUD. */
+@media (orientation: landscape) and (min-width: 1000px) {
+  .game-shell.village-shell { --landscape-panel: 316px; grid-template-columns: minmax(310px, 29%) minmax(0, 1fr); }
+  .village-shell .survivor-name > strong { font-size: 14px; max-width: 150px; }
+  .village-shell .resource strong { font-size: 15px; }
+  .village-shell .resource-icon,
+  .village-shell .resource-icon .icon { width: 31px; height: 31px; flex-basis: 31px; }
+  .village-shell .scene-card .road-controls > button { flex-basis: 52px; width: 52px; }
+  .village-shell .game-nav { padding-left: 18%; padding-right: 18%; }
+  #modal-root { --landscape-dialog-width: 330px; }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .battle-screen { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .battle-shell { width: 100%; height: 100%; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr) 240px; grid-template-rows: 54px 28px minmax(0, 1fr); border: 0; border-radius: 0; }
+  .battle-topbar { grid-column: 1 / -1; grid-row: 1; padding: 4px 10px; min-width: 0; }
+  .battle-heading > span { font-size: 10px; }
+  .battle-heading > h2 { font-size: 14px; margin-top: 2px; }
+  .battle-progress { grid-column: 1; grid-row: 2; padding: 4px 12px; }
+  .battle-progress > span { font-size: 10px; }
+  .battle-arena { grid-column: 1; grid-row: 3; min-height: 0; }
+  .battle-command-panel { grid-column: 2; grid-row: 2 / -1; display: flex; flex-direction: column; justify-content: flex-start; min-height: 0; overflow-y: auto; padding: 8px; border-top: 0; border-left: 2px solid #be9b60; overscroll-behavior: contain; }
+  .battle-party { width: 100%; flex-shrink: 0; }
+  .battle-screen .battle-ally-name strong,
+  .battle-screen .battle-ally-name span,
+  .battle-screen .battle-ally-health-row > b,
+  .battle-screen .battle-ally-health-row > span { font-size: 10px; }
+  .battle-screen .battle-skills { flex-direction: column; flex-shrink: 0; gap: 6px; }
+  .battle-screen .battle-skill { min-height: 52px; flex-shrink: 0; }
+  .battle-screen .battle-skill-text strong { font-size: 11px; }
+  .battle-screen .battle-skill-owner,
+  .battle-screen .battle-skill-cooldown,
+  .battle-screen .battle-team-health,
+  .battle-screen .battle-team-health > b,
+  .battle-screen .battle-help { font-size: 10px; }
+  .battle-screen .battle-result-layer,
+  .battle-screen .battle-retreat-layer { padding: 8px; }
+  .battle-screen .battle-result-card,
+  .battle-screen .battle-retreat-layer > div { max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
+}

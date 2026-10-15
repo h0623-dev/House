@@ -1312,10 +1312,11 @@ export class Scene {
   private viewportInsets(css: CSSStyleDeclaration): { top: number; bottom: number; left: number; right: number; width: number; height: number } {
     const top = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-top')) || 0);
     let bottom = Math.max(0, parseFloat(css.getPropertyValue('--world-safe-bottom')) || 0), left = 0, right = 0;
-    if (this.planningMode) {
+    if (this.planningMode || this.width > this.height * 1.15) {
       const canvas = this.canvas.getBoundingClientRect();
       const overlay = this.planningMode === 'placement' ? document.querySelector<HTMLElement>('#construction-bar')
-        : document.querySelector<HTMLElement>('#modal-root:not([hidden]) .modal');
+        : this.planningMode ? document.querySelector<HTMLElement>('#modal-root:not([hidden]) .modal')
+        : document.querySelector<HTMLElement>('#farm-tray:not([hidden]), #facility-sheet:not([hidden])');
       if (overlay && !overlay.hidden) {
         const bounds = overlay.getBoundingClientRect();
         if (bounds.width > 0 && bounds.height > 0 && bounds.top < canvas.bottom && bounds.bottom > canvas.top) {
