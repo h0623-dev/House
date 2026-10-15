@@ -1,0 +1,225 @@
+/* Shared in-game panels. Keep content mounted and planning docks compact. */
+#modal-root:not(.planning-catalog):not(.planning-expansion){
+ background:#20362b59;
+ backdrop-filter:blur(2px);
+ padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+}
+#modal-root .modal{
+ --dialog-gutter:20px;
+ width:min(500px,100%);
+ max-height:min(88dvh,800px);
+ padding:0 var(--dialog-gutter) 20px;
+ border:2px solid #b99a61;
+ border-radius:20px;
+ background:radial-gradient(ellipse at 85% 0%,#fffef5,transparent 65%),#f8f0dc;
+ color:#364e38;
+ box-shadow:inset 0 0 0 3px #fffbed,0 16px 45px #1e352b45,0 3px 0 #806b45;
+ overscroll-behavior:contain;
+ scrollbar-width:thin;
+ scrollbar-color:#b7ac80 #eee5ce;
+ scroll-padding-top:90px;
+ isolation:isolate;
+}
+#modal-root .modal::before{display:none}
+#modal-root .modal-wide{width:min(660px,100%)}
+#modal-root .modal:is(.modal-activity,.modal-energy,.modal-shop-confirm,.modal-reset){width:min(440px,100%)}
+#modal-root .game-dialog-heading{
+ position:sticky;
+ top:0;
+ z-index:6;
+ display:flex;
+ align-items:center;
+ gap:11px;
+ min-height:78px;
+ margin:0 calc(-1 * var(--dialog-gutter)) 18px;
+ padding:12px 13px 12px 18px;
+ border-bottom:3px solid #c3a360;
+ border-radius:17px 17px 0 0;
+ background:linear-gradient(110deg,#3a684c,#4c7957);
+ box-shadow:inset 0 2px #a7b27b80,0 3px 0 #d7c69e55;
+}
+#modal-root .game-dialog-heading>div{flex:1;min-width:0}
+#modal-root .game-dialog-emblem{
+ display:grid;
+ place-items:center;
+ flex:0 0 44px;
+ width:44px;
+ height:46px;
+ border:1px solid #d2b779;
+ border-radius:13px;
+ background:linear-gradient(145deg,#fff5d9,#e1cc9d);
+ box-shadow:inset 0 1px #fffdf0,0 2px 0 #254a3655;
+}
+#modal-root .game-dialog-emblem>.icon{width:37px;height:38px;color:#5f7449}
+#modal-root .game-dialog-heading .eyebrow{
+ margin:0 0 3px;
+ padding:0;
+ font-size:10px;
+ font-weight:650;
+ letter-spacing:.15px;
+ line-height:1.4;
+ color:#dfebcb;
+}
+#modal-root .game-dialog-heading h2{
+ margin:0;
+ padding:0;
+ font-size:21px;
+ font-weight:800;
+ letter-spacing:-.55px;
+ line-height:1.35;
+ word-break:keep-all;
+ overflow-wrap:anywhere;
+ color:#fff9e7;
+ text-shadow:0 1px 0 #25462d55;
+}
+#modal-root .game-dialog-heading .modal-close{
+ position:static;
+ display:grid;
+ place-items:center;
+ flex:0 0 44px;
+ min-width:44px;
+ min-height:44px;
+ width:44px;
+ height:44px;
+ margin-left:3px;
+ border:1px solid #dfc68b;
+ border-radius:13px;
+ background:linear-gradient(#fff4d3,#e7cf96);
+ color:#5c6342;
+ box-shadow:inset 0 1px #fffdf1,0 2px 0 #274c3477;
+}
+#modal-root .game-dialog-heading .modal-close>.icon{width:21px;height:21px}
+#modal-root .modal :is(.button,.shop-buy,.shop-confirm-button,.farm-deliver-button){
+ min-height:48px;
+ border:1px solid #3b6743;
+ border-radius:12px;
+ background:linear-gradient(#669454,#487b48);
+ color:#fffdef;
+ box-shadow:inset 0 1px #c9dba875,0 3px 0 #345d37;
+ font-size:13px;
+ font-weight:750;
+ line-height:1.45;
+}
+#modal-root .modal :is(.button-light,.shop-owned-action,.shop-cancel-button){
+ border:1px solid #c5b17b;
+ background:linear-gradient(#fff9e5,#eee1ba);
+ color:#536444;
+ box-shadow:inset 0 1px #fffef6,0 2px 0 #b8a17166;
+}
+#modal-root .modal .button-danger{background:linear-gradient(#b97d5c,#996040);border-color:#925635;box-shadow:inset 0 1px #e7b39688,0 3px 0 #7d4a30}
+#modal-root .modal :is(.button,.shop-buy,.shop-confirm-button,.farm-deliver-button):disabled{
+ opacity:1;
+ border-color:#c6c9ac;
+ background:#e4e6d1;
+ color:#7b856b;
+ box-shadow:inset 0 1px #f5f6e9;
+}
+#modal-root .modal .button:not(:disabled):hover{filter:brightness(1.035)}
+#modal-root .modal .text-button{min-height:44px;font-size:12px;color:#647652;line-height:1.5}
+#modal-root .modal .activity-secondary{margin-top:10px}
+#modal-root .modal .modal-description{font-size:13px;color:#6f7457;line-height:1.8;margin-bottom:16px;word-break:keep-all}
+#modal-root .modal .fine-print{font-size:11px;color:#7a785d;line-height:1.75;margin-top:13px;word-break:keep-all}
+#modal-root .modal .info-note{font-size:11px;color:#737b60;line-height:1.7}
+#modal-root .modal :is(.cost-row>span,.shop-confirm-summary,.activity-energy){border:1px solid #dbcdac;border-radius:12px;background:#fffaf0}
+#modal-root .modal .cost-row{gap:8px;margin:15px 0}
+#modal-root .modal .cost-row>span{font-size:12px;padding:12px 10px;white-space:normal;line-height:1.5}
+#modal-root .modal .cost-row strong{font-size:12px;color:#3e6540}
+#modal-root .modal .cost-row .insufficient,#modal-root .modal .insufficient strong{color:#a25b3e}
+#modal-root .modal :is(.seed-card,.plot-card,.inventory-item,.shop-product,.ground-region-card,.ground-node-choice,.companion-card,.replacement-target){
+ border-color:#d3c49d;
+ border-radius:14px;
+ background:linear-gradient(145deg,#fffdf3,#f4ebd5);
+ box-shadow:inset 0 1px #fff,0 2px 0 #c4b58f29;
+}
+#modal-root .modal :is(.seed-card.selected,.unit-selected){border:2px solid #8aa567;background:linear-gradient(#f5f9e6,#e2edcc);box-shadow:inset 0 0 0 2px #fbfdeb,0 2px 0 #91a46b44}
+#modal-root .modal .seed-card.quest-target{outline:2px solid #a5ba7c;outline-offset:1px}
+#modal-root .modal :is(.seed-card>strong,.plot-card h3,.inventory-item strong,.shop-product h3){font-size:13px;line-height:1.5;color:#3c5c3b}
+#modal-root .modal :is(.seed-card>small,.seed-card-count,.plot-state,.shop-crop-yield,.shop-stock,.shop-pet-detail,.companion-xp){font-size:11px;line-height:1.55;color:#737657}
+#modal-root .modal .seed-card-note{font-size:10px;color:#7d795c}
+#modal-root .modal .seed-card{gap:6px;padding:11px 7px;min-height:190px}
+#modal-root .modal .seed-card.selected::after{font-size:10px;padding:3px 6px;background:#64854b;border-radius:7px}
+#modal-root .modal .seed-card-count b{font-size:17px;color:#4c7042}
+#modal-root .modal .plot-card .button{font-size:11px;min-height:44px;padding:8px 5px;gap:4px}
+#modal-root .modal .plot-state{min-height:34px}
+#modal-root .modal .shop-tabs{gap:7px;border-bottom-color:#d8cba8}
+#modal-root .modal .shop-tabs>button{border-color:#c9b98e;border-radius:12px;background:#f5ecd5;box-shadow:inset 0 1px #fffdf0;color:#63704d}
+#modal-root .modal .shop-tabs>button[aria-pressed=true]{background:linear-gradient(#6f9358,#547f4b);border-color:#4b7544;color:#fffbed;box-shadow:inset 0 1px #abc18c,0 2px 0 #3f653c}
+#modal-root .modal .shop-tabs>button>span{font-size:12px}
+#modal-root .modal .shop-confirm-art{border-radius:16px;background:radial-gradient(ellipse,#e8edce 0%,#faf3de 65%,transparent 66%);height:130px}
+#modal-root .modal .shop-confirm-summary>div{min-height:42px;font-size:12px}
+#modal-root .modal .shop-confirm-summary>div>strong{font-size:13px}
+#modal-root .modal .shop-confirm-button{font-size:14px}
+#modal-root .modal .activity-block-reason{border:1px solid #d1c59c;border-radius:13px;padding:15px;background:#fff9e8;font-size:14px;line-height:1.75;color:#68664a}
+#modal-root .modal .activity-energy{padding:10px 12px;margin:12px 0;gap:10px;color:#68734d}
+#modal-root .modal .energy-recovery-summary{margin-top:0;border-color:#cbd2a7;background:linear-gradient(#f2f6df,#e6edcd);border-radius:16px;gap:10px}
+#modal-root .modal .upgrade-facility-art{background:radial-gradient(ellipse,#e8efd6,#f4ecd5);border-color:#c9c7a1;border-radius:16px;margin:0 0 16px}
+#modal-root .modal .upgrade-facility-art strong{color:#4c7042}
+#modal-root .modal .growth-simple :is(.growth-quest-card,.growth-quest-card.active){border-color:#c9cea9;background:linear-gradient(145deg,#fffdf4,#f2f1db);border-radius:14px;box-shadow:inset 0 1px #fff}
+#modal-root .modal .growth-simple .growth-quest-card.ready{background:linear-gradient(#fff9df,#f3e5b9);border-color:#cfb66d;box-shadow:inset 0 0 0 2px #fffcdf}
+#modal-root .modal .growth-simple .growth-quest-actions .growth-quest-claim{background:linear-gradient(#c7a453,#a67c32);border-color:#a27b37;box-shadow:inset 0 1px #eeda9c,0 3px 0 #88632b;color:#fffcef}
+#modal-root .modal .growth-simple .growth-quest-actions .button{font-size:14px}
+#modal-root .modal :is(.growth-simple .growth-quest-progress>.quest-progress,.farm-delivery-track,.quest-progress){height:7px;border:1px solid #cad0ae;background:#e2e7d2;box-shadow:inset 0 1px #9eab8122;border-radius:8px}
+#modal-root .modal :is(.growth-simple .quest-progress>span,.farm-delivery-track>i,.quest-progress>span){background:linear-gradient(#a8c57e,#6e9957);border-radius:8px}
+
+/* The small facility panel shares the same materials without covering more map. */
+.village-shell .facility-sheet{border:2px solid #bc9e64;border-radius:16px;background:linear-gradient(#fffbee,#f2e7cb);box-shadow:inset 0 0 0 2px #fffdf2,0 5px 18px #253e2c40}
+.village-shell .facility-sheet-heading{border-bottom:1px solid #ded0ac}
+.village-shell .facility-sheet-art{background:radial-gradient(ellipse,#e3ebcf,transparent 75%);border-radius:10px}
+.village-shell .facility-sheet-heading h3{font-size:15px;font-weight:800;color:#3e5b3d;line-height:1.4}
+.village-shell .facility-sheet-heading h3>span{display:inline-block;padding:2px 5px;border-radius:5px;background:#e4ebd3;color:#67814b;font-size:10px;vertical-align:middle}
+.village-shell .facility-sheet-heading small{color:#7a7c5e;font-size:9px}
+.village-shell .facility-sheet .sheet-close{border:1px solid #d1bc88;background:#f4e7c5;color:#63704d;min-width:44px;min-height:44px;border-radius:11px}
+.village-shell .facility-production>span{font-size:11px;line-height:1.5;color:#717958}
+.village-shell .facility-progress{height:7px;border:1px solid #c2c7a1;background:#e1e4cc}
+.village-shell .facility-progress i{background:linear-gradient(#a8c581,#769c5f)}
+.village-shell .facility-primary{border-color:#4d7541;background:linear-gradient(#85aa63,#618e4f);box-shadow:inset 0 1px #c9d9aa,0 2px 0 #456d3e;border-radius:11px}
+.village-shell .facility-primary.collect{background:linear-gradient(#efd386,#d2af57);border-color:#bb9748;box-shadow:inset 0 1px #fff1b6,0 2px 0 #b08c40;color:#5e602f}
+.village-shell .facility-primary:disabled{border-color:#c5c9ac;background:#e3e5cf;box-shadow:inset 0 1px #f5f6e8;color:#82896f}
+.village-shell .facility-secondary{border-color:#cdbb8e;background:linear-gradient(#fff9e5,#f0e3be);box-shadow:inset 0 1px #fffdf3,0 2px 0 #c9b88a55;color:#68754d}
+.village-shell .facility-secondary small{font-size:9px}
+.village-shell .facility-recipe{font-size:10px;line-height:1.5;color:#7d7b60}
+
+/* Construction keeps its existing shallow, map-visible dock dimensions. */
+#modal-root:is(.planning-catalog,.planning-expansion)>.modal{--dialog-gutter:11px;width:min(calc(100% - 16px),650px);padding:11px;max-height:min(32dvh,270px);scroll-padding-top:50px}
+#modal-root.planning-catalog>.modal-village{max-height:min(48dvh,400px)}
+#modal-root:is(.planning-catalog,.planning-expansion) .game-dialog-heading{position:relative;min-height:44px;margin:-3px -3px 8px;padding:0 1px 4px 4px;gap:6px;border:0;border-bottom:1px solid #d8c9a5;border-radius:0;background:none;box-shadow:none}
+#modal-root:is(.planning-catalog,.planning-expansion) .game-dialog-emblem,#modal-root:is(.planning-catalog,.planning-expansion) .game-dialog-heading .eyebrow{display:none}
+#modal-root:is(.planning-catalog,.planning-expansion) .game-dialog-heading h2{font-size:16px;color:#395a3d;text-shadow:none}
+#modal-root:is(.planning-catalog,.planning-expansion) .game-dialog-heading .modal-close{background:linear-gradient(#fff9e5,#ecdfba);border-color:#d5c18e;box-shadow:inset 0 1px #fffef5;color:#5c6b45}
+#modal-root:is(.planning-catalog,.planning-expansion) .button{min-height:44px;font-size:12px;padding:9px}
+
+@media(max-width:420px){
+ #modal-root .modal{--dialog-gutter:14px;max-height:calc(100dvh - max(12px,env(safe-area-inset-top)) - max(12px,env(safe-area-inset-bottom)));padding-bottom:16px;border-radius:17px}
+ #modal-root .game-dialog-heading{min-height:70px;padding:10px;gap:8px;margin-bottom:14px;border-radius:14px 14px 0 0}
+ #modal-root .game-dialog-heading h2{font-size:18px;letter-spacing:-.4px}
+ #modal-root .game-dialog-emblem{flex-basis:38px;width:38px;height:41px;border-radius:11px}
+ #modal-root .game-dialog-emblem>.icon{width:32px;height:34px}
+ #modal-root .game-dialog-heading .eyebrow{font-size:9px}
+ #modal-root .game-dialog-heading .modal-close{margin-left:0}
+ #modal-root .modal .seed-inventory{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px}
+ #modal-root .modal .seed-card{min-height:188px}
+ #modal-root .modal .cost-row{flex-direction:column}
+ #modal-root .modal .modal-description{font-size:12px}
+ #modal-root .modal .shop-product-grid{gap:8px}
+ #modal-root .modal .shop-stock{font-size:10px}
+ .village-shell .facility-secondary small{font-size:8px}
+ #modal-root:is(.planning-catalog,.planning-expansion)>.modal{--dialog-gutter:11px;max-height:min(32dvh,270px);padding:11px}
+ #modal-root.planning-catalog>.modal-village{max-height:min(48dvh,400px)}
+}
+@media(orientation:landscape) and (max-height:600px){
+ #modal-root .modal{--dialog-gutter:18px;max-height:calc(100dvh - max(12px,env(safe-area-inset-top)) - max(12px,env(safe-area-inset-bottom)));padding-bottom:15px}
+ #modal-root .game-dialog-heading{min-height:62px;padding:7px 10px 7px 14px;gap:9px;margin-bottom:12px}
+ #modal-root .game-dialog-emblem{flex-basis:38px;width:38px;height:40px}
+ #modal-root .game-dialog-emblem>.icon{width:33px;height:34px}
+ #modal-root .game-dialog-heading h2{font-size:18px}
+ #modal-root .modal .seed-inventory{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+ #modal-root .modal .seed-card{min-height:170px}
+ #modal-root .modal .fine-print{margin-top:10px}
+ .village-shell .facility-sheet-heading h3{font-size:13px}
+ .village-shell .facility-recipe{font-size:9px}
+ #modal-root:is(.planning-catalog,.planning-expansion)>.modal{--dialog-gutter:9px;width:290px;padding:9px;max-height:min(43dvh,calc(100dvh - 153px))}
+ #modal-root.planning-catalog>.modal-village{max-height:calc(100dvh - 150px)}
+ #modal-root:is(.planning-catalog,.planning-expansion) .game-dialog-heading{min-height:40px;padding:0 0 3px;margin-bottom:5px}
+ #modal-root:is(.planning-catalog,.planning-expansion) .game-dialog-heading h2{font-size:14px}
+}
+@media(prefers-reduced-motion:reduce){#modal-root .modal{animation:none}#modal-root .modal button{transition:none}}

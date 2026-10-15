@@ -1404,7 +1404,7 @@ export class Scene {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, this.width, this.height);
-    c.fillStyle = '#776c47'; c.fillRect(0, 0, this.width, this.height);
+    c.fillStyle = '#c3bd95'; c.fillRect(0, 0, this.width, this.height);
     this.updateCamera();
     c.translate(this.dx, this.dy); c.scale(this.scale, this.scale);
     this.hits = [];
@@ -1424,11 +1424,12 @@ export class Scene {
     this.hero();
     this.workEffects();
     // Ground, residents, timber and foliage share one ambient light pass.
-    // Shading only environment() left daytime trees pasted onto a night road.
+    // Night is a gentle moonlit colour shift: chores must remain readable at
+    // every hour, including the broad overview of the gathering grounds.
     c.save(); c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.fillStyle = '#e8ead214'; c.fillRect(0, 0, this.width, this.height);
     const night = skyNightAmount(this.state?.minutes ?? 660);
-    if (night > 0) { c.fillStyle = `rgba(19,31,57,${night * .58})`; c.fillRect(0, 0, this.width, this.height); }
+    if (night < 1) { c.fillStyle = `rgba(255,242,211,${(1 - night) * .025})`; c.fillRect(0, 0, this.width, this.height); }
+    if (night > 0) { c.fillStyle = `rgba(74,94,121,${night * .18})`; c.fillRect(0, 0, this.width, this.height); }
     c.restore();
     this.groundMarkers();
     this.fireflies();
@@ -1453,14 +1454,14 @@ export class Scene {
 
   private environment() {
     const backdrop = this.ctx.createLinearGradient(0, -1100, 0, 1200);
-    backdrop.addColorStop(0, '#f0edd3'); backdrop.addColorStop(.4, '#e7e5cb'); backdrop.addColorStop(1, '#84956d');
+    backdrop.addColorStop(0, '#f6f0d9'); backdrop.addColorStop(.4, '#ecebd1'); backdrop.addColorStop(1, '#a9b48b');
     this.ctx.fillStyle = backdrop; this.ctx.fillRect(-3000, -2500, 7000, 5000);
     const left = -this.dx / this.scale, right = (this.width - this.dx) / this.scale;
     const top = -this.dy / this.scale, bottom = (this.height - this.dy) / this.scale;
     // Ground artwork has fixed world coordinates. Camera movement never scales
     // the highway beneath independently positioned actors and terrain.
     if (!drawGroundLandscape(this.ctx) && !drawWorldRoad(this.ctx)) {
-      const sky = this.ctx.createLinearGradient(0, -200, 0, 800); sky.addColorStop(0, '#efe8cc'); sky.addColorStop(1, '#7e8060');
+      const sky = this.ctx.createLinearGradient(0, -200, 0, 800); sky.addColorStop(0, '#f2ead0'); sky.addColorStop(1, '#b0b18b');
       this.ctx.fillStyle = sky; this.ctx.fillRect(-1000, -600, 3000, 2000);
     }
     const night=skyNightAmount(this.state?.minutes??660);

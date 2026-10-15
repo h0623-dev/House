@@ -49,6 +49,8 @@ import { getPetPassage, setPetPassageOpen } from './pet-passage';
 import { recoverEnergy, secondsUntilEnergyRecovery } from './energy-recovery';
 import './farm-economy.css';
 import './outdoor.css';
+import './hud-layout.css';
+import './game-dialog.css';
 
 const stored = loadGame();
 let state = stored ?? createGame('female', '하루');
@@ -837,7 +839,25 @@ function companionRosterCards(compact=false){
   return `<button class="companion-card ${hp===0?'companion-resting':''} ${chosen?'unit-selected':''} ${locked?'unit-locked':''}" data-companion-card="${id}" data-team-toggle="${id}" aria-pressed="${chosen}" aria-label="${definition.name} ${locked?`데크 Lv.${definition.unlockDeck} 해금`:chosen?'편성에서 빼기':'편성하기'}" ${locked?'disabled':''}><div class="companion-card-art">${companionPortrait(id)}</div><div class="companion-card-info"><strong>${definition.name}<small>Lv.${level}</small></strong><span>${definition.roleLabel}</span><b data-companion-hp="${id}">${hp} / ${max}</b><div class="companion-hp-track" role="progressbar" aria-label="${definition.name} 체력" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${hp}"><i style="width:${progress.health}%"></i></div><small class="companion-xp">${locked?`데크 Lv.${definition.unlockDeck}에서 함께해요`:level===10?'최대 레벨':`다음 레벨까지 경험치 ${80-progress.xp%80}`}${!locked&&hp===0?' · 회복 필요':''}</small><span class="unit-selection-label">${locked?icon('paw'):chosen?icon('check'):icon('plus')}${locked?'아직 잠김':chosen?'편성 중':'편성하기'}</span></div><span class="unit-skill-description">${definition.skillLabel} · ${definition.skillDescription}</span></button>`;
  }).join('')}</div><p class="unit-village-bonus">${icon('truck')} 마을 지원 · 공격 +${Math.round((bonuses.attackMultiplier-1)*100)}% · 받는 피해 −${Math.round((1-bonuses.enemyDamageMultiplier)*100)}%<small>동료의 쉼터와 도로 관측소를 개선하면 강해져요.</small></p></section>`;
 }
-function modalShell(eyebrow:string,title:string,body:string,wide=false){modalBackdropPointer=null;modalBackdropClickPointer=null;scene.setWalkingEnabled(false);const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=false;root.innerHTML=`<section class="modal modal-${currentModal} ${wide?'modal-wide':''}" role="dialog" aria-modal="true" aria-labelledby="modal-title">${currentModal==='welcome'&&!playerConfirmed?'':`<button class="modal-close round-button" data-close aria-label="닫기">${icon('close')}</button>`}<div class="eyebrow">${eyebrow}</div><h2 id="modal-title">${title}</h2>${body}</section>`;requestAnimationFrame(()=>root.querySelector<HTMLButtonElement>('button')?.focus());}
+const dialogThemes: Record<string, readonly [string, string]> = {
+ welcome:['truck','로드헤이븐'], village:['truck','우리 트럭 마을'], quests:['flag','마을의 다음 이야기'],
+ farm:['leaf','농장 생활'], seeds:['seeds','씨앗 가방'], 'farm-delivery':['food','우리 마을의 수확'], 'crop-ledger':['book','작물 이야기'],
+ hunt:['shield','동물 원정대'], pet:['paw','우리의 작은 동료'], 'pet-passage':['paw','동물 통로'],
+ build:['hammer','트럭 건설'], expand:['expand','데크 확장'], floors:['truck','트럭 층 확장'],
+ bag:['bag','생활 물자'], shop:['bag','트럭 상점'], 'shop-confirm':['bag','장보기 확인'],
+ settings:['settings','게임 설정'], guide:['book','트럭 생활 안내'], journal:['book','우리의 생활 기록'],
+ activity:['bolt','작업 안내'], roadside:['map','트럭 밖 작은 모험'], 'outdoor-site':['axe','지상에서 모으기'], 'ground-region':['map','채집 장소'],
+ 'facility-upgrade':['hammer','시설 성장'], 'facility-supplies':['bag','생산 준비'],
+ 'facility-replacement-target':['hammer','마을 배치'], 'facility-replace':['hammer','시설 교체'], 'facility-replace-confirm':['hammer','새 시설 준비'],
+};
+function modalShell(_eyebrow:string,title:string,body:string,wide=false){
+ modalBackdropPointer=null;modalBackdropClickPointer=null;scene.setWalkingEnabled(false);
+ const root=document.querySelector<HTMLElement>('#modal-root')!,[emblem,category]=dialogThemes[currentModal]??['truck','트럭 생활'];
+ const closeButton=currentModal==='welcome'&&!playerConfirmed?'':`<button class="modal-close round-button" data-close aria-label="닫기">${icon('close')}</button>`;
+ root.hidden=false;
+ root.innerHTML=`<section class="modal modal-${currentModal} ${wide?'modal-wide':''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="game-dialog-heading"><span class="game-dialog-emblem" aria-hidden="true">${icon(emblem)}</span><div><div class="eyebrow">${category}</div><h2 id="modal-title">${title}</h2></div>${closeButton}</header>${body}</section>`;
+ requestAnimationFrame(()=>root.querySelector<HTMLButtonElement>('button')?.focus());
+}
 function closeModal(){if(currentModal==='welcome'&&!playerConfirmed)return;modalBackdropPointer=null;modalBackdropClickPointer=null;const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=true;root.classList.remove('planning-catalog','planning-expansion');document.querySelector('.scene-card')!.classList.remove('planning-catalog','planning-expansion');scene.setExpansionPreview(null);if(!placement)scene.setPlanningViewport(null);currentModal='';updateNav();updateWalkingAvailability();}
 function renderLiveShop(force=false){
  const key=JSON.stringify([currentModal,shopTab,shopQuantity,shopPending,state.gender,state.deckLevel,state.resources,getSeedInventory(state),getShop(state),state.companions,state.animalReserve]);

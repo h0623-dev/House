@@ -9,13 +9,15 @@ export interface GroundPalette {
 }
 
 export const GROUND_ART_PALETTE = {
-  landscape: { saturation: .85, contrast: .91, midpoint: 133, tint: [1, 3, 3] },
-  props: { saturation: .65, contrast: .87, midpoint: 130, tint: [1, 3, 7] },
+  // Lift the shared midtones instead of washing out the painting with a pale
+  // screen overlay. Warm greens and earth retain their painted separation.
+  landscape: { saturation: .88, contrast: .91, midpoint: 140, tint: [3, 4, 0] },
+  props: { saturation: .74, contrast: .89, midpoint: 138, tint: [4, 5, 1] },
 } as const satisfies Record<string, GroundPalette>;
 
 export const GROUND_SOIL_TEXTURE_SIZE = 256;
 export const GROUND_SOIL_TEXTURE_WORLD_SCALE = 4;
-export const GROUND_SOIL_BASE = '#b5b695';
+export const GROUND_SOIL_BASE = '#bec19e';
 /** Source pixels; a short soft edge merges the single authored painting into
  * the quiet terrain beyond it, without reflecting roads or stream banks. */
 export const GROUND_LANDSCAPE_EDGE_FADE = 90;
@@ -32,9 +34,9 @@ export function createGroundSoilPixels(): Uint8ClampedArray {
       field = Math.sin(phaseX) * Math.cos(phaseY) * 1.5 + Math.sin(phaseX + phaseY) * .7,
       grain = ((seed >>> 24) / 255 - .5) * 3, light = field + grain,
       offset = (y * size + x) * 4;
-    pixels[offset] = Math.round(181 + light);
-    pixels[offset + 1] = Math.round(182 + light);
-    pixels[offset + 2] = Math.round(149 + light);
+    pixels[offset] = Math.round(190 + light);
+    pixels[offset + 1] = Math.round(193 + light);
+    pixels[offset + 2] = Math.round(158 + light);
     pixels[offset + 3] = 255;
   }
   return pixels;

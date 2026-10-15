@@ -1,0 +1,116 @@
+/* Keep travel together, with the current goal anchored in the upper right. */
+.village-shell .scene-card,
+.village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)){
+ --hud-floor-width:88px;
+ --world-safe-top:122px;
+}
+.village-shell .scene-card:has(.truck-floor-controls[data-floor-count="2"]){--hud-floor-width:132px}
+.village-shell .scene-card:has(.truck-floor-controls[data-floor-count="3"]),
+.village-shell .scene-card:has(.truck-floor-controls.show-locked-floors){--hud-floor-width:176px}
+.village-shell .scene-card .scene-top,
+.village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)) .scene-top{display:none}
+.village-shell .scene-card .truck-floor-controls{
+ top:8px;bottom:auto;left:8px;right:auto;max-width:var(--hud-floor-width);
+ border-color:#a58b56;background:linear-gradient(#fff9e9,#eddfbd);
+ box-shadow:inset 0 1px #fffdf3,0 3px 0 #5a654530,0 5px 12px #304d2720;
+}
+.village-shell .scene-card .truck-floor-controls>button{flex-shrink:0}
+.village-shell .scene-card .settlement-objective,
+.village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)) .settlement-objective{
+ top:8px;bottom:auto;left:auto;right:8px;
+ width:min(340px,calc(100% - var(--hud-floor-width) - 24px));max-width:none;
+ min-height:46px;height:46px;padding:5px 7px;gap:6px;z-index:5;
+ border:1px solid #b39b64;border-radius:12px;
+ background:linear-gradient(#fffcef,#f5e8c9);
+ box-shadow:inset 0 1px #ffffff,0 3px 0 #68714b30,0 5px 12px #304d2720;
+}
+.village-shell .scene-card .settlement-objective>span{
+ width:26px;height:29px;border-radius:8px;background:#e4e9c7;border-color:#b1b97d;
+}
+.village-shell .scene-card .settlement-objective>span>.icon{width:25px;height:27px}
+.village-shell .scene-card .settlement-objective>div{min-width:0}
+.village-shell .scene-card .settlement-objective small{display:none}
+.village-shell .scene-card .settlement-objective strong{
+ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;line-height:1.35;
+}
+.village-shell .scene-card .settlement-objective p{
+ display:block;font-size:9px;line-height:1.3;white-space:nowrap;overflow:hidden;
+ text-overflow:ellipsis;margin:2px 0 0;color:#766a4d;
+}
+.village-shell .scene-card .objective-progress{height:3px;margin-top:3px;border:0;background:#d8d4b4}
+.village-shell .scene-card .objective-cta{
+ display:flex;align-items:center;justify-content:center;align-self:stretch;
+ flex:0 0 auto;min-width:41px;max-width:60px;padding:4px 5px;
+ font-size:9px;line-height:1.35;border:1px solid #3c653b;border-radius:8px;
+ background:linear-gradient(#668d50,#49723f);box-shadow:inset 0 1px #b7d39780,0 2px 0 #2d553234;
+}
+.village-shell .scene-card .settlement-objective.reward-ready{
+ border-color:#be9448;background:linear-gradient(#fff9dc,#f4e0aa);
+}
+.village-shell .scene-card .settlement-objective.reward-ready .objective-cta{
+ background:linear-gradient(#bb9646,#96712e);border-color:#8e6b2a;
+ box-shadow:inset 0 1px #ffebac80,0 2px 0 #805d2b34;
+}
+.village-shell .scene-card .road-controls{
+ top:62px;bottom:auto;left:50%;right:auto;transform:translateX(-50%);
+ display:flex;align-items:center;justify-content:center;gap:4px;
+ width:max-content;max-width:calc(100% - 16px);padding:4px;
+ border:1px solid #b19a67;border-radius:14px;
+ background:linear-gradient(#f4ebceee,#dfd4b3f2);
+ box-shadow:inset 0 1px #fffdf0,0 3px 0 #6f795035,0 6px 14px #304d2720;
+ z-index:5;
+}
+.village-shell .scene-card .road-controls>button{
+ flex:0 0 44px;min-width:44px;width:44px;min-height:44px;height:44px;
+ padding:3px 2px;gap:1px;border:1px solid #c0b183;border-radius:9px;
+ background:linear-gradient(#fffdf4,#f1e7c9);color:#355b3c;
+ box-shadow:inset 0 1px #ffffff,0 2px 0 #b29b6550;
+}
+.village-shell .scene-card .road-controls>button>.icon{width:23px;height:23px}
+.village-shell .scene-card .road-controls>button>small{font-size:8px;line-height:1.3;white-space:nowrap}
+.village-shell .scene-card .road-controls>button[aria-pressed="true"]{
+ background:linear-gradient(#e7efce,#ccdca9);border-color:#7f9a5d;
+ box-shadow:inset 0 1px #fbffe8,0 2px 0 #6c83504d;
+}
+.village-shell .scene-card .road-controls>button:active{transform:translateY(1px);box-shadow:inset 0 1px 3px #6d744230}
+.village-shell .scene-card .road-controls>button:focus-visible,
+.village-shell .scene-card .settlement-objective:focus-visible{outline:3px solid #376b42;outline-offset:3px}
+.village-shell .scene-card:is(.construction-mode,.planning-catalog,.planning-expansion),
+.village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)):is(.construction-mode,.planning-catalog,.planning-expansion){--world-safe-top:64px}
+.village-shell .scene-card:is(.construction-mode,.planning-catalog,.planning-expansion,.facility-selected) .road-controls{display:none}
+
+/* On a narrow phone, reserve two short rows instead of shrinking tap targets. */
+@media(max-width:359px){
+ .village-shell .scene-card .settlement-objective>span{display:none}
+ .village-shell .scene-card .settlement-objective{padding:5px;gap:4px}
+ .village-shell .scene-card .settlement-objective strong{font-size:10px}
+ .village-shell .scene-card .objective-cta{min-width:36px;font-size:8px;padding:4px}
+}
+@media(max-width:399px){
+ .village-shell .scene-card:has(.truck-floor-controls[data-floor-count="2"]) .settlement-objective>span,
+ .village-shell .scene-card:has(.truck-floor-controls[data-floor-count="3"]) .settlement-objective>span{display:none}
+}
+
+/* A wide screen has room for floors, centered travel, and quests in one row. */
+@media(min-width:640px){
+ .village-shell .scene-card,
+ .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)){--world-safe-top:76px}
+ .village-shell .scene-card .road-controls{top:8px}
+ .village-shell .scene-card .settlement-objective,
+ .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)) .settlement-objective{
+  top:8px;left:auto;right:8px;width:clamp(180px,24vw,340px);
+  min-height:54px;height:54px;padding:6px 8px;
+ }
+ .village-shell .scene-card .truck-floor-controls{top:8px}
+ .village-shell .scene-card:is(.construction-mode,.planning-catalog,.planning-expansion),
+ .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)):is(.construction-mode,.planning-catalog,.planning-expansion){--world-safe-top:64px}
+}
+@media(min-width:640px) and (max-width:859px){
+ .village-shell .scene-card .settlement-objective>span{display:none}
+}
+@media(min-width:960px){
+ .village-shell .scene-card .road-controls>button{flex-basis:50px;min-width:50px;width:50px}
+ .village-shell .scene-card .road-controls>button>small{font-size:9px}
+ .village-shell .scene-card .settlement-objective strong{font-size:12px}
+ .village-shell .scene-card .settlement-objective p{font-size:10px}
+}
