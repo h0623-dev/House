@@ -1442,7 +1442,7 @@ export class Scene {
       roadActorLayer:'normal-world-order',groundPolicy:'outside-truck-body',
       nodes:this.groundResourcePaint,markers:this.groundMarkerPaint,trails:GROUND_RESOURCE_ZONES,regenerationSeconds:180,
       regions:GROUND_REGIONS.map(region=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===region.id);return{...region,nodeIds:nodes.map(node=>node.id),totalCount:nodes.length,readyCount:nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length};}),
-      terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'single-painting-soft-terrain-border',ready:groundArtReady(),paintedTrailIds:['grove','west-grove','north-ruins','east-creek'],capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
+      terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'single-painting-soft-terrain-border',ready:groundArtReady(),paintedTrailIds:GROUND_REGIONS.map(region=>region.id),capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
       sites:GROUND_RESOURCE_ZONES.map((zone,index)=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===zone.id),
         readyCount=nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length;
         return{id:zone.id,index,name:zone.name,bounds:zone.bounds,totalCount:nodes.length,readyCount,ready:readyCount>0};}),
@@ -1919,7 +1919,9 @@ export class Scene {
   }
 
   private groundTrails() {
-    for(const grove of GROUND_REGIONS.filter(region=>['grove','west-grove','north-ruins','east-creek'].includes(region.id))){
+    for(const grove of GROUND_REGIONS){
+    const nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===grove.id);
+    const damp=grove.id==='spring'||grove.id==='east-creek',grit=grove.id==='salvage'||grove.id==='north-ruins';
     const points: Point[] = [];
     // The authored clear corridor is navigation space. The worn earth is a
     // narrower, irregular footpath with grass at its edges, never a UI shape.
@@ -1932,29 +1934,72 @@ export class Scene {
       }
     }
     points.push([...grove.path[grove.path.length - 1]]);
-    const edge = (side: number) => points.map((point, index): Point => {
+    const edge = (side: number, spread:number) => points.map((point, index): Point => {
       const before = points[Math.max(0, index - 1)], after = points[Math.min(points.length - 1, index + 1)];
       const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx, dy) || 1;
       const taper = Math.min(1, (index + 1) / 4, (points.length - index) / 5);
-      const width = (24 + Math.sin(index * 1.37 + side) * 7 + Math.sin(index * .43) * 4) * taper;
+      const width = (15 + Math.sin(index * 1.37 + side) * 4 + Math.sin(index * .43) * 3) * taper*spread;
       return [point[0] - dy / length * width * side, point[1] + dx / length * width * side];
     });
-    const left = edge(1), right = edge(-1);
-    this.poly([...left, ...right.reverse()], '#a5966e18', '', 0);
+    // Three very quiet broken edges read as earth worn into the surrounding
+    // material, rather than a solid strip laid on top of the map.
+    for(const[spread,opacity]of [[1.8,'06'],[1.25,'08'],[.7,'0a']]as const)
+      this.poly([...edge(1,spread),...edge(-1,spread).reverse()],`${damp?'#8d9478':grit?'#b1a38a':'#aca084'}${opacity}`,'',0);
     for (let i = 2; i < points.length - 2; i++) {
       const [x,y] = points[i], drift = Math.sin(i * 2.43) * 21;
-      if (i % 2 === 0) this.ellipse(x + drift, y + Math.cos(i * 1.81) * 5, 1.4 + i % 3, .8 + i % 2, i % 4 ? '#716f5630' : '#d4c6a438');
-      if (i % 5 === 0) drawGroundSprite(this.ctx, 'underbrush', x + (i % 10 ? 39 : -41), y + 11, 25, 17, .66);
+      if (i % 2 === 0) this.groundFleck(x+drift,y+Math.cos(i*1.81)*5,i,grit?'grit':'leaf',.75);
+      if (i % 3 === 0) {
+        const before=points[i-1],after=points[i+1],dx=after[0]-before[0],dy=after[1]-before[1],length=Math.hypot(dx,dy)||1;
+        const side=i%2?1:-1,offset=26+Math.sin(i*1.13)*9;
+        this.groundFleck(x-dy/length*offset*side,y+dx/length*offset*side,i,damp?'reed':'grass',.8);
+      }
     }
-    // One modest woodland waymarker belongs to the ground, not each resource.
+    // Litter, grit and small grass strokes continue between neighbouring
+    // resources. No repeated underbrush cutout supplies another circular base.
+    // These marks are ground texture only; all resource identities and touch
+    // silhouettes remain attached to their original nodes.
+    for(let index=0;index<nodes.length;index++){
+      const node=nodes[index],next=nodes[index+1];
+      const seed=node.point[0]*.037+node.point[1]*.019;
+      const grass=node.kind==='tree'||node.kind==='seed',water=node.kind==='water';
+      for(let mark=0;mark<7;mark++){
+        const angle=seed+mark*2.39996,radius=27+(mark%3)*11;
+        const x=node.point[0]+Math.cos(angle)*radius,y=node.point[1]+Math.sin(angle)*radius*.46;
+        this.groundFleck(x,y,index*7+mark,water?'reed':grass?mark%3?'leaf':'grass':'grit',.7+mark%2*.15);
+      }
+      if(next&&Math.hypot(next.point[0]-node.point[0],next.point[1]-node.point[1])<235){
+        for(let mark=1;mark<5;mark++){
+          const t=mark/5,x=node.point[0]+(next.point[0]-node.point[0])*t+Math.sin(seed+mark*3)*12,
+            y=node.point[1]+(next.point[1]-node.point[1])*t+Math.cos(seed+mark*2)*8;
+          this.groundFleck(x,y,index*11+mark,grass?'leaf':'grit',.8);
+        }
+      }
+    }
+    // One modest waymarker belongs to each clearing, not each resource.
     const [x,y] = grove.path[0];
     this.ctx.save();this.ctx.translate(x - 53, y + 35);this.ctx.rotate(-.09);
     this.ellipse(0, 3, 14, 4, '#283d3020');
     this.line([[0,-25],[0,3]],'#7b7960',2.6);
     this.poly([[-29,-40],[28,-38],[30,-18],[-28,-20]],'#b0a385','#72735b',.85);
     this.line([[-23,-34],[23,-33]],'#d0c5a44d',.7);
-    const name=({'grove':'숲길','west-grove':'서쪽 숲','north-ruins':'북쪽 쉼터','east-creek':'동쪽 샘가'}as Record<string,string>)[grove.id];
+    const name=({'grove':'숲길','seed-meadow':'씨앗 풀밭','salvage':'고철 공터','spring':'숲 샘터','west-grove':'서쪽 숲','north-ruins':'북쪽 쉼터','east-creek':'동쪽 샘가'}as Record<string,string>)[grove.id];
     this.label(name,0,-26,8,'#495744',700);this.ctx.restore();
+    }
+  }
+
+  /** Small matte marks use the ground plane, not miniature prop sprites. */
+  private groundFleck(x:number,y:number,seed:number,kind:'grass'|'leaf'|'grit'|'reed',size:number){
+    if(kind==='grass'||kind==='reed'){
+      const color=kind==='reed'?'#687d683f':'#75805d38',height=(kind==='reed'?6:4)*size;
+      this.line([[x-3*size,y+size],[x-size,y-height*.76],[x,y]],color,.85*size);
+      this.line([[x,y],[x+2.5*size,y-height],[x+4*size,y-.4*size]],color,.85*size);
+    }else if(kind==='leaf'){
+      const drift=Math.sin(seed*1.73)*2.2*size;
+      this.poly([[x-2.8*size,y],[x+drift,y-1.5*size],[x+3.4*size,y-.2*size],[x+.7*size,y+1.4*size]],
+        seed%3?'#8a805d32':'#ab956c35','',0);
+    }else{
+      this.poly([[x-2.1*size,y],[x-.6*size,y-1.4*size],[x+2.6*size,y-.8*size],[x+2*size,y+.9*size],[x-.8*size,y+size]],'#7d7d6834','',0);
+      this.line([[x-1.2*size,y-1.1*size],[x+.9*size,y-.8*size]],'#ddd1ae36',.65*size);
     }
   }
 
@@ -2001,7 +2046,6 @@ export class Scene {
         // The rock-lined spring remains in the landscape while replenishing.
         painted=drawGroundSprite(this.ctx,'water',x,y,art.width,art.height,.45,art.variant);
       }else{
-        this.ellipse(x,y+2*s,20*s,6*s,'#7e735628');
         painted=drawGroundSprite(this.ctx,art.sprite,x,y,art.width,art.height,.55,art.variant);
       }
       if(!ready&&(active||this.resourceFocus?.nodeId===node.id))cooldownLabels.push({node,seconds:stock?.remainingSeconds??0});

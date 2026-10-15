@@ -4,6 +4,7 @@ import { GROUND_BACKGROUND_BOUNDS, GROUND_LANDSCAPE_BOUNDS, getGroundBackgroundV
   getGroundContactShadow, getGroundSpriteBounds, getGroundSpriteFrame, type GroundSprite } from './ground-visuals';
 import { GROUND_ART_PALETTE, GROUND_LANDSCAPE_EDGE_FADE, GROUND_SOIL_BASE, GROUND_SOIL_TEXTURE_SIZE,
   GROUND_SOIL_TEXTURE_WORLD_SCALE, createGroundSoilPixels, harmonizeGroundPixels, type GroundPalette } from './ground-palette';
+import { paintGatheringGround } from './ground-material';
 
 export const groundArtUrls = { landscape: landscapeUrl, props: propsUrl } as const;
 let landscapeImage: HTMLImageElement | undefined;
@@ -11,6 +12,59 @@ let propsImage: HTMLImageElement | undefined;
 const displayPaintings = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let soilTexture: HTMLCanvasElement | undefined;
 const soilPatterns = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
+const resourcePaintings = new WeakMap<HTMLImageElement, Map<string, HTMLCanvasElement>>();
+
+const smooth = (from: number, to: number, value: number) => {
+  const t = Math.max(0, Math.min(1, (value - from) / (to - from)));
+  return t * t * (3 - 2 * t);
+};
+
+/** Resolve the illustration at the world's brush scale, once per silhouette.
+ * The old full-resolution atlas had miniature sharp leaves and a flower-bed
+ * rim on every tree, while the terrain uses broad, matte painted marks. */
+function resourcePainting(image: HTMLImageElement, sprite: GroundSprite, variant: number): CanvasImageSource {
+  let paintings = resourcePaintings.get(image);
+  if (!paintings) { paintings = new Map(); resourcePaintings.set(image, paintings); }
+  const key = `${sprite}:${variant}`, cached = paintings.get(key);
+  if (cached) return cached;
+  const frame = getGroundSpriteFrame(sprite, variant),
+    brushWidth = sprite === 'tree' ? 132 : sprite === 'stump' ? 58 : sprite === 'underbrush' ? 48 : 100,
+    canvas = document.createElement('canvas');
+  canvas.width = brushWidth; canvas.height = Math.round(brushWidth * frame.height / frame.width);
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return image;
+  context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
+  context.save(); context.beginPath();
+  frame.contour.forEach(([x, y], index) => {
+    const px = (x - frame.x) * canvas.width / frame.width, py = (y - frame.y) * canvas.height / frame.height;
+    if (index) context.lineTo(px, py); else context.moveTo(px, py);
+  });
+  context.closePath(); context.clip();
+  context.drawImage(image, frame.x, frame.y, frame.width, frame.height, 0, 0, canvas.width, canvas.height);
+  context.restore();
+  const painting = context.getImageData(0, 0, canvas.width, canvas.height);
+  harmonizeGroundPixels(painting.data, GROUND_ART_PALETTE.props);
+  const ax = (frame.anchor[0] - frame.x) * canvas.width / frame.width,
+    ay = (frame.anchor[1] - frame.y) * canvas.height / frame.height;
+  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+    const offset = (y * canvas.width + x) * 4, alpha = painting.data[offset + 3];
+    // Remove the faint coloured matte beyond actual leaves and stones.
+    let opacity = smooth(16, 235, alpha);
+    if (sprite === 'tree') {
+      const base = smooth(ay - canvas.height * .13, ay + canvas.height * .055, y),
+        outsideTrunk = smooth(canvas.width * .065, canvas.width * .22, Math.abs(x - ax));
+      opacity *= 1 - base * outsideTrunk * .96;
+      opacity *= 1 - smooth(ay + canvas.height * .015, canvas.height, y);
+    } else {
+      // Banks and grassy edges merge into the terrain while the resource's
+      // recognisable body, pool and cut wood remain fully legible.
+      opacity *= 1 - smooth(ay + canvas.height * .015, canvas.height, y) * .92;
+    }
+    painting.data[offset + 3] = Math.round(opacity * 255);
+  }
+  context.putImageData(painting, 0, 0); paintings.set(key, canvas);
+  return canvas;
+}
 
 function softenPaintingEdges(context: CanvasRenderingContext2D, width: number, height: number): void {
   const edge = GROUND_LANDSCAPE_EDGE_FADE;
@@ -59,7 +113,10 @@ function displayPainting(image: HTMLImageElement, palette: GroundPalette, softEd
   const painting = context.getImageData(0, 0, canvas.width, canvas.height);
   harmonizeGroundPixels(painting.data, palette);
   context.putImageData(painting, 0, 0);
-  if (softEdges) softenPaintingEdges(context, canvas.width, canvas.height);
+  if (softEdges) {
+    paintGatheringGround(context, canvas.width, canvas.height);
+    softenPaintingEdges(context, canvas.width, canvas.height);
+  }
   displayPaintings.set(image, canvas);
   return canvas;
 }
@@ -116,7 +173,7 @@ export function drawGroundSprite(c: CanvasRenderingContext2D, sprite: GroundSpri
   const image = groundImages.props;
   if (!ready(image)) return false;
   const frame = getGroundSpriteFrame(sprite, variant), [left, top] = getGroundSpriteBounds(sprite, x, y, width, height, variant),
-    painting = displayPainting(image, GROUND_ART_PALETTE.props), shadow = getGroundContactShadow(sprite, width, height);
+    painting = resourcePainting(image, sprite, variant), shadow = getGroundContactShadow(sprite, width, height);
   c.save();
   c.globalAlpha *= Math.max(0, Math.min(1, alpha));
   c.imageSmoothingEnabled = true;
@@ -137,7 +194,8 @@ export function drawGroundSprite(c: CanvasRenderingContext2D, sprite: GroundSpri
   });
   c.closePath();
   c.clip();
-  c.drawImage(painting, frame.x, frame.y, frame.width, frame.height, left, top, width, height);
+  if (painting === image) c.drawImage(image, frame.x, frame.y, frame.width, frame.height, left, top, width, height);
+  else c.drawImage(painting, left, top, width, height);
   c.restore();
   return true;
 }
