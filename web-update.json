@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "buildId": "51f27afa7b1bf27f3a08f0e3b9a68a245432bc3ac604f9cfdb8414e06844a279",
+  "buildId": "f2dbe4501581d4dd82af217245c190933f034e043fc4518baa7fd2466cc4bfb3",
   "version": "0.40.0",
   "contentVersion": 40,
   "base": "/House/",
@@ -66,9 +66,9 @@
       "sha256": "5d12d1dbea4e34d5b3deb25ae5723be361c121fa487a6f88c50fa66d9d9b405e"
     },
     {
-      "path": "assets/index-C0QpudJO.js",
-      "bytes": 559194,
-      "sha256": "7aea399a8fb4fd3754b3b2eaa34c6a5d33080da2022358966bcca98af791b810"
+      "path": "assets/index-B8A9n0Wc.js",
+      "bytes": 559392,
+      "sha256": "acecd3e07601f1181cea197a1d459c7bc8f55f36f81a7d16b26b8697f4382f7f"
     },
     {
       "path": "assets/index-DP4DXxPm.css",
@@ -148,7 +148,7 @@
     {
       "path": "index.html",
       "bytes": 1280,
-      "sha256": "8e0419b27871afd2494f365310dd4902ee624fde1835c05dda747b7f0049e997"
+      "sha256": "c35bd33a724554afaa1a633f59083f02f516a00d699a276432c84085bbb40b53"
     },
     {
       "path": "manifest.webmanifest",
