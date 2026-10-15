@@ -8,9 +8,9 @@
 
 가로 화면에 맞춰 캐릭터·기력·자원을 상단 한 줄, 여섯 메뉴를 하단 한 줄로 배치합니다. 큰 생산·납품 카드는 ‘마을 운영’ 버튼에서 열고, 농사·시설·건설 도구는 오른쪽 패널에서 사용합니다. 세로로 연 휴대폰에는 회전 안내를 표시하며, 지원 브라우저에서는 버튼 터치로 전체 화면과 가로 방향 잠금을 요청합니다. 방향 잠금이 없는 브라우저는 휴대폰을 직접 돌려 사용합니다. 회전 안내 중 이동·작업·전투는 잠시 멈추며 기력의 실제 시간 회복은 유지합니다. 기존 저장과 기본 전체 지도 시점은 이어집니다.
 
-Android의 새 앱 설정은 `sensorLandscape`입니다. 기존 세로 고정 APK의 방향 설정은 콘텐츠 패치로 바꿀 수 없어 앱 자체 업데이트가 한 번 필요합니다. 원래 APK·콘텐츠 서명키가 현재 작업 환경에서 복원되지 않아 v0.42 웹만 배포하며, 공개 APK와 앱용 패치 메타데이터는 서명이 완료된 v0.41 그대로 유지합니다. v0.42 네이티브 파일은 서명 전 산출물로 준비하고, 기존 키를 복원하기 전에는 설치용 APK나 자동 패치로 발행하지 않습니다. `native-release.json`은 앱 기능 최소 버전(42), `content-release.json`은 콘텐츠 호환 범위(8~42)를 따로 관리합니다.
+Android의 새 앱 설정은 `sensorLandscape`입니다. 기존 세로 고정 APK의 방향 설정은 콘텐츠 패치로 바꿀 수 없어 앱 자체 업데이트가 한 번 필요합니다. 기존 앱의 원래 APK·콘텐츠 서명키가 현재 환경에 없어, 해당 앱의 공개 APK·패치 메타데이터는 서명이 완료된 v0.41을 유지합니다. 기존 앱용 v0.42 파일은 서명 전 산출물이며, 별도 가로 앱의 서명을 대신 사용하지 않습니다. 기존 채널의 `native-release.json`은 앱 기능 최소 버전(42), `content-release.json`은 콘텐츠 호환 범위(8~42)를 따로 관리합니다.
 
-기존 앱·마을을 보존하는 별도 설치 가로 APK는 사용자 승인에 따라 **로드헤이븐 가로**(`com.roadhaven.landscape`)로 따로 제작합니다. 독립 서명키와 `landscape-releases` 브랜치를 사용하며, 새 마을로 시작합니다. 기존 앱의 배포와 저장은 유지합니다. [별도 가로 앱 제작·키 복원·자동 패치](docs/LANDSCAPE-ANDROID.md)에 절차를 기록했습니다.
+기존 앱·마을을 보존하는 별도 설치 가로 APK는 사용자 승인에 따라 **로드헤이븐 가로**(`com.roadhaven.landscape`)로 따로 제공합니다. [가로 APK 다운로드](https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.42.0.apk). 독립 서명키와 `landscape-releases` 브랜치를 사용하며, 새 마을로 시작합니다. 기존 앱의 배포와 저장은 유지합니다. [별도 가로 앱 제작·키 복원·자동 패치](docs/LANDSCAPE-ANDROID.md)에 절차를 기록했습니다.
 
 동물은 강아지·고양이·토끼·여우·멧돼지·부엉이와 새 원숭이·코끼리·기린·판다·사슴까지 총 11종이며, 처음부터 종류별 한 마리씩 함께합니다. 마을에서 보이는 동물은 전투 편성과 따로 관리하여 편성에서 빼도 사라지지 않습니다. 기존 저장의 동료 체력·경험치·구매 기록·전투 편성은 이어가고 새 종만 기본 상태로 합류합니다.
 
@@ -124,7 +124,7 @@ Android의 새 앱 설정은 `sensorLandscape`입니다. 기존 세로 고정 AP
 
 ## iPhone에서 플레이
 
-[게임 열기](https://h0623-dev.github.io/House/play-v0.41.0.html)를 iPhone의 Safari에서 엽니다. **공유 → 홈 화면에 추가** 후 생긴 로드헤이븐 아이콘으로 실행하세요. 설정의 ‘홈 화면에 추가하는 방법’에서도 안내를 볼 수 있습니다.
+[게임 열기](https://h0623-dev.github.io/House/play-v0.42.0.html)를 iPhone의 Safari에서 엽니다. **공유 → 홈 화면에 추가** 후 생긴 로드헤이븐 아이콘으로 실행하세요. 설정의 ‘홈 화면에 추가하는 방법’에서도 안내를 볼 수 있습니다.
 
 온라인으로 실행하거나 게임으로 돌아오면 새 패치를 자동 확인합니다. 필요한 파일을 모두 준비하고 진행 상황을 저장한 뒤 적용하므로, 일반적인 게임 업데이트마다 다시 설치할 필요가 없습니다. 농사·전투 중에는 활동을 마치고 트럭 홈으로 돌아온 뒤 적용합니다. 다운로드에 실패하면 기존 버전으로 계속 플레이하며 다시 연결되면 재시도합니다.
 
@@ -132,13 +132,15 @@ Android의 새 앱 설정은 `sensorLandscape`입니다. 기존 세로 고정 AP
 
 ## Android에서 플레이
 
-새 설치 및 구형 앱 전환용 APK: `artifacts/road-haven-0.41.0-debug.apk` (Android 버전 코드 41). [APK 다운로드](https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.41.0-debug.apk).
+가로 신규 설치용 앱은 **로드헤이븐 가로**(`com.roadhaven.landscape`, Android 버전 코드 42)입니다. 기존 앱을 삭제하지 않고 따로 설치하며 새 마을로 시작합니다. 제작 파일은 `artifacts/road-haven-landscape-0.42.0.apk`입니다. [가로 APK 다운로드](https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.42.0.apk) · [별도 앱 배포·복원 안내](docs/LANDSCAPE-ANDROID.md).
 
-**v0.8 이상 앱은 이번 게임 업데이트를 받을 때 APK를 다시 설치할 필요가 없습니다.** 게임 실행 시 호환 콘텐츠를 자동으로 확인·적용합니다. v0.7 이전 앱에는 자동 콘텐츠 엔진이 없으므로 새 APK를 최초 한 번 설치해야 합니다. 같은 앱 ID·서명을 사용하므로 기존 앱을 삭제하지 않고 업데이트하면 마을을 유지합니다.
+이전 세로 앱의 기록을 유지하는 기존 배포 APK는 `artifacts/road-haven-0.41.0-debug.apk` (Android 버전 코드 41)입니다. [기존 앱 v0.41 다운로드](https://raw.githubusercontent.com/h0623-dev/House/gh-pages/downloads/road-haven-0.41.0-debug.apk).
+
+**호환되는 게임 콘텐츠는 APK를 다시 설치하지 않고 자동으로 확인·적용합니다.** 가로 앱은 독립 `landscape-releases` 채널을 사용합니다. 이전 세로 앱은 기존 `gh-pages` 채널을 유지하며 현재 v0.41까지만 제공합니다. v0.7 이전 앱에는 자동 콘텐츠 엔진이 없습니다. 앱 ID와 서명이 같은 APK 업데이트는 기존 마을을 유지하지만, 별도 가로 앱에는 이전 마을을 자동으로 옮기지 않습니다.
 
 Android 6.0 이상과 최신 Android System WebView가 필요합니다. APK를 휴대폰에 옮겨 파일 앱에서 열고 설치를 승인합니다. 사용자가 해당 파일 앱/브라우저의 ‘알 수 없는 앱 설치’를 허용해야 할 수 있습니다. 테스트 버전은 개발용 서명이며 공개 스토어에 게시하지 않았습니다.
 
-같은 서명 키로 설치하는 후속 APK는 게임 데이터를 유지합니다. 앱 삭제나 앱 데이터 초기화는 로컬 저장을 지웁니다. 현재 클라우드의 테스트 서명 키는 저장소 밖 `/workspace/.road-haven-signing/debug.keystore`에 보관됩니다. 정식 릴리스 서명으로 전환할 때는 테스트 APK와 서명이 다를 수 있습니다.
+같은 서명 키로 설치하는 후속 APK는 게임 데이터를 유지합니다. 앱 삭제나 앱 데이터 초기화는 로컬 저장을 지웁니다. 가로 앱의 독립 서명키는 저장소 밖 `/workspace/.road-haven-landscape-signing/`에 보관하며 비공개 복원용 백업을 따로 준비합니다. 키가 없는 새 환경에서는 같은 키를 복원해야 하며 자동으로 새 키를 만들지 않습니다.
 
 ## 개발 실행
 
@@ -173,13 +175,13 @@ npm run android:debug
 
 ## APK 업데이트
 
-`main` 푸시마다 GitHub Actions가 테스트와 APK 빌드를 실행하고 결과를 artifact로 제공합니다. 소스는 `h0623-dev/House`의 `main`, 웹 배포 파일은 `gh-pages`에 게시합니다. Pages 활성화와 공개 접속 확인은 별도입니다.
+기존 GitHub Actions는 `main` 푸시에서 APK 제작을 시도하며 원래 서명키가 필요합니다. 테스트는 사용자가 요청한 수동 실행에서만 선택합니다. 별도 가로 앱은 독립 제작 스크립트와 서명키를 사용합니다. 소스는 `main`, 웹은 `gh-pages`, 별도 가로 앱은 `landscape-releases`에 게시합니다. 공개 파일 반영은 push와 별도로 확인합니다.
 
 0.8.0 이상 APK를 한 번 설치하면 이후 **호환되는 게임 코드·그래픽은 APK 설치 없이 자동 적용**됩니다. 앱 시작·복귀 시 `gh-pages/game-update.json`의 서명된 콘텐츠 정보를 확인하고 앱 전용 공간에 내려받습니다. 서명·파일 해시·네이티브 호환 버전을 검증한 뒤 게임 시작 화면에서 저장 후 자동 적용합니다. 시작 확인이 느리면 현재 버전으로 플레이할 수 있으며, 플레이 중 도착한 콘텐츠는 현재 활동을 마치고 안전한 홈에서 적용합니다. 같은 로컬 주소에서 실행하므로 저장 데이터를 유지하며, 새 콘텐츠 시작을 확인하지 못하면 다음 앱 시작에 이전 콘텐츠로 복구합니다.
 
 Android 엔진이나 네이티브 기능 변경은 APK 업데이트가 필요합니다. 앱이 새 APK를 내부에서 자동 다운로드하고 파일 해시·앱 ID·서명·버전을 검증한 뒤 ‘설치하기’를 제공합니다. **Android의 마지막 설치 확인은 사용자가 진행합니다.** Android 8 이상에서 필요한 이 앱의 설치 허용도 앱 내 안내에서 설정할 수 있습니다. 외부 브라우저에서 APK 링크를 찾는 과정은 없습니다.
 
-0.3.0부터 네이티브 버전 확인 주소는 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json`입니다. 0.8 이전 앱에는 콘텐츠 업데이트 엔진이 없으므로 현재 0.41 APK를 한 번 설치해야 합니다. [콘텐츠 배포 안내](docs/CONTENT-UPDATES.md)와 [Android 배포 안내](docs/ANDROID.md)에 검증·배포 절차를 기록했습니다.
+기존 앱의 네이티브 버전 주소는 `https://raw.githubusercontent.com/h0623-dev/House/gh-pages/update.json`입니다. 가로 앱은 `https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/update.json`과 같은 브랜치의 `game-update.json`을 사용합니다. [별도 가로 앱 안내](docs/LANDSCAPE-ANDROID.md), [기존 콘텐츠 배포 안내](docs/CONTENT-UPDATES.md), [Android 배포 안내](docs/ANDROID.md)에 절차를 기록했습니다.
 
 - `VITE_UPDATE_MANIFEST_URL`: 공개 HTTPS 버전 파일 주소
 - `release-version.json`: 기본 Android 버전 코드
