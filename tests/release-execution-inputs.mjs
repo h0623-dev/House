@@ -19,7 +19,8 @@ export async function captureExecutionInputs(testUrl, { snapshotId, finalSnapsho
  if (finalSnapshot) {
   if (!/^v\d{3}-r[1-9]\d*$/.test(snapshotId)) throw Error('A final test requires an immutable snapshot ID');
   const manifestPath = `artifacts/qa-snapshot-${snapshotId}.json`;
-  const sourceCapturePath = `artifacts/native-${snapshotId.split('-')[0]}-build-source-snapshot.json`;
+  const sourceCaptureId = snapshotId.endsWith('-r1') ? snapshotId.split('-')[0] : snapshotId;
+  const sourceCapturePath = `artifacts/native-${sourceCaptureId}-build-source-snapshot.json`;
   const manifest = JSON.parse(await readFile(resolve(root, manifestPath), 'utf8'));
   if (manifest.snapshotId !== snapshotId) throw Error('Snapshot identity differs from this execution');
   Object.assign(result, { snapshotManifestPath: manifestPath, snapshotManifestSha256: await hash(manifestPath),

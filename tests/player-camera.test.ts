@@ -8,6 +8,7 @@ import { createNavigationWorld, defaultHeroLocation, getRoadBounds, planNavigati
 import { getFloorBounds, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from '../src/truck-layout.ts';
 import { getPetPassageGeometry } from '../src/pet-passage.ts';
 import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from '../src/ground-resources.ts';
+import { GROUND_REGIONS, getGroundRegion, type GroundRegionId } from '../src/ground-regions.ts';
 
 const usableViewports = [[344, 390], [360, 440], [390, 470], [844, 112]] as const;
 function expanded(level: number) {
@@ -38,6 +39,7 @@ test('the default first-floor view fits the complete truck, playable road, outdo
     for (const node of GROUND_RESOURCE_NODES) points.push(node.point, ...node.approaches,
       [node.point[0], node.point[1] - (node.kind === 'tree' ? 146 * node.scale : 66 * node.scale)]);
     for (const zone of GROUND_RESOURCE_ZONES) points.push([zone.bounds.left,zone.bounds.top],[zone.bounds.right,zone.bounds.bottom]);
+    for (const region of GROUND_REGIONS) points.push([region.bounds.left,region.bounds.top],[region.bounds.right,region.bounds.bottom]);
     const cabin = projectTruckPoint([deck.end + 95, (deck.back + deck.front) / 2], 1, -107);
     points.push([cabin[0] - 126, cabin[1] - 147], [cabin[0] + 134, cabin[1] + 61]);
     for (const [width, height] of usableViewports) {
@@ -54,7 +56,9 @@ test('upper-floor overview excludes the ground and other storeys while keeping t
   assert.equal(third.left, second.left); assert.equal(third.right, second.right);
   assert.ok(Math.abs(third.top - second.top + FLOOR_HEIGHT) < 1e-9);
   assert.ok(Math.abs(third.bottom - second.bottom + FLOOR_HEIGHT) < 1e-9);
-  assert.ok(third.bottom < getRoadBounds(state.deckLevel).top, 'the third-floor fit never includes the distant road');
+  assert.ok(third.bottom < getGroundRegion('grove')!.bounds.top, 'the third-floor fit never includes the distant southern road');
+  assert.ok(third.bottom-third.top < getHomeOverviewBounds(state,1).bottom-getHomeOverviewBounds(state,1).top,
+    'adding distant northern ground cannot enlarge the upper-floor camera to cover the whole world');
   for (const floor of [2, 3] as const) {
     const bounds = getHomeOverviewBounds(state, floor), deck = getFloorBounds(state.deckLevel, floor);
     for (const [width, height] of usableViewports) {
@@ -94,7 +98,7 @@ type CameraScene = {
 test('actual Scene retains deliberate zoom and pan through road commands and gate work, and only an explicit overview resets it', async () => {
   const globals: Record<string, unknown> = {
     window: { matchMedia: () => ({ matches: false }), addEventListener() {}, devicePixelRatio: 1 },
-    document: { hidden: false, addEventListener() {}, querySelector: () => null },
+    document: { hidden: false, addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] },
     Image: class { complete = false; naturalWidth = 0; }, ResizeObserver: class { observe() {} },
     requestAnimationFrame: () => 1, cancelAnimationFrame: () => {},
     getComputedStyle: () => ({ getPropertyValue: (name: string) => name === '--world-safe-top' ? '40' : name === '--world-safe-bottom' ? '70' : '0' }),
@@ -153,14 +157,17 @@ test('actual landscape resource focus keeps tree and prop hits readable inside a
     screenBounds: number[]; spriteBounds: number[]; hitBounds: number[] };
   type ResourceScene = CameraScene & {
     dx: number; dy: number; hits: unknown[]; groundResourcePaint: GroundPaint[];
-    resourceFocus: { siteId: string; nodeId?: GroundResourceId } | null;
+    resourceFocus: { siteId: string; nodeId?: GroundResourceId; regionId?:GroundRegionId } | null;
+    groundMarkerPaint: {nodeId:GroundResourceId;nodeIds:GroundResourceId[]}[];
     focusResourceArea(id: 'grove'): void; focusGroundResource(id: GroundResourceId): void;
+    focusGroundRegion(id:GroundRegionId):void;
     playGroundResourceAction(id: GroundResourceId): Promise<void>; groundResources(): void;
+    groundMarkers():void;
     pointerHits(x: number, y: number): { candidates: { kind: string; nodeId?: GroundResourceId }[] };
   };
   const globals: Record<string, unknown> = {
     window: { matchMedia: () => ({ matches: false }), addEventListener() {}, devicePixelRatio: 1 },
-    document: { hidden: false, addEventListener() {}, querySelector: () => null },
+    document: { hidden: false, addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] },
     Image: class { complete = false; naturalWidth = 0; }, ResizeObserver: class { observe() {} },
     requestAnimationFrame: () => 1, cancelAnimationFrame: () => {},
     getComputedStyle: () => ({ getPropertyValue: (name: string) => name === '--world-safe-top' ? '150' : name === '--world-safe-bottom' ? '152' : '0' }),
@@ -184,8 +191,8 @@ test('actual landscape resource focus keeps tree and prop hits readable inside a
     const scene = new Scene(canvas as unknown as HTMLCanvasElement, () => {}) as unknown as ResourceScene;
     scene.setState(createGame());
     function paintGround() {
-      scene.updateCamera(); scene.hits = []; scene.groundResourcePaint = [];
-      scene.groundResources(); scene.publishGeometry();
+      scene.updateCamera(); scene.hits = []; scene.groundResourcePaint = [];scene.groundMarkerPaint=[];
+      scene.groundResources();scene.groundMarkers(); scene.publishGeometry();
     }
     function safeHit(id: GroundResourceId, minWidth: number, completeProp = false) {
       const row = scene.groundResourcePaint.find(row => row.id === id)!;
@@ -248,6 +255,38 @@ test('actual landscape resource focus keeps tree and prop hits readable inside a
     assert.equal(scene.mapZoom, 1); assert.equal(scene.manualViewport, null);
     assert.deepEqual(scene.heroLocation, feet, 'resource framing never moves the retained actor feet');
     assert.deepEqual(scene.state, before, 'camera and hit rendering never alter resource inventory or saved progress');
+    for(const regionId of ['west-grove','north-ruins','east-creek'] as const){
+      const region=getGroundRegion(regionId)!,nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===regionId),first=nodes[0];
+      scene.focusGroundRegion(regionId);paintGround();
+      assert.deepEqual(scene.resourceFocus,{siteId:first.siteId,regionId},
+        'an explicit regional camera uses its physical place rather than the shared resource family');
+      assert.equal(scene.cameraMode,'focus');assert.ok(scene.scale>=.38-1e-9);
+      assert.equal(scene.camera.x,(region.bounds.left+region.bounds.right)/2);
+      assert.ok(Math.abs(scene.camera.y-(region.bounds.top+88/.38/2+16/.38))<1e-9,
+        `${regionId}'s short landscape camera starts at its own entrance with a readable scale`);
+      const readable=safeHit(first.id,40);
+      assert.ok(readable.screenBounds[2]>0&&readable.screenBounds[0]<844,
+        'the selected region starts on an actual local resource, rather than the former southern site');
+      assert.ok(scene.groundMarkerPaint.length>0&&scene.groundMarkerPaint.length<=4);
+      for(const marker of scene.groundMarkerPaint)assert.ok(marker.nodeIds.every(id=>getGroundResourceNode(id)!.regionId===regionId),
+        'live Scene controls exclude same-family resources from another physical region');
+      assert.deepEqual(scene.heroLocation,feet);assert.deepEqual(scene.state,before);
+      const focus=structuredClone(scene.camera),focusScale=scene.scale;
+      scene.walkOntoRoad();scene.updateCamera();scene.stopWalking();
+      assert.deepEqual(scene.camera,focus);assert.equal(scene.scale,focusScale,
+        'walking cannot replace an explicitly selected region with a whole-map fit');
+      scene.setMapZoom(1.25);scene.updateCamera();scene.mapPan=[24,-35];scene.camera.x+=24;scene.camera.y-=35;
+      const panned=structuredClone(scene.camera),pannedScale=scene.scale;
+      scene.walkOntoRoad();scene.updateCamera();scene.stopWalking();
+      assert.equal(scene.cameraMode,'manual');assert.deepEqual(scene.camera,panned);assert.equal(scene.scale,pannedScale);
+      assert.deepEqual(scene.mapPan,[24,-35],'regional walking preserves deliberate exploration of later resources');
+      scene.showVillageOverview();scene.updateCamera();scene.publishGeometry();
+      assert.equal(scene.resourceFocus,null);assert.equal(scene.cameraMode,'overview');
+      assert.deepEqual(scene.camera,overview);assert.equal(scene.scale,overviewScale);
+      assert.equal(scene.mapZoom,1);assert.equal(scene.manualViewport,null);assert.deepEqual(scene.mapPan,[0,0]);
+      assert.deepEqual(scene.heroLocation,feet,'neither selecting a distant place nor resetting it teleports the resident');
+      assert.deepEqual(scene.state,before,'all regional camera and marker operations leave every economic field unchanged');
+    }
   } finally {
     hook.deregister(); restorePainting?.();
     for (const [key, descriptor] of Object.entries(descriptors)) {

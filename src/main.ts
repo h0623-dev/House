@@ -42,8 +42,9 @@ import './shop.css';
 import { getFarmOrder, getFarmPlotCare, fulfillFarmOrder } from './farm-economy';
 import { renderFarmDelivery, renderFarmCropLedger, renderFarmDeliveryPreview, updateFarmDeliveryPreview } from './farm-economy-ui';
 import { OUTDOOR_SITES, getOutdoorSite, type OutdoorSiteId } from './outdoor-sites';
-import { getGatheringArea, getGatheringNode, performGatheringAction, migrateLegacyGatheringFields } from './gathering';
+import { getGatheringArea, getGatheringRegion, getGatheringNode, performGatheringAction, migrateLegacyGatheringFields } from './gathering';
 import { GROUND_RESOURCE_NODES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from './ground-resources';
+import { GROUND_REGIONS, getGroundRegion, type GroundRegionId } from './ground-regions';
 import { getPetPassage, setPetPassageOpen } from './pet-passage';
 import { recoverEnergy, secondsUntilEnergyRecovery } from './energy-recovery';
 import './farm-economy.css';
@@ -94,6 +95,7 @@ let renderedShopKey='';
 let renderedFarmDeliveryKey='';
 let renderedRoadsideKey='';
 let activeRoadsideSite:OutdoorSiteId|null=null;
+let activeGroundRegion:GroundRegionId|null=null;
 let lastUpdate:UpdateResult|undefined;
 let updateBusy=false;
 let automaticUpdate:AutomaticUpdateState={status:'idle',progress:0,message:'앱 기능의 새 버전을 자동으로 확인해요.'};
@@ -613,7 +615,7 @@ function render(){
  if(currentModal==='seeds')renderSeedInventory();
  if(currentModal==='shop'||currentModal==='shop-confirm')renderLiveShop();
  if(currentModal==='farm-delivery')renderLiveFarmDelivery();
- if(currentModal==='roadside'||currentModal==='outdoor-site')renderLiveRoadside();
+ if(currentModal==='roadside'||currentModal==='outdoor-site'||currentModal==='ground-region')renderLiveRoadside();
  if(currentModal==='pet-passage')updatePetPassageControls();
  updateEnergyPanel();
  renderSettlement();renderVillageOrder();refreshUpdateUI();
@@ -899,16 +901,31 @@ function groundNodeButton(id:GroundResourceId){
  const view=getGatheringNode(state,id)!;
  return `<button class="ground-node-choice" data-ground-node="${id}" aria-label="${escape(view.node.name)}에 직접 가서 ${view.node.kind==='tree'?'벌목':'채집'}하기">${view.cropId?cropIcon(view.cropId,'seed'):icon(view.node.resource)}<strong>${escape(view.node.name)}</strong><small data-ground-status="${id}">${view.ready?'채집 가능':`${view.remainingSeconds}초 뒤 재생`}</small></button>`;
 }
+function regionStatus(id:GroundRegionId){
+ const area=getGatheringRegion(state,id)!;
+ return `${area.readyCount} / ${area.totalCount}곳 채집 가능${area.readyCount?'':` · ${area.remainingSeconds}초 뒤 재생`}`;
+}
+function regionCard(id:GroundRegionId){
+ const region=getGroundRegion(id)!,area=getGatheringRegion(state,id)!;
+ const resources=(['wood','scrap','seeds','water']as const).filter(resource=>area.views.some(view=>view.node.resource===resource));
+ return `<article class="ground-region-card" data-ground-region-card="${id}"><div class="ground-region-heading"><strong>${escape(region.name)}</strong><small data-region-status="${id}">${regionStatus(id)}</small></div><p>${escape(region.description)}</p><div class="ground-region-resources">${resources.map(resource=>`<span>${icon(resource)}${resource==='wood'?'나무':resource==='scrap'?'고철':resource==='seeds'?'씨앗':'샘물'} <b>${area.views.filter(view=>view.node.resource===resource).length}</b></span>`).join('')}</div><div class="ground-region-actions"><button class="button" data-region-focus="${id}">${icon('map')} 둘러보기</button><button class="button button-light" data-ground-region="${id}">${icon('bag')} 채집물 목록</button></div></article>`;
+}
 function renderLiveRoadside(){
- const key=JSON.stringify([currentModal,activeRoadsideSite,state.gathering,state.resources]);
+ const key=JSON.stringify([currentModal,activeRoadsideSite,activeGroundRegion,state.gathering,state.resources]);
  if(key!==renderedRoadsideKey){
   const scroll=document.querySelector<HTMLElement>('#modal-root .modal')?.scrollTop??0;
   renderedRoadsideKey=key;
-  if(currentModal==='outdoor-site'&&activeRoadsideSite){
+  if(currentModal==='ground-region'&&activeGroundRegion){
+   const region=getGroundRegion(activeGroundRegion)!,area=getGatheringRegion(state,region.id)!;
+   modalShell('A LITTLE PLACE TO EXPLORE',region.name,`<p class="modal-description">${escape(region.description)}<br>원하는 채집물을 고르면 직접 걸어가 작업해요.</p><button class="button full-width" data-region-focus="${region.id}">${icon('map')} 이 장소 둘러보기</button><div class="ground-node-grid">${area.views.map(view=>groundNodeButton(view.node.id)).join('')}</div><button class="text-button full-width" data-open="roadside">다른 채집 장소 보기</button>`,true);
+  }else if(currentModal==='outdoor-site'&&activeRoadsideSite){
    const area=groundArea(activeRoadsideSite),zone=getGroundResourceZone(activeRoadsideSite)!;
    modalShell('FOLLOW THE FOREST TRAIL',zone.name,`${outdoorCard(zone.id)}<p class="modal-description">${zone.id==='grove'?'숲속길을 따라 나무를 하나씩 골라 베어요.':'지상의 채집물을 하나씩 골라 모아요.'}<br>작업을 마친 곳마다 실제 180초 후 다시 생성돼요.</p><button class="button full-width" data-outdoor-walk="${zone.id}">${icon('map')} ${zone.name} 크게 보기</button><div class="ground-node-grid">${area.views.map(view=>groundNodeButton(view.node.id)).join('')}</div><button class="button button-light full-width activity-secondary" data-outdoor-collect="${zone.id}">${icon(area.next.node.resource)}<span data-outdoor-cta="${zone.id}">준비된 곳에서 채집하기</span></button><button class="text-button full-width" data-open="roadside">다른 채집 구역 보기</button>`,true);
-  }else modalShell('LIFE BEYOND THE TRUCK','지상 채집 지도',`<p class="modal-description">트럭에서 내려와 숲길과 여러 채집 구역을 탐색해요.<br>구역을 크게 보고 원하는 채집물을 직접 눌러 주세요.</p><div class="outdoor-cards">${OUTDOOR_SITES.map(site=>outdoorCard(site.id)).join('')}</div><div class="outdoor-modal-actions"><button class="button" data-road-walk>${icon('move')} 도로 걷기</button><button class="button button-light" data-road-return>${icon('truck')} 트럭으로</button></div><p class="fine-print">모든 채집물은 개별 재생 · 실제 180초<br>다시 실행하거나 게임 시간을 멈춰도 재생 시간은 이어져요.</p>`,true);
+  }else modalShell('LIFE BEYOND THE TRUCK','지상 채집 지도',`<p class="modal-description">트럭 주변 일곱 장소를 둘러보세요.<br>서쪽 숲·북쪽 쉼터·동쪽 개울에서도 여러 자원을 모을 수 있어요.</p><div class="ground-region-cards">${(['north-ruins','west-grove','east-creek','grove','seed-meadow','salvage','spring']as const).map(id=>regionCard(id)).join('')}</div><div class="outdoor-modal-actions"><button class="button" data-road-walk>${icon('move')} 도로 걷기</button><button class="button button-light" data-road-return>${icon('truck')} 트럭으로</button></div><p class="fine-print">채집물 그림이나 작은 표식을 누르면 바로 작업해요.<br>모든 채집물은 각자 실제 180초 뒤 다시 준비돼요.</p>`,true);
   document.querySelector<HTMLElement>('#modal-root .modal')!.scrollTop=scroll;
+ }
+ for(const region of GROUND_REGIONS){
+  document.querySelectorAll<HTMLElement>(`[data-region-status="${region.id}"]`).forEach(status=>status.textContent=regionStatus(region.id));
  }
  for(const site of OUTDOOR_SITES){
   const area=groundArea(site.id),status=document.querySelector<HTMLElement>(`[data-outdoor-status="${site.id}"]`);
@@ -922,6 +939,7 @@ function renderLiveRoadside(){
  }
 }
 function openRoadsideSite(id:OutdoorSiteId){activeRoadsideSite=id;openModal('outdoor-site');}
+function openGroundRegion(id:GroundRegionId){activeGroundRegion=id;openModal('ground-region');}
 function petPassageContent(){
  const open=getPetPassage(state).open;
  return `<div class="pet-passage-summary">${icon('paw')}<div><strong>친구들만 다니는 경사로</strong><span data-pet-passage-status>${open?'문이 열려 있어요':'문이 닫혀 있어요'}</span></div></div><p class="modal-description">강아지와 고양이는 전용 경사로로 트럭과 지상을 오가요.<br>주인공이 문까지 걸어가 직접 열고 닫아요.</p><button class="button full-width" data-pet-passage-toggle="${open?'close':'open'}">${icon('paw')} ${open?'문 닫으러 가기':'문 열러 가기'}</button><p class="fine-print">재료와 기력을 사용하지 않아요.<br>문을 닫으면 친구들은 지금 있는 층이나 지상에서 산책해요. 이미 경사로를 건너는 친구는 끝까지 지나간 뒤 닫아요.</p>`;
@@ -953,7 +971,7 @@ async function roadsideAction(id:OutdoorSiteId):Promise<boolean>{
 }
 async function gatherGroundResource(id:GroundResourceId):Promise<boolean>{
  if(actionBusy||battleView||startupPending||contentActivationPending)return false;
- if(currentModal==='outdoor-site'||currentModal==='roadside')closeModal();
+ if(currentModal==='outdoor-site'||currentModal==='roadside'||currentModal==='ground-region')closeModal();
  state=recoverEnergy(state);
  const before=performGatheringAction(state,id);if(!before.ok){toast(before.message);return false;}
  if(!prepareRoadWalk(true))return false;
@@ -1062,7 +1080,7 @@ function openModal(kind:string){
  if(kind==='shop'){shopPending=null;renderedShopKey='';renderLiveShop(true);}
  if(kind==='menu')modalShell('OUR LITTLE VILLAGE','마을 메뉴',`<div class="village-menu-grid">${[['flag','성장 목표','settlement-goals'],['expand','트럭 확장','expand'],['plot-empty','밭 확장','farm-expand'],['axe','벌목장','grove'],['bag','마을 의뢰','orders'],['bag','트럭 상점','shop'],['settings','설정','settings'],['paw','동물 동료','pet'],['character','생존자','character'],['map','도움말','guide']].map(([i,t,id])=>`<button data-open="${id}">${icon(i)}<span>${t}</span></button>`).join('')}</div>`);
  if(kind==='farm-delivery'){renderedFarmDeliveryKey='';renderLiveFarmDelivery();}
- if(kind==='roadside'||kind==='outdoor-site'){renderedRoadsideKey='';renderLiveRoadside();}
+ if(kind==='roadside'||kind==='outdoor-site'||kind==='ground-region'){renderedRoadsideKey='';renderLiveRoadside();}
  if(kind==='pet-passage')modalShell('A PATH FOR OUR FRIENDS','동물 통로 문',petPassageContent());
  if(kind==='orders')modalShell('NEIGHBORS ON THE ROAD','마을 의뢰',`<div id="village-order-content" data-order="${getVillageOrder(state).id}">${villageOrderContent()}</div>`);
  if(kind==='build'){setZone('home');setFarmTray(false);closeFacility();modalShell('BUILD OUR TRUCK VILLAGE','트럭 위 마을 건설',buildingCatalog(state),true);showPlanningSheet('catalog');}
@@ -1185,6 +1203,8 @@ document.addEventListener('click',e=>{
  if(t.dataset.petPassageToggle){void operatePetPassage(t.dataset.petPassageToggle==='open');return;}
  if(t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')){if(prepareRoadWalk()){if(t.hasAttribute('data-road-return'))scene.walkToTruck();else scene.walkOntoRoad();}return;}
  if(t.dataset.outdoorSite){const site=getOutdoorSite(t.dataset.outdoorSite);if(site&&!actionBusy)openRoadsideSite(site.id);return;}
+ if(t.dataset.regionFocus){const region=getGroundRegion(t.dataset.regionFocus);if(region&&prepareRoadWalk()){scene.focusGroundRegion(region.id);document.querySelector('#zone-name')!.textContent=region.name;toast('채집물 그림이나 작은 표식을 누르면 바로 채집해요.');}return;}
+ if(t.dataset.groundRegion){const region=getGroundRegion(t.dataset.groundRegion);if(region&&!actionBusy)openGroundRegion(region.id);return;}
  if(t.dataset.groundNode){const node=getGroundResourceNode(t.dataset.groundNode);if(node)void gatherGroundResource(node.id);return;}
  if(t.dataset.groundFocus){const node=getGroundResourceNode(t.dataset.groundFocus);if(node&&prepareRoadWalk(true)){scene.focusGroundResource(node.id);toast('원하는 채집물을 누르면 직접 가서 작업해요.');}return;}
  if(t.dataset.outdoorCollect){const site=getOutdoorSite(t.dataset.outdoorCollect);if(site)void roadsideAction(site.id);return;}
@@ -1303,7 +1323,7 @@ setInterval(()=>{
  if(!startupPending&&!contentActivationPending&&playerConfirmed){
   const before=state.energy;state=recoverEnergy(state);
   if(state.energy!==before){persist();render();}else{renderVitals();updateEnergyPanel();if(paused)renderControls();}
-  if(currentModal==='roadside'||currentModal==='outdoor-site')renderLiveRoadside();
+  if(currentModal==='roadside'||currentModal==='outdoor-site'||currentModal==='ground-region')renderLiveRoadside();
  }
  if(startupPending||paused||document.hidden||battleView||contentActivationPending||currentModal==='welcome')return;
  state=tick(state,1);render();if(++saveCounter>=10){persist();saveCounter=0;}

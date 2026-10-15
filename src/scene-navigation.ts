@@ -63,7 +63,7 @@ export function getRoadBounds(level:number):NavigationRect {
     passingRoom=PET_PASSAGE_WIDTH/2+3*PET_PASSAGE_MAX_BODY_RADIUS+4,
     groundPassingRoom=2*PET_PASSAGE_MAX_BODY_RADIUS+4;
   return {left:Math.min(-40,getTruckGroundFootprint(level).bounds.left-passingRoom,GROUND_RESOURCE_BOUNDS.left-groundPassingRoom,
-      ...corners.map(point=>point[0]-100)),top:360,
+      ...corners.map(point=>point[0]-100)),top:Math.min(360,GROUND_RESOURCE_BOUNDS.top-groundPassingRoom),
     right:Math.max(1160,GROUND_RESOURCE_BOUNDS.right+groundPassingRoom,...corners.map(point=>point[0]+130)),
     bottom:Math.max(880,...corners.map(point=>point[1]+95+105),
       GROUND_RESOURCE_BOUNDS.bottom+groundPassingRoom)};

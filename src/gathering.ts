@@ -1,7 +1,8 @@
 import { CROP_IDS, CROPS, type CropId } from './crops';
 import { getSeedInventory, grantQuests, questList, type ActionResult, type GameState } from './game';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
-import { GROUND_RESOURCE_NODES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from './ground-resources';
+import { GROUND_RESOURCE_NODES, LEGACY_GROUND_RESOURCE_IDS, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from './ground-resources';
+import { getGroundRegion, type GroundRegion } from './ground-regions';
 import { ROADSIDE_RULES, validateRoadsideProgress } from './roadside';
 import { validateFarmEconomy } from './farm-economy';
 import { validateShopProgress } from './shop';
@@ -25,7 +26,7 @@ type LegacyGatheringState = GatheringFields & Pick<GameState, 'roadside' | 'tota
 /** 조회는 보상이나 저장 기록을 만들지 않고, 반환한 각 기록도 원본과 분리해요. */
 export function getGatheringProgress(state: GatheringFields): GatheringProgress {
   return { version: 1, nodes: Object.fromEntries(GROUND_RESOURCE_NODES.map(node => [node.id,
-    state.gathering ? { ...state.gathering.nodes[node.id] } : { visits: 0, readyAtMs: 0 }])) as GatheringProgress['nodes'] };
+    state.gathering?.nodes[node.id] ? { ...state.gathering.nodes[node.id] } : { visits: 0, readyAtMs: 0 }])) as GatheringProgress['nodes'] };
 }
 
 export function cloneGatheringFields(state: GatheringFields): GatheringFields {
@@ -33,11 +34,16 @@ export function cloneGatheringFields(state: GatheringFields): GatheringFields {
 }
 
 export function validateGatheringProgress(value: unknown): value is GatheringProgress {
-  return record(value) && Object.keys(value).length === 2 && Object.hasOwn(value, 'version') && Object.hasOwn(value, 'nodes')
-    && value.version === 1 && record(value.nodes)
-    && Object.keys(value.nodes).length === GROUND_RESOURCE_NODES.length && GROUND_RESOURCE_NODES.every(node => {
-      const row = (value.nodes as Record<string, unknown>)[node.id];
-      return record(row) && Object.keys(row).length === 2 && Object.hasOwn(row, 'visits') && Object.hasOwn(row, 'readyAtMs')
+  if (!record(value) || Object.keys(value).length !== 2 || !Object.hasOwn(value, 'version') || !Object.hasOwn(value, 'nodes')
+    || value.version !== 1 || !record(value.nodes)) return false;
+  const nodes = value.nodes;
+  const ids = Object.keys(nodes).length === LEGACY_GROUND_RESOURCE_IDS.length
+    ? LEGACY_GROUND_RESOURCE_IDS : GROUND_RESOURCE_NODES.map(node => node.id);
+  // Accept only the complete old catalog or the complete current catalog.
+  // An arbitrary partial record must never reset a missing resource's timer.
+  return Object.keys(nodes).length === ids.length && ids.every(id => {
+      const row = nodes[id];
+      return Object.hasOwn(nodes, id) && record(row) && Object.keys(row).length === 2 && Object.hasOwn(row, 'visits') && Object.hasOwn(row, 'readyAtMs')
         && integer(row.visits) && deviceTime(row.readyAtMs)
         && (row.visits > 0 || row.readyAtMs === 0);
     });
@@ -80,11 +86,23 @@ export function getGatheringNode(state: LegacyGatheringState, id: unknown, now =
 export function getGatheringArea(state: LegacyGatheringState, id: unknown, now = Date.now()) {
   const zone = getGroundResourceZone(id);
   if (!zone) return undefined;
+  return gatheringArea(state, zone, now);
+}
+
+/** Geographic places can contain several resource families. Selecting a new
+ * trail does not change the original four areas or any node's saved timer. */
+export function getGatheringRegion(state: LegacyGatheringState, id: unknown, now = Date.now()) {
+  const region = getGroundRegion(id);
+  if (!region) return undefined;
+  return gatheringArea(state, region, now);
+}
+
+function gatheringArea<T extends Pick<GroundRegion, 'id'|'name'|'bounds'|'path'|'pathWidth'>>(state: LegacyGatheringState, zone: T, now: number) {
   const prepared = state.gathering ? state : { ...state, ...migrateLegacyGatheringFields(state, now) };
-  const views = GROUND_RESOURCE_NODES.filter(node => node.siteId === zone.id).map(node => getGatheringNode(prepared, node.id, now)!);
+  const views = GROUND_RESOURCE_NODES.filter(node => node.regionId === zone.id).map(node => getGatheringNode(prepared, node.id, now)!);
   const ready = views.filter(view => view.ready);
   const next = ready[0] ?? [...views].sort((a, b) =>
-    (prepared.gathering?.nodes[a.node.id].readyAtMs ?? 0) - (prepared.gathering?.nodes[b.node.id].readyAtMs ?? 0))[0];
+    (prepared.gathering?.nodes[a.node.id]?.readyAtMs ?? 0) - (prepared.gathering?.nodes[b.node.id]?.readyAtMs ?? 0))[0];
   return { zone, views, ready, next, readyCount: ready.length, totalCount: views.length,
     remainingSeconds: ready.length ? 0 : next.remainingSeconds };
 }

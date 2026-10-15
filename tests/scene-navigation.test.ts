@@ -68,9 +68,10 @@ test('the former road crate allows whole bodies to reach its space while remaini
     assert.equal(world.obstacles.some(obstacle=>obstacle.kind==='crate'),false);
     assert.deepEqual(groundLocation(world,[184,564]),road(184,564));
     assert.equal(groundLocation(world,GROUND_RESOURCE_NODES[0].point),undefined,'individual forest trunks remain solid');
-    const start=road((world.road.left+world.road.right)/2,(world.road.top+world.road.bottom)/2);
-    assert.ok(groundLocation(world,start.point),'the actual road interior starts clear for this whole body');
-    assertClear(world,requirePath(world,start,road(184,564)));
+    for(const start of[road(270,655),road(-100,0)]){
+      assert.ok(groundLocation(world,start.point),'both the southern road and newly reachable northern exterior start clear for this whole body');
+      assertClear(world,requirePath(world,start,road(184,564)));
+    }
   }
 });
 

@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { applyOfflineProgress, createGame, getSeedInventory, loadGame, performAction, SAVE_KEY, saveGame, tick, type ActionResult, type GameState, type SaveStorage } from '../src/game.ts';
 import { CROP_IDS } from '../src/crops.ts';
 import { GAME_MINUTES_PER_SECOND } from '../src/game-time.ts';
-import { GROUND_RESOURCE_NODES, type GroundResourceId } from '../src/ground-resources.ts';
+import { GROUND_RESOURCE_NODES, LEGACY_GROUND_RESOURCE_IDS, type GroundResourceId } from '../src/ground-resources.ts';
+import { GROUND_REGIONS } from '../src/ground-regions.ts';
 import { getRoadsideProgress, performRoadsideAction, ROADSIDE_RULES } from '../src/roadside.ts';
-import { cloneGatheringFields, GATHERING_REGENERATION_MS, getGatheringArea, getGatheringNode, getGatheringProgress, migrateLegacyGatheringFields, performGatheringAction, validateGatheringProgress, type GatheringFields } from '../src/gathering.ts';
+import { cloneGatheringFields, GATHERING_REGENERATION_MS, getGatheringArea, getGatheringNode, getGatheringProgress, getGatheringRegion, migrateLegacyGatheringFields, performGatheringAction, validateGatheringProgress, type GatheringFields } from '../src/gathering.ts';
 
 const NOW = 1_800_000_000_000;
 const PRIMARY_IDS = ['tree-01', 'scrap-01', 'seed-01', 'water-01'] as const;
@@ -194,7 +195,7 @@ test('existing action copies and returned node progress deeply detach the origin
 
 test('unknown nodes, insufficient energy, expeditions, invalid device times, and wall clock rollback refuse atomically', () => {
   const state = createGame();
-  for (const id of ['grove', '__proto__', 'constructor', 'tree-00', 'tree-17', '', null, 1, {}, ['tree-01']]) refused(state, id);
+  for (const id of ['grove', '__proto__', 'constructor', 'tree-00', 'tree-23', '', null, 1, {}, ['tree-01']]) refused(state, id);
   for (const at of [-1, NaN, Infinity, NOW + 0.5, 100_000_000_000_000 - 179_999, 100_000_000_000_001]) refused(state, 'tree-01', at);
   const tired = createGame(); tired.energy = 9; refused(tired, 'tree-01');
   const away = createGame(); away.expedition = { id: 1, stage: 1 }; refused(away, 'tree-01');
@@ -309,4 +310,101 @@ test('area views select another ready resource, then the exact earliest depleted
   const ready = getGatheringArea(state, 'spring', NOW + 180_001)!;
   assert.equal(ready.readyCount, 1); assert.equal(ready.next.node.id, 'water-02'); assert.equal(ready.remainingSeconds, 0);
   assert.deepEqual(state, before);
+});
+
+test('real old twenty-eight-node saves load without resetting paid timers and normalize only new records without grants', () => {
+  let paid = createGame();
+  for (const [offset, id] of ['tree-01', 'seed-02', 'scrap-03', 'water-04'].entries())
+    paid = success(performGatheringAction(paid, id, NOW + offset * 1_000));
+  const old = structuredClone(paid) as GameState & GatheringFields;
+  old.gathering!.nodes = Object.fromEntries(LEGACY_GROUND_RESOURCE_IDS.map(id => [id, { ...paid.gathering!.nodes[id] }])) as typeof old.gathering.nodes;
+  old.lastSaved = NOW + 3_000;
+  assert.equal(Object.keys(old.gathering!.nodes).length, 28);assert.equal(validateGatheringProgress(old.gathering), true);
+  const memory = storage();memory.setItem(SAVE_KEY, JSON.stringify(old));
+  const loaded = loadGame(memory)!;assert.ok(loaded);assert.deepEqual(loaded, old, 'load validates the actual legacy shape without rewriting the save');
+  const before = structuredClone(loaded), normalized = getGatheringProgress(loaded);
+  assert.equal(Object.keys(normalized.nodes).length, 52);assert.equal(validateGatheringProgress(normalized), true);
+  for (const id of LEGACY_GROUND_RESOURCE_IDS) assert.deepEqual(normalized.nodes[id], old.gathering!.nodes[id]);
+  for (const node of GROUND_RESOURCE_NODES.slice(28)) {
+    assert.deepEqual(normalized.nodes[node.id], { visits: 0, readyAtMs: 0 });
+    assert.equal(getGatheringNode(loaded, node.id, NOW + 4_000)!.ready, true);
+  }
+  for (const region of GROUND_REGIONS) assert.ok(getGatheringRegion(loaded, region.id, NOW + 4_000));
+  assert.deepEqual(loaded, before, 'queries, normalizing copies and new area listings grant no materials, visits, XP or energy');
+  refused(loaded, 'tree-01', NOW + 179_999);
+  const advanced = tick(loaded, 1);
+  assert.deepEqual(advanced.gathering, normalized, 'ordinary game copies add empty new rows without restarting old clocks');
+  assert.deepEqual(loaded, before);
+  const next = success(performGatheringAction(loaded, 'seed-05', NOW + 4_000));
+  for (const id of LEGACY_GROUND_RESOURCE_IDS) assert.deepEqual(next.gathering!.nodes[id], old.gathering!.nodes[id]);
+  assert.equal(next.energy, loaded.energy - ROADSIDE_RULES['seed-meadow'].energy);
+  assert.deepEqual(next.resources, { ...loaded.resources, seeds: loaded.resources.seeds + 3 });
+  assert.deepEqual(getSeedInventory(next), { ...getSeedInventory(loaded), strawberry: getSeedInventory(loaded).strawberry + 3 });
+  assert.equal(next.gathering!.nodes['seed-05'].readyAtMs, NOW + 184_000);
+  assert.equal(next.gathering!.nodes['seed-05'].visits, 1);
+  const reloaded = reload(next);
+  assert.deepEqual(reloaded.gathering, next.gathering);assert.deepEqual(reloaded.resources, next.resources);
+  assert.equal(getGatheringNode(reloaded, 'tree-01', NOW + 180_000)!.ready, true);
+  assert.equal(getGatheringNode(reloaded, 'seed-05', NOW + 183_999)!.remainingSeconds, 1);
+  assert.equal(getGatheringNode(reloaded, 'seed-05', NOW + 184_000)!.ready, true);
+});
+
+test('catalog expansion accepts only complete old or current records and refuses partial migrations atomically', () => {
+  const full = success(performGatheringAction(createGame(), 'tree-01', NOW));
+  const oldRows = Object.fromEntries(LEGACY_GROUND_RESOURCE_IDS.map(id => [id, full.gathering!.nodes[id]]));
+  const cases = [
+    Object.fromEntries(Object.entries(oldRows).filter(([id]) => id !== 'tree-02')),
+    { ...oldRows, 'tree-17': { visits: 0, readyAtMs: 0 } },
+    { ...oldRows, 'unexpected-tree': { visits: 0, readyAtMs: 0 } },
+    Object.fromEntries(Object.entries({ ...oldRows, 'tree-17': { visits: 0, readyAtMs: 0 } }).filter(([id]) => id !== 'tree-02')),
+    Object.fromEntries(Object.entries(full.gathering!.nodes).filter(([id]) => id !== 'tree-17')),
+  ];
+  for (const rows of cases) {
+    const bad = structuredClone(full);bad.gathering!.nodes = rows as typeof full.gathering.nodes;
+    assert.equal(validateGatheringProgress(bad.gathering), false);refused(bad, 'tree-18');
+    assert.equal(saveGame(bad, storage()), false);
+    const memory = storage();memory.setItem(SAVE_KEY, JSON.stringify(bad));assert.equal(loadGame(memory), null);
+  }
+});
+
+test('all twenty-four new resources use exact existing costs, rewards, seed rotation and individual real regeneration', () => {
+  for (const node of GROUND_RESOURCE_NODES.slice(28)) {
+    const state = createGame(), before = structuredClone(state), view = getGatheringNode(state, node.id, NOW)!, rule = ROADSIDE_RULES[node.siteId];
+    const paid = success(performGatheringAction(state, node.id, NOW));
+    assert.deepEqual(state, before);assert.equal(paid.energy, state.energy - rule.energy);
+    assert.deepEqual(paid.resources, { ...state.resources, [node.resource]: state.resources[node.resource] + rule.amount });
+    assert.equal(paid.xp, state.xp + rule.xp);assert.equal(paid.stats[node.resource === 'wood' ? 'chops' : 'gathers'], 1);
+    assert.deepEqual(paid.gathering!.nodes[node.id], { visits: 1, readyAtMs: NOW + GATHERING_REGENERATION_MS });
+    if (node.resource === 'seeds') assert.deepEqual(getSeedInventory(paid), { ...getSeedInventory(state), [view.cropId!]: getSeedInventory(state)[view.cropId!] + rule.amount });
+    else assert.deepEqual(getSeedInventory(paid), getSeedInventory(state));
+    for (const other of GROUND_RESOURCE_NODES.filter(other => other.id !== node.id)) assert.equal(getGatheringNode(paid, other.id, NOW)!.ready, true);
+    refused(paid, node.id, NOW + 179_999);assert.equal(getGatheringNode(paid, node.id, NOW + 179_999)!.remainingSeconds, 1);
+    assert.equal(getGatheringNode(paid, node.id, NOW + 180_000)!.ready, true);
+    const second = success(performGatheringAction(paid, node.id, NOW + 180_000));
+    assert.equal(second.gathering!.nodes[node.id].visits, 2);assert.equal(second.gathering!.nodes[node.id].readyAtMs, NOW + 360_000);
+  }
+  for (const [index, id] of ['seed-01','seed-02','seed-03','seed-04'].entries())
+    assert.equal(getGatheringNode(createGame(), id, NOW)!.cropId, CROP_IDS[index], 'adding new seed nodes keeps all existing displayed varieties');
+});
+
+test('mixed geographic area views select only their own individual resources without changing legacy family areas', () => {
+  const state = createGame(), before = structuredClone(state);
+  for (const [id, count] of [['grove',16],['seed-meadow',4],['salvage',4],['spring',4]] as const) {
+    assert.equal(getGatheringArea(state, id, NOW)!.totalCount, count);
+    assert.deepEqual(getGatheringRegion(state, id, NOW)!.views.map(view => view.node.id), getGatheringArea(state, id, NOW)!.views.map(view => view.node.id));
+  }
+  for (const id of ['west-grove','north-ruins','east-creek'] as const) {
+    const area = getGatheringRegion(state, id, NOW)!;
+    assert.equal(area.zone.id, id);assert.equal(area.totalCount, 8);assert.equal(area.readyCount, 8);
+    assert.equal(new Set(area.views.map(view => view.node.kind)).size, 4);
+    assert.ok(area.views.every(view => view.node.regionId === id));assert.equal(getGatheringArea(state, id, NOW), undefined);
+  }
+  assert.equal(getGatheringRegion(state, '__proto__', NOW), undefined);assert.deepEqual(state, before);
+  const paid = success(performGatheringAction(state, 'tree-17', NOW));
+  assert.equal(getGatheringRegion(paid, 'west-grove', NOW)!.readyCount, 7);
+  assert.equal(getGatheringRegion(paid, 'north-ruins', NOW)!.readyCount, 8);
+  assert.equal(getGatheringRegion(paid, 'east-creek', NOW)!.readyCount, 8);
+  assert.equal(getGatheringArea(paid, 'grove', NOW)!.readyCount, 16);
+  assert.equal(getGatheringRegion(paid, 'west-grove', NOW + 179_999)!.readyCount, 7);
+  assert.equal(getGatheringRegion(paid, 'west-grove', NOW + 180_000)!.readyCount, 8);
 });

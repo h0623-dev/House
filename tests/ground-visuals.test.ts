@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { GROUND_RESOURCE_APPROACH_RADIUS, GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES } from '../src/ground-resources';
+import { GROUND_RESOURCE_APPROACH_RADIUS, GROUND_RESOURCE_NODES } from '../src/ground-resources';
+import { GROUND_REGIONS } from '../src/ground-regions';
 import { GROUND_BACKGROUND_BOUNDS, GROUND_BACKGROUND_TILES, GROUND_LANDSCAPE_BOUNDS, GROUND_LANDSCAPE_SOURCE_SIZE, GROUND_PROPS_SOURCE_SIZE, GROUND_SPRITE_FRAMES,
   getGroundResourceVisual, getGroundSpriteBounds, getGroundSpriteFrame, getGroundTreeVariant,
   getGroundVisualBounds, getGroundVisualPolygon, getGroundBackgroundViewport, getGroundVisibleBackgroundTiles } from '../src/ground-visuals';
@@ -97,7 +98,7 @@ test('the full world painting covers every truck, resource silhouette and comple
     insideLandscape(bounds[0], bounds[1]); insideLandscape(bounds[2], bounds[3]);
     for (const [x, y] of node.approaches) insideLandscape(x, y, GROUND_RESOURCE_APPROACH_RADIUS);
   }
-  for (const zone of GROUND_RESOURCE_ZONES) {
+  for (const zone of GROUND_REGIONS) {
     insideLandscape(zone.bounds.left, zone.bounds.top); insideLandscape(zone.bounds.right, zone.bounds.bottom);
     for (const [x, y] of zone.path) insideLandscape(x, y, zone.pathWidth / 2);
   }

@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { GROUND_RESOURCE_NODES, type GroundResourceNode } from '../src/ground-resources';
 import { getGroundVisualBounds } from '../src/ground-visuals';
 import { layoutGroundMarkers, type GroundMarker, type GroundMarkerInput, type GroundMarkerViewport } from '../src/ground-marker-layout';
+import { GROUND_REGIONS } from '../src/ground-regions';
 
 type Point=[number,number];
-const forest=GROUND_RESOURCE_NODES.filter(node=>node.kind==='tree');
+const forest=GROUND_RESOURCE_NODES.filter(node=>node.regionId==='grove');
 const portrait:GroundMarkerViewport={left:0,top:0,right:344,bottom:600};
 const narrow:GroundMarkerViewport={left:0,top:100,right:844,bottom:188};
 const deepFreeze=<T>(value:T):T=>{
@@ -55,11 +56,36 @@ test('overview markers show four real resource groups with Korean names and the 
     const input=deepFreeze(fixture.nodes),before=structuredClone(input),markers=layoutGroundMarkers(input,fixture.scale,viewport);
     assert.equal(markers.length,4);
     assert.deepEqual(markers.map(marker=>[marker.resource,marker.label,marker.count,marker.readyCount]).sort(),
-      [['wood','나무',16,16],['scrap','고철',4,4],['seeds','씨앗',4,4],['water','샘물',4,4]].sort());
+      [['wood','나무',22,22],['scrap','고철',10,10],['seeds','씨앗',10,10],['water','샘물',10,10]].sort());
+    assert.equal(markers.reduce((total,marker)=>total+marker.count,0),52,
+      'one compact control per resource type preserves the expanded seven-region catalog');
     assert.deepEqual(markers.flatMap(marker=>marker.nodeIds).sort(),GROUND_RESOURCE_NODES.map(node=>node.id).sort());
     assert.ok(markers.every(marker=>marker.status==='ready'&&marker.remainingSeconds===0));
     assertTouchable(markers,viewport,`overview ${viewport.right}×${viewport.bottom-viewport.top}`);
     assert.deepEqual(input,before,'projecting the controls cannot alter node readiness, navigation anchors or sprite contacts');
+  }
+});
+
+test('selected mixed regions keep all eight local resources in four controls without including another place',()=>{
+  for(const regionId of ['west-grove','north-ruins','east-creek'] as const)for(const viewport of [portrait,narrow]){
+    const region=GROUND_REGIONS.find(region=>region.id===regionId)!,
+      nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===regionId),fixture=fitted(nodes,viewport),
+      input=deepFreeze(fixture.nodes.map((node,index)=>({...node,ready:index%2===1,
+        remainingSeconds:index%2===1?0:3,distance:index%2===1?100:1}))),before=structuredClone(input),
+      markers=layoutGroundMarkers(input,fixture.scale,viewport);
+    assert.ok(region.name);assert.equal(nodes.length,8);assert.equal(markers.length,4);
+    assert.deepEqual(markers.map(marker=>[marker.resource,marker.count,marker.readyCount]).sort(),
+      [['wood',2,1],['scrap',2,1],['seeds',2,1],['water',2,1]].sort());
+    assert.deepEqual(markers.flatMap(marker=>marker.nodeIds).sort(),nodes.map(node=>node.id).sort());
+    for(const marker of markers){
+      assert.ok(marker.nodeIds.every(id=>GROUND_RESOURCE_NODES.find(node=>node.id===id)!.regionId===regionId),
+        `${regionId}'s visible control cannot include the same resource family in a different physical place`);
+      assert.equal(marker.nodeId,input.find(node=>node.resource===marker.resource&&node.ready)!.id,
+        'a nearer depleted local node cannot replace the ready local collection target');
+      assert.equal(marker.status,'ready');
+    }
+    assertTouchable(markers,viewport,`${regionId} ${viewport.right}×${viewport.bottom-viewport.top}`);
+    assert.deepEqual(input,before,'regional collection labels preserve the original catalog indices, contacts and ready times');
   }
 });
 

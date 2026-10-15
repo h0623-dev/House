@@ -26,7 +26,8 @@ test('legacy places represent stable first individual nodes and return detached 
     assert.equal(site.kind,node.action);assert.equal(site.resource,node.resource);
     assert.equal(getOutdoorSiteIndex(site.id),index);assert.deepEqual(getOutdoorSite(site.id),site);
   }
-  assert.equal(getOutdoorSite('invalid'),undefined);assert.equal(trees.length,16);
+  assert.equal(getOutdoorSite('invalid'),undefined);assert.equal(trees.length,22);
+  assert.equal(trees.filter(tree=>Number(tree.id.slice(-2))<=16).length,16,'the original forest remains intact alongside the six new regional trees');
   assert.deepEqual(trees.map(tree=>tree.id),GROUND_RESOURCE_NODES.filter(node=>node.kind==='tree').map(node=>node.id));
   const original=JSON.stringify({sites:getOutdoorSites(),trees:getOutdoorTrees()});
   sites[0].point[1]=0;sites[0].approaches[0][0]=0;sites[0].bounds.top=0;trees[0].point[1]=0;
@@ -34,7 +35,7 @@ test('legacy places represent stable first individual nodes and return detached 
   assert.deepEqual(OUTDOOR_SITES[0].point,GROUND_RESOURCE_NODES[0].point);
 });
 
-test('all eight expansions leave the complete fixed ground places and sixteen individual trunks separate from the chassis',()=>{
+test('all eight expansions leave the complete fixed ground places and all twenty-two individual trunks separate from the chassis',()=>{
   for(let level=1;level<=8;level++){
     const body=getTruckGroundFootprint(level).polygon,sites=getOutdoorSites(level),trees=getOutdoorTrees(level);
     assert.deepEqual(sites,getOutdoorSites(1),'the truck cannot pull ground resources along as it grows');

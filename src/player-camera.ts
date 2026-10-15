@@ -1,6 +1,6 @@
 import type { GameState } from './game';
 import { getRoadBounds } from './scene-navigation';
-import { GROUND_RESOURCE_ZONES } from './ground-resources';
+import { GROUND_REGIONS } from './ground-regions';
 import { getPetPassageGeometry } from './pet-passage';
 import { getFloorBounds, projectTruckPoint, type TruckFloor } from './truck-layout';
 import { getVillageContentBounds, mergeVillageBounds, type VillageBounds } from './village-camera';
@@ -25,7 +25,7 @@ export function getHomeOverviewBounds(state: GameState, floor: TruckFloor, level
     // feet, remains inside the overview. Animals retain their full paw radius.
     bounds.push({ left: road.left - 32, top: road.top - 84, right: road.right + 32, bottom: road.bottom + 32 });
     bounds.push(getPetPassageGeometry(level).bounds);
-    for (const zone of GROUND_RESOURCE_ZONES) bounds.push(zone.bounds);
+    for (const region of GROUND_REGIONS) bounds.push(region.bounds);
   }
   return mergeVillageBounds(bounds);
 }

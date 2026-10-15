@@ -29,6 +29,7 @@ import itemAtlasUrl from './assets/items-anime.png';
 import { layoutProductionBubbles } from './production-bubble-layout';
 import { type OutdoorSiteId } from './outdoor-sites';
 import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId, type GroundResourceNode } from './ground-resources';
+import { GROUND_REGIONS, getGroundRegion, type GroundRegionId } from './ground-regions';
 import { getGatheringNode } from './gathering';
 import { layoutGroundMarkers, type GroundMarker, type GroundMarkerInput } from './ground-marker-layout';
 import { drawGroundLandscape, drawGroundSprite, groundArtReady } from './ground-art';
@@ -103,7 +104,7 @@ export class Scene {
   private petPassageLeasedPaint: { owners: UnitId[]; points: Point[]; drawn: boolean; painted: boolean }[] = [];
   private accessStairPaint: ReturnType<typeof drawTruckAccessStairs> | null = null;
   private zone: 'home' | 'grove' = 'home';
-  private resourceFocus: { siteId: OutdoorSiteId; nodeId?: GroundResourceId } | null = null;
+  private resourceFocus: { siteId: OutdoorSiteId; nodeId?: GroundResourceId; regionId?: GroundRegionId } | null = null;
   private groundResourcePaint: unknown[] = [];
   private groundMarkerPaint: (GroundMarker & {icon:string;itemArt:unknown})[] = [];
   private selectedPlotId: number | null = null;
@@ -595,12 +596,17 @@ export class Scene {
     if(!getGroundResourceZone(id)||this.action)return;
     this.focusResourceView({siteId:id});
   }
+  focusGroundRegion(id:GroundRegionId) {
+    const region=getGroundRegion(id),node=GROUND_RESOURCE_NODES.find(node=>node.regionId===id);
+    if(!region||!node||this.action)return;
+    this.focusResourceView({siteId:node.siteId,regionId:region.id});
+  }
   focusGroundResource(id:GroundResourceId) {
     const node=getGroundResourceNode(id);if(!node||this.action)return;
     this.focusResourceView({siteId:node.siteId,nodeId:node.id});
     this.focus(`ground:${node.id}`);
   }
-  private focusResourceView(focus:{siteId:OutdoorSiteId;nodeId?:GroundResourceId}) {
+  private focusResourceView(focus:{siteId:OutdoorSiteId;nodeId?:GroundResourceId;regionId?:GroundRegionId}) {
     if(this.activeFloor!==1)this.setActiveFloor(1);
     this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
     this.resourceFocus=focus;this.zone=focus.siteId==='grove'?'grove':'home';
@@ -692,7 +698,7 @@ export class Scene {
   /** Rewards belong to the controller and can commit only after actual work finishes. */
   playOutdoorAction(kind:'chop'|'gather',id:OutdoorSiteId):Promise<void> {
     const now=Date.now(),feet=this.currentHeroLocation().point;
-    const node=GROUND_RESOURCE_NODES.filter(node=>node.siteId===id&&(node.kind==='tree'?'chop':'gather')===kind
+    const node=GROUND_RESOURCE_NODES.filter(node=>node.regionId===id&&(node.kind==='tree'?'chop':'gather')===kind
       &&(!this.state||getGatheringNode(this.state,node.id,now)?.ready))
       .sort((a,b)=>Math.hypot(a.point[0]-feet[0],a.point[1]-feet[1])-Math.hypot(b.point[0]-feet[0],b.point[1]-feet[1]))[0];
     return node?this.playGroundResourceAction(node.id):Promise.reject(new Error('이곳의 자원이 다시 준비 중이에요. 다른 자원을 눌러 주세요.'));
@@ -1343,7 +1349,7 @@ export class Scene {
       viewWidth=overview.width;viewHeight=overview.height;target={x:overview.x,y:overview.y,zoom:overview.zoom};
     }
     if(resourceView&&this.resourceFocus){
-      const zone=getGroundResourceZone(this.resourceFocus.siteId)!,node=this.resourceFocus.nodeId?getGroundResourceNode(this.resourceFocus.nodeId):undefined;
+      const zone=(this.resourceFocus.regionId?getGroundRegion(this.resourceFocus.regionId):getGroundResourceZone(this.resourceFocus.siteId))!,node=this.resourceFocus.nodeId?getGroundResourceNode(this.resourceFocus.nodeId):undefined;
       const sprite=node?this.groundSpriteBounds(node):null;
       const bounds=sprite?{left:sprite[0]-36,top:sprite[1]-18,right:sprite[2]+36,bottom:sprite[3]+18}:zone.bounds;
       const view=frameHomeOverview(bounds,availableWidth,availableHeight);
@@ -1428,8 +1434,9 @@ export class Scene {
     this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway:false,truckOpacity:1,
       roadActorLayer:'normal-world-order',groundPolicy:'outside-truck-body',
       nodes:this.groundResourcePaint,markers:this.groundMarkerPaint,trails:GROUND_RESOURCE_ZONES,regenerationSeconds:180,
-      terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'fixed-mirrored-background',ready:groundArtReady(),paintedTrailIds:['grove'],capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
-      sites:GROUND_RESOURCE_ZONES.map((zone,index)=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.siteId===zone.id),
+      regions:GROUND_REGIONS.map(region=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===region.id);return{...region,nodeIds:nodes.map(node=>node.id),totalCount:nodes.length,readyCount:nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length};}),
+      terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'fixed-mirrored-background',ready:groundArtReady(),paintedTrailIds:['grove','west-grove','north-ruins','east-creek'],capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
+      sites:GROUND_RESOURCE_ZONES.map((zone,index)=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.regionId===zone.id),
         readyCount=nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length;
         return{id:zone.id,index,name:zone.name,bounds:zone.bounds,totalCount:nodes.length,readyCount,ready:readyCount>0};}),
       ladderEntry:{x:this.dx+this.navigationWorld().ladder.bottom[0]*this.scale,y:this.dy+(this.navigationWorld().ladder.bottom[1]-19)*this.scale},accessStairs:this.accessStairPaint});
@@ -1908,8 +1915,9 @@ export class Scene {
   }
 
   private groundTrails() {
-    const grove = getGroundResourceZone('grove')!, points: Point[] = [];
-    // The 132-wide clear corridor is navigation space. The worn earth is a
+    for(const grove of GROUND_REGIONS.filter(region=>['grove','west-grove','north-ruins','east-creek'].includes(region.id))){
+    const points: Point[] = [];
+    // The authored clear corridor is navigation space. The worn earth is a
     // narrower, irregular footpath with grass at its edges, never a UI shape.
     for (let segment = 0; segment < grove.path.length - 1; segment++) {
       const from = grove.path[segment], to = grove.path[segment + 1];
@@ -1941,7 +1949,9 @@ export class Scene {
     this.line([[0,-25],[0,3]],'#806944',3);
     this.poly([[-29,-40],[28,-38],[30,-18],[-28,-20]],'#ad9870','#7a6849',1);
     this.line([[-23,-34],[23,-33]],'#d1bb873d',1);
-    this.label('숲길',0,-26,8,'#4b4b34',700);this.ctx.restore();
+    const name=({'grove':'숲길','west-grove':'서쪽 숲','north-ruins':'북쪽 쉼터','east-creek':'동쪽 샘가'}as Record<string,string>)[grove.id];
+    this.label(name,0,-26,8,'#4b4b34',700);this.ctx.restore();
+    }
   }
 
   private groundSpriteBounds(node:GroundResourceNode):[number,number,number,number] {
@@ -1996,7 +2006,7 @@ export class Scene {
       if(hit)this.hits.push({kind:hit,plotId:index,nodeId:node.id,siteId:node.siteId,x:target[0],y:target[1],radius:0,bounds:hitBounds,polygon});
       this.pulse(`ground:${node.id}`,x,y,34*s);
       const screenBounds=bounds.map((value,i)=>(i%2?this.dy:this.dx)+value*this.scale);
-      this.groundResourcePaint.push({id:node.id,index,siteId:node.siteId,kind:node.kind,resource:node.resource,
+      this.groundResourcePaint.push({id:node.id,index,siteId:node.siteId,regionId:node.regionId,kind:node.kind,resource:node.resource,
         point:{x,y},approaches:node.approaches,solidBounds:node.bounds,spriteBounds:bounds,screenBounds,hitBounds,hitPolygon:polygon,
         art:{sprite:art.sprite,variant:art.variant,width:art.width,height:art.height,ready:artReady,painted,sourceAtlas:'ground-props',anchor:{x,y},bounds:getGroundVisualBounds(node,visual)},
         x:this.dx+target[0]*this.scale,y:this.dy+target[1]*this.scale,ready,remainingSeconds:stock?.remainingSeconds??0,
@@ -2023,14 +2033,14 @@ export class Scene {
   private groundMarkers() {
     if(this.activeFloor!==1||this.constructionMode||this.planningMode||this.farmFocus||this.farmMode)return;
     const now=Date.now(),hero=this.currentHeroLocation().point;
-    const candidates:GroundMarkerInput[]=GROUND_RESOURCE_NODES.map((node,index)=>{
+    const candidates=GROUND_RESOURCE_NODES.map<GroundMarkerInput>((node,index)=>{
       const stock=this.state?getGatheringNode(this.state,node.id,now):undefined;
       const sprite=this.groundSpriteBounds(node),screen=sprite.map((v,i)=>(i%2?this.dy:this.dx)+v*this.scale)as[number,number,number,number];
       return{id:node.id,index,kind:node.kind,resource:node.resource,ready:stock?.ready??true,
         active:this.action?.groundResourceId===node.id,affordable:!this.state||this.state.energy>=(stock?.energyCost??0),remainingSeconds:stock?.remainingSeconds??0,
         anchor:[this.dx+node.point[0]*this.scale,this.dy+node.point[1]*this.scale],spriteBounds:screen,
         distance:Math.hypot(node.point[0]-hero[0],node.point[1]-hero[1])};
-    });
+    }).filter(node=>!this.resourceFocus?.regionId||GROUND_RESOURCE_NODES[node.index].regionId===this.resourceFocus.regionId);
     const viewport={left:this.safeViewport.left,top:this.safeViewport.top,right:this.width-this.safeViewport.right,bottom:this.height-this.safeViewport.bottom};
     const placementViewport={...viewport};
     if(this.overviewBounds&&this.scale<.1){
