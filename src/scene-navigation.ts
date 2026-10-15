@@ -2,6 +2,7 @@ import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRout
 import { GROUND_RESOURCE_BOUNDS, GROUND_RESOURCE_NODES } from './ground-resources';
 import { getPetPassageGeometry, PET_PASSAGE_LINK_ID, PET_PASSAGE_WIDTH, PET_PASSAGE_MAX_BODY_RADIUS } from './pet-passage';
 import { getTruckGroundFootprint } from './truck-ground';
+import { getTruckAccessGeometry } from './truck-access';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   projectTruckPoint, unprojectTruckPoint, type HomeLocation, type TruckFloor } from './truck-layout';
 export { FARM_POSITIONS, SETTLEMENT_POSITIONS, DECK_FRONTS } from './truck-layout';
@@ -21,7 +22,7 @@ export interface NavigationObstacle {
 }
 export interface NavigationActor { id: string; location: NavigationLocation; radius: number; passageIntent?:string }
 export interface NavigationFloor { id: TruckFloor; deck: NavigationRect; outer: NavigationRect }
-export interface NavigationLink { id: string; lower: 0 | TruckFloor; upper: TruckFloor; points: NavigationPoint[]; surface?: 'ladder' | 'ramp'; entryAllowed?: boolean }
+export interface NavigationLink { id: string; lower: 0 | TruckFloor; upper: TruckFloor; points: NavigationPoint[]; surface?: 'ladder' | 'ramp'; gait?: 'stairs'; entryAllowed?: boolean }
 export interface NavigationWorld {
   deck: NavigationRect; deckOuter: NavigationRect; road: NavigationRect; roadOuter: NavigationRect; activeFloor: TruckFloor;
   floors: NavigationFloor[]; radius: number; actors: NavigationActor[];
@@ -87,13 +88,12 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}
   for(const node of GROUND_RESOURCE_NODES)obstacles.push({surface:'road',kind:node.kind==='tree'?'tree':'outdoor-site',bounds:{...node.bounds}});
   const body=getTruckGroundFootprint(level);obstacles.push({surface:'road',kind:'truck-body',...body});
-  const front=getFloorBounds(level).front,ladder={entry:projectDeckPoint([-225,front-60]),top:projectDeckPoint([-225,front-3]),
-    bottom:[140,527+.47*(front-getFloorBounds(1).front)]as NavigationPoint};
+  const access = getTruckAccessGeometry(level), ladder = { entry: access.entry, top: access.top, bottom: access.bottom };
   const links:NavigationLink[]=options.actor==='pet'
     ?options.petPassageLease?.id===PET_PASSAGE_LINK_ID
       ?[{...options.petPassageLease,points:options.petPassageLease.points.map(point=>[...point]),surface:'ramp',entryAllowed:options.petPassageOpen??false}]
       :options.petPassageOpen?[getPetPassageLink(level)]:[]
-    :[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry]}];
+    :[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry],gait:'stairs'}];
   for(const upper of ids.filter(id=>id>1)){
     const stair=getFloorStairs(level,upper as 2|3);
     links.push({id:String(stair.lowerFloor)+'-'+String(upper),lower:stair.lowerFloor,upper,
@@ -281,8 +281,11 @@ export function planNavigation(world:NavigationWorld,start:NavigationLocation,ta
     current=up?link.upper:link.lower;
   }
   if(!floor(current,target.point))return;
-  const climbSegments=surfaces.flatMap((surface,index)=>surface==='ladder'?[index]:[]),motion=createMotionRoute(points,climbSegments),
-    returnMotion=returnIndex?createMotionRoute(points.slice(returnIndex),climbSegments.filter(i=>i>=returnIndex).map(i=>i-returnIndex)):motion;
+  const stairSegments=segments.flatMap((segment,index)=>world.links.some(link=>link.id===segment.link&&link.gait==='stairs')?[index]:[]),
+    climbSegments=surfaces.flatMap((surface,index)=>surface==='ladder'&&!stairSegments.includes(index)?[index]:[]),
+    motion=createMotionRoute(points,climbSegments,stairSegments),
+    returnMotion=returnIndex?createMotionRoute(points.slice(returnIndex),climbSegments.filter(i=>i>=returnIndex).map(i=>i-returnIndex),
+      stairSegments.filter(i=>i>=returnIndex).map(i=>i-returnIndex)):motion;
   return{points,surfaces,segments,climbSegments,start:copyLocation(start),target:copyLocation(target),motion,returnIndex,returnMotion,
     returnLocation:returnAnchor??{point:[...points[returnIndex]],surface:returnIndex?surfaces[returnIndex-1]:start.surface,...(returnIndex&&floorId(start)?{floor:floorId(start)as TruckFloor}:start.floor?{floor:start.floor}:{}),...(start.link?{link:start.link}:{})}};
 }

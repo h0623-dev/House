@@ -39,6 +39,7 @@ import { drawGroundLandscape, drawGroundSprite, groundArtReady } from './ground-
 import { GROUND_LANDSCAPE_BOUNDS, GROUND_BACKGROUND_BOUNDS, getGroundResourceVisual, getGroundVisualBounds, getGroundVisualPolygon } from './ground-visuals';
 import { getFarmPlotCare } from './farm-economy';
 import { getPetPassage, getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
+import { getTruckAccessGeometry } from './truck-access';
 import { drawPetPassage } from './pet-passage-art';
 import { isNavigationLinkSurface } from './scene-navigation';
 
@@ -1259,7 +1260,8 @@ export class Scene {
     const action = this.action;
     if (!action) {
       if(this.freeWalk){const motion=sampleNavigation(this.freeWalk.navigation,this.freeWalk.elapsed);return {...motion,facing:motion.distance>.01?motion.facing:this.heroFacing,time:(this.freeWalk.gaitOffset+motion.distance)/86};}
-      return { point: [...this.heroLocation.point], pose: this.heroLocation.surface==='ladder'?'climb':'idle', facing: this.heroFacing, progress: 0, time: this.reducedMotion || this.heroLocation.surface==='ladder' ? 0 : this.time };
+      const climbing = this.heroLocation.surface==='ladder'&&this.heroLocation.link!=='road-1';
+      return { point: [...this.heroLocation.point], pose: climbing?'climb':'idle', facing: this.heroFacing, progress: 0, time: this.reducedMotion || climbing ? 0 : this.time };
     }
     if (action.elapsed < action.walk) {
       const motion = sampleNavigation(action.navigation, action.elapsed);
@@ -1951,8 +1953,8 @@ export class Scene {
   }
 
   private ramp() {
-    const {top,bottom}=this.navigationWorld().ladder;
-    this.accessStairPaint=drawTruckAccessStairs(this.ctx,top,bottom);
+    const {top,bottom,width,rise}=getTruckAccessGeometry(this.state?.deckLevel??1);
+    this.accessStairPaint=drawTruckAccessStairs(this.ctx,top,bottom,{width,rise});
     const pixel=1/this.scale,x=bottom[0],y=bottom[1]-19;
     this.hits.push({kind:'road-entry',x,y,radius:0,bounds:[x-23*pixel,y-22*pixel,x+23*pixel,y+22*pixel]});
   }

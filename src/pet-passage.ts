@@ -1,6 +1,7 @@
 import type { ActionResult, GameState } from './game';
 import { getFloorBounds, getFloorStairs, projectTruckPoint, type TruckPoint } from './truck-layout';
-import { getConvexPolygonClearance, getTruckGroundClearance } from './truck-ground';
+import { getConvexPolygonClearance } from './truck-ground';
+import { getTruckAccessLanding, TRUCK_DECK_GROUND_RISE } from './truck-access';
 
 export interface PetPassageProgress { version: 1; open: boolean }
 export const PET_PASSAGE_LINK_ID = 'pet-road-1';
@@ -33,9 +34,8 @@ export function setPetPassageOpen(state: GameState, open: unknown): ActionResult
 }
 export function getPetPassageGeometry(level: number) {
   const { left,front } = getFloorBounds(level);
-  // One short outside flight keeps the complete largest pet beside the truck,
-  // clear of the human stairs and of every painted farm and building footprint.
-  // The road landing also stays above the grove's canopy, with full paw room.
+  // Keep the paid deck doorway in place, but land just outside the real truck
+  // instead of stretching every gate toward one fixed point on the road.
   let v=Math.max(0,front-210);
   if(level>=4){
     const stairs=getFloorStairs(level,2).reserved,
@@ -45,18 +45,12 @@ export function getPetPassageGeometry(level: number) {
     if(getConvexPolygonClearance(footprint,projectTruckPoint([left+70,v]))<PET_PASSAGE_WIDTH/2)v=front-60;
   }
   const entryUV: TruckPoint = [left + 70, v], hingeUV: TruckPoint = [left + 8, v], entry = projectTruckPoint(entryUV),
-    hinge = projectTruckPoint(hingeUV), ground: TruckPoint = [-9, 391],clearance=PET_PASSAGE_WIDTH/2+2;
-  if(getTruckGroundClearance(level,ground)<clearance){
-    let blocked=ground[0],clear=blocked-64;
-    while(getTruckGroundClearance(level,[clear,ground[1]])<clearance)clear-=64;
-    for(let n=0;n<40;n++){const middle=(clear+blocked)/2;
-      if(getTruckGroundClearance(level,[middle,ground[1]])>=clearance)clear=middle;else blocked=middle;}
-    ground[0]=clear;
-  }
+    hinge = projectTruckPoint(hingeUV),
+    ground = getTruckAccessLanding(level, hingeUV, [-1, 0], PET_PASSAGE_WIDTH / 2 + 2, 56);
   const points: TruckPoint[] = [ground, hinge, entry];
   const heroApproaches: TruckPoint[] = [[entry[0] + 30, hinge[1] - 42],
     [entry[0] + 35, hinge[1] - 48], [entry[0] + 40, hinge[1] - 54]];
-  return { entryUV, hingeUV, entry, hinge, ground, points, heroApproaches, width: PET_PASSAGE_WIDTH,
+  return { entryUV, hingeUV, entry, hinge, ground, points, heroApproaches, width: PET_PASSAGE_WIDTH, rise: TRUCK_DECK_GROUND_RISE,
     bounds: { left: Math.min(...points.map(p => p[0])) - PET_PASSAGE_WIDTH / 2,
       top: Math.min(...points.map(p => p[1])) - PET_PASSAGE_WIDTH / 2 - 32,
       right: Math.max(...points.map(p => p[0])) + PET_PASSAGE_WIDTH / 2,

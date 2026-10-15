@@ -597,7 +597,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       next.deckLevel += 1;
       next.stats.expansions += 1;
       addEmptyPlot(next);
-      if (next.deckPlacements && !validateDeckPlacements(next.deckPlacements, next)) return fail('확장 후 사다리나 동물 문 앞에 걸리는 시설이 있어요. 통로 주변 시설을 옮겨 주세요.');
+      if (next.deckPlacements && !validateDeckPlacements(next.deckPlacements, next)) return fail('확장 후 계단나 동물 문 앞에 걸리는 시설이 있어요. 통로 주변 시설을 옮겨 주세요.');
       next.morale = clamp(next.morale + 10);
       message = '우리 집이 더 넓어졌어요! 생활 공간과 새 텃밭 +1';
       duration = 60;

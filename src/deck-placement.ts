@@ -87,7 +87,7 @@ function placementObstacles(state: DeckPlacementState, floor: TruckFloor, except
   if (floor === 1) {
     const d = getFloorBounds(state.deckLevel);
     obstacles.push({ bounds: { left: -251, right: -197, top: d.front - 90, bottom: d.front },
-      message: '사다리 앞에는 오르내릴 공간을 남겨 주세요.' });
+      message: '계단 앞에는 오르내릴 공간을 남겨 주세요.' });
     obstacles.push({ bounds: animalLanding(state.deckLevel), message: '동물 문과 통로 입구는 비워 주세요.' });
   }
   for (const building of buildingsIn(state)) {

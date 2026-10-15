@@ -31,10 +31,13 @@ export interface MotionSample {
 export const FIELD_WORK_SPEED_MULTIPLIER = 2;
 export const WALK_SPEED = 100 * GAME_SPEED_MULTIPLIER * FIELD_WORK_SPEED_MULTIPLIER;
 export const CLIMB_SPEED = 60 * GAME_SPEED_MULTIPLIER * FIELD_WORK_SPEED_MULTIPLIER;
+/** Only the short exterior steps use this deliberate walking pace. */
+export const STAIR_WALK_SPEED = 156;
 const finitePoint = (point: MotionPoint): boolean => point.length === 2 && point.every(Number.isFinite);
 
 /** Geometry sets journey time; a long truck or ladder cannot become a faster walk. */
-export function createMotionRoute(points: readonly MotionPoint[], climbSegments: readonly number[] = []): MotionRoute {
+export function createMotionRoute(points: readonly MotionPoint[], climbSegments: readonly number[] = [],
+  stairSegments: readonly number[] = []): MotionRoute {
   if (!points.length || !points.every(finitePoint)) throw new Error('이동 경로 좌표를 확인해 주세요.');
   const segments: MotionSegment[] = [];
   for (let index = 1; index < points.length; index++) {
@@ -42,7 +45,8 @@ export function createMotionRoute(points: readonly MotionPoint[], climbSegments:
     const distance = Math.hypot(to[0] - from[0], to[1] - from[1]);
     if (!distance) continue;
     const surface = climbSegments.includes(index - 1) ? 'climb' : 'walk';
-    segments.push({ from, to, distance, surface, seconds: distance / (surface === 'climb' ? CLIMB_SPEED : WALK_SPEED) });
+    const speed = stairSegments.includes(index - 1) ? STAIR_WALK_SPEED : surface === 'climb' ? CLIMB_SPEED : WALK_SPEED;
+    segments.push({ from, to, distance, surface, seconds: distance / speed });
   }
   const travelSeconds = segments.reduce((sum, segment) => sum + segment.seconds, 0);
   const rampSeconds = Math.min(realDuration(.18) / FIELD_WORK_SPEED_MULTIPLIER, travelSeconds * .2);
