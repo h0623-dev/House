@@ -30,6 +30,7 @@ import { layoutProductionBubbles } from './production-bubble-layout';
 import { type OutdoorSiteId } from './outdoor-sites';
 import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId, type GroundResourceNode } from './ground-resources';
 import { getGatheringNode } from './gathering';
+import { layoutGroundMarkers, type GroundMarker, type GroundMarkerInput } from './ground-marker-layout';
 import { drawGroundLandscape, drawGroundSprite, groundArtReady } from './ground-art';
 import { GROUND_LANDSCAPE_BOUNDS, GROUND_BACKGROUND_BOUNDS, getGroundResourceVisual, getGroundVisualBounds, getGroundVisualPolygon } from './ground-visuals';
 import { getFarmPlotCare } from './farm-economy';
@@ -39,7 +40,7 @@ import { isNavigationLinkSurface } from './scene-navigation';
 
 type Point = [number, number];
 type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'pet-gate' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'ground-resource' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot';
-type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; polygon?: Point[]; plotId?: number; siteId?:OutdoorSiteId; nodeId?:GroundResourceId };
+type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; polygon?: Point[]; plotId?: number; siteId?:OutdoorSiteId; nodeId?:GroundResourceId; marker?:boolean };
 type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade' | 'pet-gate';
 type FarmAction = 'plant' | 'water' | 'fertilize' | 'harvest';
 type PlanningMode = 'catalog' | 'placement' | 'expansion';
@@ -104,6 +105,7 @@ export class Scene {
   private zone: 'home' | 'grove' = 'home';
   private resourceFocus: { siteId: OutdoorSiteId; nodeId?: GroundResourceId } | null = null;
   private groundResourcePaint: unknown[] = [];
+  private groundMarkerPaint: (GroundMarker & {icon:string;itemArt:unknown})[] = [];
   private selectedPlotId: number | null = null;
   private farmFocus = false;
   private farmMode: FarmAction | null = null;
@@ -317,12 +319,13 @@ export class Scene {
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const roadEntry=candidates.find(item=>item.kind==='road-entry'),petGate=candidates.find(item=>item.kind==='pet-gate'),outdoorSite=candidates.find(item=>item.kind==='outdoor-site'),
       resource=[...candidates].reverse().find(item=>item.kind==='ground-resource'),
+      resourceMarker=[...candidates].reverse().find(item=>item.kind==='ground-resource'&&item.marker),
       outdoors=this.currentHeroLocation().surface==='road',world=this.navigationWorld();
     if(petGate&&!this.constructionMode){this.focus('pet-gate');this.onSelect('pet-gate');return;}
     if(roadEntry&&!this.constructionMode){
       this.walkTo(outdoors?{surface:'deck',floor:1,point:[...world.ladder.entry]}:{surface:'road',point:[...world.ladder.bottom]});return;
     }
-    const hit = this.constructionMode ? slots[0] : outdoorSite ?? (outdoors
+    const hit = this.constructionMode ? slots[0] : resourceMarker ?? outdoorSite ?? (outdoors
       ?foreground??resource??workTree??candidates.find(item=>item.kind==='grove')
       :facilityAction ?? foreground ?? facilities[0] ?? resource ?? workTree ?? plots[0] ?? candidates[candidates.length - 1]);
     const target = groundLocation(world, [x,y],this.activeFloor,outdoors?'road':undefined);
@@ -963,10 +966,10 @@ export class Scene {
   }
   private resourceIllustration(resource: string, x: number, y: number, size: number) {
     const decoded=this.itemAtlas.complete&&this.itemAtlas.naturalWidth>0;
-    const cell = ({ wood: 0, scrap: 1, food: 2, water: 3 } as Record<string, number>)[resource];
+    const cell = ({ wood: 0, scrap: 1, food: 2, water: 3, seeds: 4 } as Record<string, number>)[resource];
     if(!decoded||cell===undefined)return{asset:'items-anime',cell,decoded,drawn:false};
     const source = this.itemAtlas.naturalWidth / 4;
-    this.ctx.drawImage(this.itemAtlas, cell * source, 0, source, source, x - size / 2, y - size / 2, size, size);
+    this.ctx.drawImage(this.itemAtlas, (cell % 4) * source, Math.floor(cell / 4) * source, source, source, x - size / 2, y - size / 2, size, size);
     return{asset:'items-anime',cell,decoded,drawn:true};
   }
   private box(u: number, v: number, z: number, w: number, d: number, h: number, top: string, front: string, side: string, outline = '#68705b') {
@@ -1400,7 +1403,7 @@ export class Scene {
     c.translate(this.dx, this.dy); c.scale(this.scale, this.scale);
     this.hits = [];
     this.accessStairPaint=null;
-    this.layoutPaintGeometry=[];this.productionItems=[];this.groundResourcePaint=[];
+    this.layoutPaintGeometry=[];this.productionItems=[];this.groundResourcePaint=[];this.groundMarkerPaint=[];
     this.petPassagePaint={drawn:false,painted:false};
     this.petPassageLeasedPaint=[];
     this.heroDrawn = false;
@@ -1414,6 +1417,7 @@ export class Scene {
     if(this.freeWalk&&(this.freeWalk.navigation.target.floor??1)===this.activeFloor){const target=this.freeWalk.navigation.target.point;this.ellipse(target[0],target[1],9,4,'#f8f0bf60','#ffe9a3',1.5);}
     this.hero();
     this.workEffects();
+    this.groundMarkers();
     this.fireflies();
     this.publishGeometry();
     this.publishAction();
@@ -1423,7 +1427,7 @@ export class Scene {
     this.canvas.dataset.groundResources=JSON.stringify(this.groundResourcePaint);
     this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway:false,truckOpacity:1,
       roadActorLayer:'normal-world-order',groundPolicy:'outside-truck-body',
-      nodes:this.groundResourcePaint,trails:GROUND_RESOURCE_ZONES,regenerationSeconds:180,
+      nodes:this.groundResourcePaint,markers:this.groundMarkerPaint,trails:GROUND_RESOURCE_ZONES,regenerationSeconds:180,
       terrain:{style:'painted-continuous-ground',asset:'ground-landscape',cameraIndependent:true,fixedWorldBounds:GROUND_LANDSCAPE_BOUNDS,coverageWorldBounds:GROUND_BACKGROUND_BOUNDS,tileMode:'fixed-mirrored-background',ready:groundArtReady(),paintedTrailIds:['grove'],capsulePaths:false,actorDepth:'foot-y',treeVariants:3},
       sites:GROUND_RESOURCE_ZONES.map((zone,index)=>{const nodes=GROUND_RESOURCE_NODES.filter(node=>node.siteId===zone.id),
         readyCount=nodes.filter(node=>!this.state||getGatheringNode(this.state,node.id)?.ready).length;
@@ -1987,7 +1991,7 @@ export class Scene {
         painted=drawGroundSprite(this.ctx,art.sprite,x,y,art.width,art.height,.55,art.variant);
       }
       if(!ready&&(active||this.resourceFocus?.nodeId===node.id))cooldownLabels.push({node,seconds:stock?.remainingSeconds??0});
-      const hitBounds=bounds,polygon=getGroundVisualPolygon(node),hit=available?'ground-resource':null;
+      const hitBounds=getGroundVisualBounds(node,visual),polygon=getGroundVisualPolygon(node,visual),hit='ground-resource' as const;
       const target:Point=[(bounds[0]+bounds[2])/2,(bounds[1]+bounds[3])/2];
       if(hit)this.hits.push({kind:hit,plotId:index,nodeId:node.id,siteId:node.siteId,x:target[0],y:target[1],radius:0,bounds:hitBounds,polygon});
       this.pulse(`ground:${node.id}`,x,y,34*s);
@@ -2014,6 +2018,70 @@ export class Scene {
       this.round(x-19*pixel,y+17*node.scale,38*pixel,15*pixel,7*pixel,'#e8eeddf0','#9cac8c');
       this.label(`${seconds}초`,x,y+17*node.scale+10.5*pixel,8.5*pixel,'#55724e',700);
     }
+  }
+
+  private groundMarkers() {
+    if(this.activeFloor!==1||this.constructionMode||this.planningMode||this.farmFocus||this.farmMode)return;
+    const now=Date.now(),hero=this.currentHeroLocation().point;
+    const candidates:GroundMarkerInput[]=GROUND_RESOURCE_NODES.map((node,index)=>{
+      const stock=this.state?getGatheringNode(this.state,node.id,now):undefined;
+      const sprite=this.groundSpriteBounds(node),screen=sprite.map((v,i)=>(i%2?this.dy:this.dx)+v*this.scale)as[number,number,number,number];
+      return{id:node.id,index,kind:node.kind,resource:node.resource,ready:stock?.ready??true,
+        active:this.action?.groundResourceId===node.id,affordable:!this.state||this.state.energy>=(stock?.energyCost??0),remainingSeconds:stock?.remainingSeconds??0,
+        anchor:[this.dx+node.point[0]*this.scale,this.dy+node.point[1]*this.scale],spriteBounds:screen,
+        distance:Math.hypot(node.point[0]-hero[0],node.point[1]-hero[1])};
+    });
+    const viewport={left:this.safeViewport.left,top:this.safeViewport.top,right:this.width-this.safeViewport.right,bottom:this.height-this.safeViewport.bottom};
+    const placementViewport={...viewport};
+    if(this.overviewBounds&&this.scale<.1){
+      const mapLeft=this.dx+this.overviewBounds.left*this.scale,mapRight=this.dx+this.overviewBounds.right*this.scale;
+      // An extremely short landscape overview fits the world into a small
+      // center. Put its four readable controls beside it, keeping the truck clear.
+      if(viewport.right-mapRight>304)placementViewport.left=mapRight+12;
+      else if(mapLeft-viewport.left>304)placementViewport.right=mapLeft-12;
+    }
+    const canvasBounds=this.canvas.getBoundingClientRect();
+    const hud=[...document.querySelectorAll<HTMLElement>('.scene-top,.truck-floor-controls,.settlement-objective,.road-controls')]
+      .map(element=>({element,bounds:element.getBoundingClientRect()}))
+      .filter(({bounds})=>bounds.width>0&&bounds.height>0&&bounds.bottom>canvasBounds.top&&bounds.top<canvasBounds.bottom);
+    const hudBottom=(includeRoad:boolean)=>Math.max(viewport.top,...hud.filter(({element})=>includeRoad||!element.classList.contains('road-controls'))
+      .map(({bounds})=>bounds.bottom-canvasBounds.top+14));
+    const belowHud=hudBottom(true);
+    if(placementViewport.bottom-belowHud>=52)placementViewport.top=Math.max(placementViewport.top,belowHud);
+    else{
+      // In a short landscape view the road toolbar owns the left column.
+      // Keep real finger targets in the free column, with space around DOM
+      // buttons so mobile browsers cannot redirect touches to nearby controls.
+      placementViewport.top=Math.max(placementViewport.top,hudBottom(false));
+      const toolbar=hud.find(({element})=>element.classList.contains('road-controls'))?.bounds;
+      if(toolbar&&placementViewport.right-(toolbar.right-canvasBounds.left+14)>=80)
+        placementViewport.left=Math.max(placementViewport.left,toolbar.right-canvasBounds.left+14);
+    }
+    const activeHero=this.action?.groundResourceId&&this.currentHeroLocation().surface==='road'?
+      [{left:this.dx+hero[0]*this.scale-40*WORLD_HERO_SCALE*this.scale-6,top:this.dy+(hero[1]-132*WORLD_HERO_SCALE)*this.scale-6,
+        right:this.dx+hero[0]*this.scale+40*WORLD_HERO_SCALE*this.scale+6,bottom:this.dy+hero[1]*this.scale+8}]:[];
+    const markers=layoutGroundMarkers(candidates,this.scale,viewport,placementViewport,activeHero),c=this.ctx,dpr=Math.min(window.devicePixelRatio||1,2);
+    c.save();c.setTransform(dpr,0,0,dpr,0,0);
+    for(const marker of markers){
+      const[left,top,right,bottom]=marker.screenBounds,cx=(left+right)/2,cy=(top+bottom)/2,
+        ready=marker.status==='ready',working=marker.status==='working',color=working?'#846d37':ready?'#3d704b':'#82765d';
+      const connectorLength=Math.hypot(marker.anchor[0]-cx,marker.anchor[1]-bottom);
+      if(connectorLength>6&&connectorLength<100){
+        c.globalAlpha=.65;this.line([[cx,bottom],[marker.anchor[0],marker.anchor[1]]],'#e9dfb8',1.3);c.globalAlpha=1;
+      }
+      c.shadowColor='#203a3024';c.shadowBlur=4;c.shadowOffsetY=2;
+      this.round(left,top,right-left,bottom-top,10,working?'#f9edc9f5':ready?'#fff9e9f5':'#efebdded',working?'#bc9a50':ready?'#8da677':'#bcb69d');
+      c.shadowBlur=0;c.shadowOffsetY=0;
+      const itemArt=this.resourceIllustration(marker.resource,left+14,cy-1,20);
+      this.label(marker.label,left+44,top+14,11,color,750);
+      const status=working?'작업 중':marker.status==='cooldown'?`${marker.remainingSeconds}초`:marker.status==='unaffordable'?'기력 부족':marker.count>1?`채집 ${marker.readyCount}/${marker.count}`:'터치 채집';
+      this.label(status,left+44,top+27,8,color,600);
+      const hitBounds=marker.hitScreenBounds.map((v,i)=>(v-(i%2?this.dy:this.dx))/this.scale)as[number,number,number,number];
+      const node=GROUND_RESOURCE_NODES[marker.index];
+      this.hits.push({kind:'ground-resource',plotId:marker.index,nodeId:marker.nodeId,siteId:node.siteId,x:(cx-this.dx)/this.scale,y:(cy-this.dy)/this.scale,radius:0,bounds:hitBounds,marker:true});
+      this.groundMarkerPaint.push({...marker,icon:marker.resource,itemArt});
+    }
+    c.restore();
   }
 
   private buildingDeck() {

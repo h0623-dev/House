@@ -94,7 +94,6 @@ let renderedShopKey='';
 let renderedFarmDeliveryKey='';
 let renderedRoadsideKey='';
 let activeRoadsideSite:OutdoorSiteId|null=null;
-let activeGroundResource:GroundResourceId|null=null;
 let lastUpdate:UpdateResult|undefined;
 let updateBusy=false;
 let automaticUpdate:AutomaticUpdateState={status:'idle',progress:0,message:'앱 기능의 새 버전을 자동으로 확인해요.'};
@@ -172,7 +171,7 @@ const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number)=>{
  if(kind==='facility'){if(plotId!==undefined){if(placement)toast('표시된 빈 자리를 눌러 배치해 주세요.');else selectFacility(plotId);}return;}
  if(kind==='farm-expand'){if(!actionBusy)openModal('farm-expand');return;}
  if(kind==='outdoor-site'){const site=OUTDOOR_SITES[plotId??-1];if(site&&!actionBusy)openRoadsideSite(site.id);return;}
- if(kind==='ground-resource'){const node=GROUND_RESOURCE_NODES[plotId??-1];if(node&&!actionBusy)openGroundResource(node.id);return;}
+ if(kind==='ground-resource'){const node=GROUND_RESOURCE_NODES[plotId??-1];if(node)void gatherGroundResource(node.id);return;}
  if(kind==='pet-gate'){if(!actionBusy)openModal('pet-passage');return;}
  if(kind==='farm'&&farmMode){if(plotId!==undefined)enqueueFarmPlot(plotId);return;}
  if(actionBusy)return;
@@ -898,17 +897,14 @@ function outdoorCard(id:OutdoorSiteId){
 }
 function groundNodeButton(id:GroundResourceId){
  const view=getGatheringNode(state,id)!;
- return `<button class="ground-node-choice" data-ground-node="${id}">${view.cropId?cropIcon(view.cropId,'seed'):icon(view.node.resource)}<strong>${escape(view.node.name)}</strong><small data-ground-status="${id}">${view.ready?'채집 가능':`${view.remainingSeconds}초 뒤 재생`}</small></button>`;
+ return `<button class="ground-node-choice" data-ground-node="${id}" aria-label="${escape(view.node.name)}에 직접 가서 ${view.node.kind==='tree'?'벌목':'채집'}하기">${view.cropId?cropIcon(view.cropId,'seed'):icon(view.node.resource)}<strong>${escape(view.node.name)}</strong><small data-ground-status="${id}">${view.ready?'채집 가능':`${view.remainingSeconds}초 뒤 재생`}</small></button>`;
 }
 function renderLiveRoadside(){
- const key=JSON.stringify([currentModal,activeRoadsideSite,activeGroundResource,state.gathering,state.resources]);
+ const key=JSON.stringify([currentModal,activeRoadsideSite,state.gathering,state.resources]);
  if(key!==renderedRoadsideKey){
   const scroll=document.querySelector<HTMLElement>('#modal-root .modal')?.scrollTop??0;
   renderedRoadsideKey=key;
-  if(currentModal==='outdoor-site'&&activeGroundResource){
-   const view=getGatheringNode(state,activeGroundResource)!,node=view.node;
-   modalShell('ONE LITTLE DISCOVERY',node.name,`<div class="ground-node-summary">${view.cropId?cropIcon(view.cropId,'seed'):icon(node.resource)}<strong>${gatheringReward(view)}</strong><span>기력 ${view.energyCost} · 개별 재생 180초</span><small data-ground-status="${node.id}">${view.ready?'채집 가능':`${view.remainingSeconds}초 뒤 재생`}</small></div><p class="modal-description">이 ${node.kind==='tree'?'나무를 직접 베어요':'채집물에 직접 가서 작업해요'}.<br>다른 채집물은 각자 따로 다시 자라요.</p><button class="button full-width" data-ground-collect="${node.id}">${icon(node.resource)}<span data-ground-cta>${view.ready?'직접 가서 채집하기':`${view.remainingSeconds}초 뒤 재생`}</span></button><button class="button button-light full-width activity-secondary" data-ground-focus="${node.id}">${icon('pin')} 이 채집물 크게 보기</button><button class="text-button full-width" data-outdoor-walk="${node.siteId}">${getGroundResourceZone(node.siteId)!.name} 둘러보기</button><button class="text-button full-width" data-outdoor-site="${node.siteId}">이 구역의 다른 채집물 보기</button>`);
-  }else if(currentModal==='outdoor-site'&&activeRoadsideSite){
+  if(currentModal==='outdoor-site'&&activeRoadsideSite){
    const area=groundArea(activeRoadsideSite),zone=getGroundResourceZone(activeRoadsideSite)!;
    modalShell('FOLLOW THE FOREST TRAIL',zone.name,`${outdoorCard(zone.id)}<p class="modal-description">${zone.id==='grove'?'숲속길을 따라 나무를 하나씩 골라 베어요.':'지상의 채집물을 하나씩 골라 모아요.'}<br>작업을 마친 곳마다 실제 180초 후 다시 생성돼요.</p><button class="button full-width" data-outdoor-walk="${zone.id}">${icon('map')} ${zone.name} 크게 보기</button><div class="ground-node-grid">${area.views.map(view=>groundNodeButton(view.node.id)).join('')}</div><button class="button button-light full-width activity-secondary" data-outdoor-collect="${zone.id}">${icon(area.next.node.resource)}<span data-outdoor-cta="${zone.id}">준비된 곳에서 채집하기</span></button><button class="text-button full-width" data-open="roadside">다른 채집 구역 보기</button>`,true);
   }else modalShell('LIFE BEYOND THE TRUCK','지상 채집 지도',`<p class="modal-description">트럭에서 내려와 숲길과 여러 채집 구역을 탐색해요.<br>구역을 크게 보고 원하는 채집물을 직접 눌러 주세요.</p><div class="outdoor-cards">${OUTDOOR_SITES.map(site=>outdoorCard(site.id)).join('')}</div><div class="outdoor-modal-actions"><button class="button" data-road-walk>${icon('move')} 도로 걷기</button><button class="button button-light" data-road-return>${icon('truck')} 트럭으로</button></div><p class="fine-print">모든 채집물은 개별 재생 · 실제 180초<br>다시 실행하거나 게임 시간을 멈춰도 재생 시간은 이어져요.</p>`,true);
@@ -923,12 +919,9 @@ function renderLiveRoadside(){
  for(const node of GROUND_RESOURCE_NODES){
   const view=getGatheringNode(state,node.id)!;
   document.querySelectorAll<HTMLElement>(`[data-ground-status="${node.id}"]`).forEach(status=>status.textContent=view.ready?'채집 가능':`${view.remainingSeconds}초 뒤 재생`);
-  const button=document.querySelector<HTMLButtonElement>(`[data-ground-collect="${node.id}"]`);
-  if(button){button.disabled=!view.ready;button.querySelector('[data-ground-cta]')!.textContent=view.ready?'직접 가서 채집하기':`${view.remainingSeconds}초 뒤 재생`;}
  }
 }
-function openRoadsideSite(id:OutdoorSiteId){activeRoadsideSite=id;activeGroundResource=null;openModal('outdoor-site');}
-function openGroundResource(id:GroundResourceId){const node=getGroundResourceNode(id);if(!node)return;activeGroundResource=id;activeRoadsideSite=node.siteId;openModal('outdoor-site');}
+function openRoadsideSite(id:OutdoorSiteId){activeRoadsideSite=id;openModal('outdoor-site');}
 function petPassageContent(){
  const open=getPetPassage(state).open;
  return `<div class="pet-passage-summary">${icon('paw')}<div><strong>친구들만 다니는 경사로</strong><span data-pet-passage-status>${open?'문이 열려 있어요':'문이 닫혀 있어요'}</span></div></div><p class="modal-description">강아지와 고양이는 전용 경사로로 트럭과 지상을 오가요.<br>주인공이 문까지 걸어가 직접 열고 닫아요.</p><button class="button full-width" data-pet-passage-toggle="${open?'close':'open'}">${icon('paw')} ${open?'문 닫으러 가기':'문 열러 가기'}</button><p class="fine-print">재료와 기력을 사용하지 않아요.<br>문을 닫으면 친구들은 지금 있는 층이나 지상에서 산책해요. 이미 경사로를 건너는 친구는 끝까지 지나간 뒤 닫아요.</p>`;
@@ -960,8 +953,9 @@ async function roadsideAction(id:OutdoorSiteId):Promise<boolean>{
 }
 async function gatherGroundResource(id:GroundResourceId):Promise<boolean>{
  if(actionBusy||battleView||startupPending||contentActivationPending)return false;
+ if(currentModal==='outdoor-site'||currentModal==='roadside')closeModal();
  state=recoverEnergy(state);
- const before=performGatheringAction(state,id);if(!before.ok){openGroundResource(id);toast(before.message);return false;}
+ const before=performGatheringAction(state,id);if(!before.ok){toast(before.message);return false;}
  if(!prepareRoadWalk(true))return false;
  const node=getGroundResourceNode(id)!;actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
  const status=document.querySelector<HTMLElement>('.chore-status')!;
@@ -1058,7 +1052,7 @@ function showPlanningSheet(mode:'catalog'|'expansion',expectedModal=mode==='cata
 }
 function openModal(kind:string){
 
- if(kind==='grove'){activeRoadsideSite='grove';activeGroundResource=null;kind='outdoor-site';}if(kind==='seeds'){openSeedInventory();return;}if(battleView)return;closeModal();document.querySelector('#toast')!.classList.remove('visible');clearTimeout(toastTimer);cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();currentModal=kind;updateNav();
+ if(kind==='grove'){activeRoadsideSite='grove';kind='outdoor-site';}if(kind==='seeds'){openSeedInventory();return;}if(battleView)return;closeModal();document.querySelector('#toast')!.classList.remove('visible');clearTimeout(toastTimer);cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();currentModal=kind;updateNav();
  if(kind==='energy'){
   state=recoverEnergy(state);renderVitals();
   modalShell('A LITTLE ENERGY EVERY MINUTE','기력 자동 회복','<div class="energy-recovery-summary"><span>'+icon('bolt')+'</span><strong><b data-energy-current>'+Math.round(state.energy)+'</b> / 100</strong><p>실제 시간 20초마다 +1 · 1분에 +3</p><p data-energy-next>'+energyRecoveryText()+'</p></div><p class="modal-description">기력은 버튼을 누르지 않아도 자연스럽게 회복돼요.<br>게임을 닫아 둔 동안에도 최대 100까지 회복됩니다.</p><button class="button full-width" data-close>계속 플레이</button>');
@@ -1099,7 +1093,7 @@ function openModal(kind:string){
  if(kind==='quests'){modalShell('ONE STEP AT A TIME','작은 목표, 큰 하루',`<p class="modal-description">서두르지 않아도 괜찮아요. 하나씩 해 나가요.</p><div class="quest-list">${questList(state).map(q=>`<article class="quest-row ${q.complete?'completed':''}"><span class="quest-row-icon">${icon(q.complete?'check':'flag')}</span><div><h3>${escape(q.title)}</h3><p>${escape(q.description)}</p><small>${escape(q.reward)} · 달성 시 자동 지급</small><div class="quest-progress"><span style="width:${Math.min(100,q.current/q.target*100)}%"></span></div></div><b>${q.current}/${q.target}</b></article>`).join('')}</div>`);}
  if(kind==='pet'){modalShell('OUR LITTLE FAMILY','함께 성장하는 동물 동료',`${companionRosterCards()}<p class="modal-description">데크를 넓히면 새로운 동료를 만나요.<br>마음에 드는 동료를 최대 3마리 편성하고, 모험에서 경험치를 얻어 성장해요.</p><div class="bond-meter"><span>우리의 행복</span><strong>${Math.round(state.morale)} / 100</strong><div class="quest-progress"><span style="width:${state.morale}%"></span></div></div><button class="button full-width" data-action="rest">${icon('bed')} 동료 체력 돌보기</button><p class="fine-print">${state.resources.food>=1&&state.resources.water>=1?'식량 1 · 물 1 · 동료 체력 35% 회복':'물자가 없어도 동료 체력 10% 회복'}</p><button class="button button-light full-width activity-secondary" data-action="pet">${icon('paw')} 보리 쓰다듬기</button><button class="button button-light full-width activity-secondary" data-open="shop">${icon('bag')} 상점에서 동료 만나기</button><button class="text-button full-width" data-open="hunt">${icon('hunt')} 사냥 준비로 돌아가기</button>`);}
  if(kind==='character'||kind==='welcome'){selectedGender=state.gender;modalShell(kind==='welcome'?'YOUR STORY STARTS HERE':'MEET YOUR SURVIVOR',kind==='welcome'?'우리의 첫 번째 아침':'오늘의 나를 만나기',`<p class="modal-description">2187년, 좀비로 가득한 대한민국.<br>커다란 트럭 위에서 당신만의 작은 일상을 시작하세요.</p><div class="character-choices"><button data-gender="female" class="character-choice ${selectedGender==='female'?'selected':''}">${portrait('female','',getEquippedOutfit(state,'female'))}<strong>여자 생존자</strong><span>다정하고 씩씩한 모험가</span></button><button data-gender="male" class="character-choice ${selectedGender==='male'?'selected':''}">${portrait('male','',getEquippedOutfit(state,'male'))}<strong>남자 생존자</strong><span>따뜻하고 든든한 모험가</span></button></div><label class="name-label" for="player-name">어떤 이름으로 불러 드릴까요?</label><input class="name-input" id="player-name" maxlength="16" value="${escape(state.name)}" placeholder="생존자의 이름" autocomplete="off"><button class="button full-width" data-start>${icon('sun')} ${kind==='welcome'?'우리집에서 시작하기':'변경 저장하기'}</button><p class="fine-print">캐릭터는 언제든 변경할 수 있어요 · 기기에 자동 저장</p>${kind==='welcome'&&showInstallHelp()&&isAppleMobileDevice()?`<details class="pwa-welcome-install" data-pwa-welcome-install><summary>아이폰 홈 화면에서 시작하는 방법</summary>${homeScreenInstructions()}<p>Safari와 홈 화면 앱의 진행은 별개일 수 있어요. 처음부터 홈 화면 아이콘으로 시작하면 좋아요.</p></details>`:''}`);}
- if(kind==='map'){activeRoadsideSite=null;activeGroundResource=null;currentModal='roadside';renderedRoadsideKey='';renderLiveRoadside();}
+ if(kind==='map'){activeRoadsideSite=null;currentModal='roadside';renderedRoadsideKey='';renderLiveRoadside();}
  if(kind==='journal'){modalShell('POSTCARDS FROM THE ROAD','우리의 여행 일지',`<div class="journal-day">DAY ${String(state.day).padStart(2,'0')}<span>도로 위에서 함께한 날들</span></div><div class="journal-stats"><div><b>${state.stats.harvests}</b><span>번의 수확</span></div><div><b>${state.stats.chops}</b><span>번의 벌목</span></div><div><b>${state.stats.battlesWon}</b><span>번의 전투 승리</span></div></div><div class="journal-entries">${state.log.slice(0,12).map(l=>`<div>${icon('leaf')}<p>${escape(l)}</p></div>`).join('')||'<p>작은 행동으로 첫 번째 이야기를 써 보세요.</p>'}</div>`);}
  if(kind==='install'){
   const installed=isHomeScreenGame(),supported=isLiveUpdateSupported();
@@ -1191,8 +1185,7 @@ document.addEventListener('click',e=>{
  if(t.dataset.petPassageToggle){void operatePetPassage(t.dataset.petPassageToggle==='open');return;}
  if(t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')){if(prepareRoadWalk()){if(t.hasAttribute('data-road-return'))scene.walkToTruck();else scene.walkOntoRoad();}return;}
  if(t.dataset.outdoorSite){const site=getOutdoorSite(t.dataset.outdoorSite);if(site&&!actionBusy)openRoadsideSite(site.id);return;}
- if(t.dataset.groundNode){const node=getGroundResourceNode(t.dataset.groundNode);if(node&&!actionBusy)openGroundResource(node.id);return;}
- if(t.dataset.groundCollect){const node=getGroundResourceNode(t.dataset.groundCollect);if(node)void gatherGroundResource(node.id);return;}
+ if(t.dataset.groundNode){const node=getGroundResourceNode(t.dataset.groundNode);if(node)void gatherGroundResource(node.id);return;}
  if(t.dataset.groundFocus){const node=getGroundResourceNode(t.dataset.groundFocus);if(node&&prepareRoadWalk(true)){scene.focusGroundResource(node.id);toast('원하는 채집물을 누르면 직접 가서 작업해요.');}return;}
  if(t.dataset.outdoorCollect){const site=getOutdoorSite(t.dataset.outdoorCollect);if(site)void roadsideAction(site.id);return;}
  if(t.dataset.outdoorWalk){const site=getOutdoorSite(t.dataset.outdoorWalk);if(site&&prepareRoadWalk()){scene.focusResourceArea(site.id);toast('채집물을 눌러 하나씩 모아요. 지도 버튼을 켜고 드래그하면 숲 안쪽도 볼 수 있어요.');}return;}
