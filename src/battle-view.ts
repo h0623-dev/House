@@ -1,7 +1,7 @@
 import { BattleSimulation, getBattleEnemyTarget, getBattleSkillAvailability, SKILL_COOLDOWNS, STAGE_NAMES, type BattleAlly, type BattleEnemy, type BattleResult, type BattleSkill } from './battle';
 import { realDuration } from './game-speed';
 import { type CompanionRoster } from './companions';
-import { UNITS, type UnitBattleBonuses, type UnitId, type UnitRoster } from './units';
+import { UNITS, getUnitSkillFamily, type UnitBattleBonuses, type UnitId, type UnitRoster } from './units';
 import { companionArtReady, companionPortrait, drawCompanion, type CompanionPose } from './companion-art';
 import { drawZombie } from './creatures';
 import { drawBattleLandscape } from './battle-art';
@@ -27,7 +27,7 @@ function teamSkills(teamIds: UnitId[]): SkillButton[] {
   const ordered = teamIds.length === 2 && teamIds.includes('dog') && teamIds.includes('cat') ? ['cat', 'dog'] as UnitId[] : teamIds;
   const skills = ordered.map(id => {
     const unit = UNITS[id];
-    const symbol = { dash: 'dash', sweep: 'sweep', mend: 'heal', volley: 'hunt', fortify: 'shield', burst: 'sparkle' }[unit.skillId];
+    const symbol = { dash: 'dash', sweep: 'sweep', mend: 'heal', volley: 'hunt', fortify: 'shield', burst: 'sparkle' }[getUnitSkillFamily(unit.skillId)];
     return { id: unit.skillId as BattleSkill, symbol: icon(symbol), label: unit.skillLabel, description: unit.skillDescription, owner: unit.name, ownerId: id, key: '' } as SkillButton;
   });
   if (skills.length < 3) skills.push({ id: 'heal', symbol: icon('heal'), label: '함께 회복', description: '생존 아군 +29', owner: '회복 보급', key: '' });
@@ -35,7 +35,9 @@ function teamSkills(teamIds: UnitId[]): SkillButton[] {
 }
 const clean = (s: string): string => s.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!));
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
-const HEALTH_COLORS: Record<UnitId, string> = { dog: '#e9c987', cat: '#becbe9', rabbit: '#c1dda3', fox: '#edb985', boar: '#d8c49c', owl: '#cdbde9' };
+const HEALTH_COLORS: Record<UnitId, string> = { dog: '#e9c987', cat: '#becbe9', rabbit: '#c1dda3', fox: '#edb985', boar: '#d8c49c', owl: '#cdbde9', monkey: '#e7c28f', elephant: '#b6cace', giraffe: '#eed18d', panda: '#c9d9bc', deer: '#dfbb93' };
+const ANIMAL_ART_HEIGHT: Readonly<Record<UnitId, number>> = { dog: 65, cat: 58, rabbit: 56, fox: 60, boar: 64, owl: 52, monkey: 56, elephant: 110, giraffe: 145, panda: 85, deer: 95 };
+const BATTLE_ART_SCALE: Readonly<Record<UnitId, number>> = { dog: 1, cat: 1, rabbit: 1, fox: 1, boar: 1, owl: 1, monkey: 1, elephant: .82, giraffe: .72, panda: .9, deer: .85 };
 
 /** Owns a single modal battle and releases every listener on destroy. */
 export class BattleView {
@@ -417,10 +419,11 @@ export class BattleView {
       c.save(); c.strokeStyle = '#f8d486'; c.fillStyle = '#f5cf7728'; c.lineWidth = 1.5;
       c.beginPath(); c.ellipse(x, ground - 31 * scale, 33 * scale, 42 * scale, 0, 0, Math.PI * 2); c.fill(); c.stroke(); c.restore();
     }
-    drawCompanion(c, { id: ally.id, x, y, scale, time, facing: 1, pose,
+    const animalScale = scale * BATTLE_ART_SCALE[ally.id];
+    drawCompanion(c, { id: ally.id, x, y, scale: animalScale, time, facing: 1, pose,
       ...((attacking || skill) && !down ? { progress: activeProgress } : {}) });
     const hpWidth = s.teamIds.length === 3 ? Math.min(43 * scale, this.width * .083) : 43 * scale;
-    const hpY = y - 72 * scale;
+    const hpY = y - Math.max(72 * scale, ANIMAL_ART_HEIGHT[ally.id] * animalScale + 8 * scale);
     c.save(); c.globalAlpha = down ? .65 : 1;
     this.round(c, x - hpWidth / 2 - 1, hpY - 1, hpWidth + 2, 6, 3, '#233829d9', '#ffedbeab', .8);
     const percentage = clamp(ally.health / ally.maxHealth);
@@ -481,8 +484,8 @@ export class BattleView {
             c.beginPath(); c.moveTo(x - 17 + i * 8, middle + 13);
             c.quadraticCurveTo(x - 3 + i * 7, middle - 1, x + 8 + i * 5, middle - 22); c.stroke();
           }
-        } else if (event.actor === 'fox' || event.actor === 'owl' || event.actor === 'rabbit') {
-          const color = event.actor === 'owl' ? '#d7cbff' : event.actor === 'rabbit' ? '#d6efb6' : '#ffe0a5';
+        } else if (event.actor && ['ranged', 'mage', 'support'].includes(UNITS[event.actor].role)) {
+          const color = event.actor === 'owl' ? '#d7cbff' : UNITS[event.actor].role === 'support' ? '#d6efb6' : '#ffe0a5';
           this.projectile(c, sourceX, sourceFloor - 36 * scale, x - 10, middle, p, color, event.actor === 'fox');
         } else {
           c.strokeStyle = '#ffe1a7dc'; c.lineWidth = 2;
@@ -545,7 +548,7 @@ export class BattleView {
       } else if ((event.kind === 'mend' || event.kind === 'fortify' || event.kind === 'buff') && elapsed < .8) {
         const phase = elapsed / .8;
         c.save(); c.globalAlpha = 1 - phase;
-        const healing = event.actor === 'rabbit';
+        const healing = event.actor ? getUnitSkillFamily(UNITS[event.actor].skillId) === 'mend' : false;
         c.strokeStyle = healing ? '#d4edbc' : '#ffdaa1'; c.fillStyle = healing ? '#bcdda936' : '#edc77836'; c.lineWidth = 1.8;
         const targetX = event.kind === 'buff' ? x : sourceX;
         const buffMiddle = (event.kind === 'buff' ? targetFloor : sourceFloor) - 53 * scale;

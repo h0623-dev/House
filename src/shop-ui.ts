@@ -5,7 +5,7 @@ import { companionPortrait } from './companion-art';
 import { icon } from './icons';
 import { survivorOutfitPreview } from './outfit-art';
 import { gameMinutesToSeconds } from './game-time';
-import { UNIT_IDS, UNITS, isUnitId } from './units';
+import { UNIT_IDS, UNITS, isUnitId, canAnimalBoardTruck, getAnimalDeckUnlockLevel } from './units';
 import {
   getShop, getOwnedPetIds, getEquippedOutfit, isOutfitId, isShopSaleResource,
   OUTFIT_IDS, SHOP_OUTFITS, SHOP_SEED_PRICES, SHOP_PET_PRICES, SHOP_SALE_PRICES,
@@ -18,7 +18,7 @@ export type ShopPurchaseKind = 'seed' | 'pet' | 'outfit' | 'sale';
 export const SHOP_TABS: readonly ShopTab[] = ['seeds', 'pets', 'outfits', 'sell'];
 const tabLabels: Record<ShopTab, string> = { seeds: '씨앗', pets: '애완동물', outfits: '의상', sell: '판매' };
 const tabIcons: Record<ShopTab, string> = { seeds: 'seeds', pets: 'paw', outfits: 'outfit', sell: 'food' };
-const petKinds = { dog: '강아지', cat: '고양이', rabbit: '토끼', fox: '여우', boar: '멧돼지', owl: '부엉이' };
+const petKinds = { dog: '강아지', cat: '고양이', rabbit: '토끼', fox: '여우', boar: '멧돼지', owl: '부엉이', monkey: '원숭이', elephant: '코끼리', giraffe: '기린', panda: '판다', deer: '사슴' };
 const saleResources = ['food', 'wood', 'scrap'] as const;
 let coinArtId = 0;
 function coinIcon(): string {
@@ -50,11 +50,12 @@ function seedCards(state: GameState, quantity: ShopQuantity): string {
 
 function petCards(state: GameState): string {
   const shop = getShop(state), owned = getOwnedPetIds(state);
-  return `<p class="shop-intro">마음에 드는 친구를 먼저 만나요.<br>데크 성장으로 만난 동료는 이미 함께하고 있어요.</p><div class="shop-product-grid">${UNIT_IDS.map(id => {
+  return `<p class="shop-intro">11종의 친구가 한 마리씩 함께 살아요.<br>큰 동물은 지상에서 지내고, 트럭을 넓히면 올라올 수 있어요.</p><div class="shop-product-grid">${UNIT_IDS.map(id => {
     const unit = UNITS[id], hasPet = owned.includes(id), paid = shop.adoptedPets.includes(id);
-    const obtained = paid ? '상점에서 만난 동료' : id === 'dog' || id === 'cat' ? '우리의 첫 동료' : '데크 성장으로 만난 동료';
-    return `<article class="shop-product shop-pet-card ${hasPet ? 'shop-owned' : ''}" data-shop-product="${id}"><div class="shop-pet-art">${companionPortrait(id)}</div><h3>${unit.name}<small>${petKinds[id]}</small></h3><p class="shop-pet-role">${unit.roleLabel}</p><p class="shop-pet-detail">${unit.skillDescription}</p><span class="shop-ownership">${hasPet ? `${icon('check')}${obtained}` : `데크 Lv.${unit.unlockDeck} 성장으로도 만나요`}</span>${hasPet ? `<button class="shop-owned-action" data-open="pet" aria-label="${unit.name} 동료 편성 열기">${icon('paw')}동료 편성</button>` : purchaseButton('pet', id, '친구 만나기', SHOP_PET_PRICES[id])}</article>`;
-  }).join('')}</div><p class="shop-note">새 동료는 보유 목록에 합류해요.<br>전투에 함께할 동료는 동료 편성에서 직접 골라 주세요.</p>`;
+    const obtained = paid ? '이미 함께하는 동료 · 1마리' : '우리 마을 동료 · 1마리';
+    const habitat = canAnimalBoardTruck(id,state.deckLevel) ? getAnimalDeckUnlockLevel(id)>1?'지상·트럭 1층에서 생활해요':'지상·트럭에서 생활해요' : `지상 생활 · 데크 Lv.${getAnimalDeckUnlockLevel(id)}부터 탑승`; 
+    return `<article class="shop-product shop-pet-card ${hasPet ? 'shop-owned' : ''}" data-shop-product="${id}"><div class="shop-pet-art">${companionPortrait(id)}</div><h3>${unit.name}<small>${petKinds[id]}</small></h3><p class="shop-pet-role">${unit.roleLabel}</p><p class="shop-pet-detail">${habitat}</p><p class="shop-pet-detail">${unit.skillDescription}</p><span class="shop-ownership">${hasPet ? `${icon('check')}${obtained}` : `데크 Lv.${unit.unlockDeck} 성장으로도 만나요`}</span>${hasPet ? `<button class="shop-owned-action" data-open="pet" aria-label="${unit.name} 동료 편성 열기">${icon('paw')}동료 편성</button>` : purchaseButton('pet', id, '친구 만나기', SHOP_PET_PRICES[id])}</article>`;
+  }).join('')}</div><p class="shop-note">각 동물은 한 마리씩 보유하며 중복 구매하지 않아요.<br>전투에 함께할 동료는 동료 편성에서 직접 골라 주세요.</p>`;
 }
 
 function outfitPreview(gender: Gender, outfit: EquippedOutfitId, secondary = false): string {

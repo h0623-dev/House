@@ -14,8 +14,11 @@ export interface PetPatrolState {
   turnFrom:1|-1;nextFacing:1|-1;turnHeading:number;worldKey:string;desiredFloor:TruckFloor;desiredSurface?:'deck'|'road';
   passageLease?:NavigationLink;
   waitingForPassage?:string;
+  /** Each roadside resident keeps a quiet part of the clearing instead of crowding the hero. */
+  home?:NavigationLocation;habitatIndex?:number;visits?:number;
 }
-const nominalRadius:Readonly<Record<UnitId,number>>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31};
+const nominalRadius:Readonly<Record<UnitId,number>>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31,
+  monkey:22/.73,elephant:44/.82,giraffe:34/.82,panda:32/.78,deer:29/.78};
 const finite=(n:number,fallback=0)=>Number.isFinite(n)?n:fallback;
 const distance=(a:readonly number[],b:readonly number[])=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 const copy=(location:NavigationLocation):NavigationLocation=>({...location,point:[...location.point]});
@@ -35,7 +38,7 @@ function actorsFor(world:NavigationWorld,hero:NavigationLocation,others:readonly
   return [...actors.values()];
 }
 function geometryKey(world:NavigationWorld):string{
-  return JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
+  return JSON.stringify([world.floors,world.obstacles,world.links,world.road,world.petMaxFloor]);
 }
 function sameSurface(a:NavigationLocation,b:NavigationLocation):boolean{
   return a.surface===b.surface&&(a.surface==='road'||floorOf(a)===floorOf(b));
@@ -46,27 +49,50 @@ function clearOfActors(location:NavigationLocation,radius:number,actors:readonly
 
 /** A clear physical spawn is chosen once; later floor changes always use stairs. */
 export function createPetPatrol(id:UnitId,world:NavigationWorld,hero:NavigationLocation,
-  others:NavigationActor[],index:number,scale:number):PetPatrolState|undefined{
-  const radius=getPetGroundRadius(id,scale),actors=actorsFor(world,hero,others),floor=floorOf(hero);
-  const desiredSurface=hero.surface==='road'?'road':'deck',
-    candidates=getPatrolTargets({...world,actors},desiredSurface==='road'?0:floor).filter(location=>clearOfActors(location,radius,actors));
-  candidates.sort((a,b)=>distance(a.point,hero.point)-distance(b.point,hero.point));
-  const location=candidates[Math.min(candidates.length-1,Math.max(0,index)*3)];if(!location)return;
+  others:NavigationActor[],index:number,scale:number,{initialSurface}:{initialSurface?:'road'|'deck'}={}):PetPatrolState|undefined{
+  const radius=getPetGroundRadius(id,scale),actors=actorsFor(world,hero,others),floor=floorOf(hero),
+    desiredSurface=world.petMaxFloor===0?'road':initialSurface??(hero.surface==='road'?'road':'deck'),
+    candidates=getPatrolTargets({...world,actors},desiredSurface==='road'?0:Math.min(floor,world.petMaxFloor??3)as TruckFloor)
+      .filter(location=>clearOfActors(location,radius,actors,9));
+  const body=world.obstacles.find(obstacle=>obstacle.kind==='truck-body')?.bounds,
+    center:readonly[number,number]=body?[(body.left+body.right)/2,(body.top+body.bottom)/2]:hero.point,
+    side=Math.max(0,index-2)%4,ring=Math.floor(Math.max(0,index-2)/4),offset=105+ring*75+radius,
+    anchor:readonly[number,number]=desiredSurface==='road'&&body
+      ?side===0?[body.left-offset,center[1]+ring*45]:side===1?[body.right+offset,center[1]-ring*50]
+        :side===2?[center[0]+ring*70,body.bottom+offset]:[center[0]-ring*65,body.top-offset]
+      :hero.point;
+  candidates.sort((a,b)=>distance(a.point,anchor)-distance(b.point,anchor));
+  const location=candidates[desiredSurface==='road'?0:Math.min(candidates.length-1,Math.max(0,index)*3)];if(!location)return;
   const facing:1|-1=hero.point[0]>=location.point[0]?1:-1,heading=facing===1?0:Math.PI;
-  return{id,location:copy(location),route:null,elapsed:0,distance:0,speed:0,heading,facing,facingBlend:facing,
-    blend:0,turnRemaining:0,blockedReason:null,radius,pauseRemaining:.55+Math.max(0,index)*.23,retryRemaining:0,
-    targetSequence:Math.max(0,index)*11,turnFrom:facing,nextFacing:facing,turnHeading:heading,worldKey:geometryKey(world),desiredFloor:floor,desiredSurface};
+  return{id,location:copy(location),home:copy(location),habitatIndex:index,visits:0,route:null,elapsed:0,distance:0,speed:0,heading,facing,facingBlend:facing,
+    blend:0,turnRemaining:0,blockedReason:null,radius,pauseRemaining:1.8+Math.max(0,index)*.47,retryRemaining:0,
+    targetSequence:Math.max(0,index)*11,turnFrom:facing,nextFacing:facing,turnHeading:heading,worldKey:geometryKey(world),
+    desiredFloor:floor,desiredSurface};
+}
+/** Small followers accompany the hero; the other residents take turns exploring and resting outside. */
+export function getPetPatrolDestination(state:PetPatrolState,world:NavigationWorld,hero:NavigationLocation):NavigationLocation{
+  const maxFloor=world.petMaxFloor??3,followers=state.id==='dog'||state.id==='cat'||state.id==='monkey',
+    outdoorTurn=!followers&&(Math.floor((state.visits??0)/3)+(state.habitatIndex??0))%3===0;
+  if(maxFloor===0||outdoorTurn){
+    if(hero.surface==='road'&&maxFloor>0&&!outdoorTurn)return copy(hero);
+    const home=state.home;
+    return{surface:'road',point:home?.surface==='road'?[...home.point]:[...world.ladder.bottom]};
+  }
+  if(hero.surface==='road')return copy(hero);
+  const floor=Math.min(floorOf(hero),maxFloor)as TruckFloor;
+  return{surface:'deck',floor,point:floor===floorOf(hero)?[...hero.point]:[...world.ladder.entry]};
 }
 function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationLocation,
   actors:NavigationActor[]):NavigationPath|undefined{
-  const destinationFloor=floorOf(hero),destinationSurface=hero.surface==='road'?'road':'deck',
+  const destination=getPetPatrolDestination(state,world,hero),destinationFloor=floorOf(destination),destinationSurface=destination.surface==='road'?'road':'deck',
     sameFloor=state.location.surface===destinationSurface&&(destinationSurface==='road'||floorOf(state.location)===destinationFloor);
   const attempt=(floor:TruckFloor|0,following:boolean)=>{
   let candidates=getPatrolTargets({...world,actors},floor)
     .filter(location=>clearOfActors(location,state.radius,actors,7))
     .filter(location=>following&&!sameFloor||distance(location.point,state.location.point)>55);
   candidates.sort((a,b)=>{
-    const score=(location:NavigationLocation)=>!following||sameFloor?Math.abs(distance(location.point,state.location.point)-120):distance(location.point,hero.point);
+    const score=(location:NavigationLocation)=>!following||sameFloor?Math.abs(distance(location.point,state.location.point)-120)
+      +Math.max(0,distance(location.point,destination.point)-310)*.7:distance(location.point,destination.point);
     return score(a)-score(b);
   });
   candidates=candidates.slice(0,24);
@@ -123,7 +149,8 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
   others:NavigationActor[],delta:number,{reducedMotion=false}:{reducedMotion?:boolean}={}):void{
   const dt=Math.max(0,Math.min(.1,finite(delta)));if(!dt)return;
   if(reducedMotion){stop(state,dt);state.blend=0;return;}
-  const actors=actorsFor(world,hero,others),key=geometryKey(world),desiredFloor=floorOf(hero),desiredSurface=hero.surface==='road'?'road':'deck';
+  const actors=actorsFor(world,hero,others),key=geometryKey(world),destination=getPetPatrolDestination(state,world,hero),
+    desiredFloor=floorOf(destination),desiredSurface=destination.surface==='road'?'road':'deck';
   if(key!==state.worldKey||desiredFloor!==state.desiredFloor||desiredSurface!==(state.desiredSurface??'deck')){
     // A gate close or a deck expansion cannot discard feet halfway down a ramp.
     // The scene supplies this animal's immutable physical link lease until exit.
@@ -158,7 +185,8 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
       state.route=repaired;state.elapsed=0;state.blockedReason=null;
     }
   }
-  const nextElapsed=Math.min(state.route.motion.duration,state.elapsed+dt*(22*GAME_SPEED_MULTIPLIER/WALK_SPEED));
+  const pace=state.id==='elephant'?15:state.id==='giraffe'?17:state.id==='panda'?16:state.id==='deer'?21:22;
+  const nextElapsed=Math.min(state.route.motion.duration,state.elapsed+dt*(pace*GAME_SPEED_MULTIPLIER/WALK_SPEED));
   const sample=sampleNavigation(state.route,nextElapsed),from=state.location,to=sample.location,travel=distance(from.point,to.point);
   const locked=isNavigationLinkSurface(to.surface)
     ? actors.find(actor=>isNavigationLinkSurface(actor.location.surface)&&actor.location.link===to.link) : undefined;
@@ -185,5 +213,5 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
   }else if(to.surface!=='ramp')delete state.passageLease;
   state.location=copy(to);state.elapsed=nextElapsed;state.distance+=travel;state.speed=travel/dt;
   state.blend+=((state.speed>.05?1:0)-state.blend)*Math.min(1,dt*10);state.blockedReason=null;
-  if(nextElapsed>=state.route.motion.duration){state.route=null;state.elapsed=0;state.pauseRemaining=.7+(state.targetSequence%4)*.18;}
+  if(nextElapsed>=state.route.motion.duration){state.route=null;state.elapsed=0;state.visits=(state.visits??0)+1;state.pauseRemaining=2.2+(state.targetSequence%5)*.6;}
 }

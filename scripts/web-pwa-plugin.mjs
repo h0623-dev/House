@@ -12,7 +12,7 @@ async function listFiles(folder, prefix = '') {
     const name = prefix + entry.name;
     // Compatibility aliases are a network entry for old controllers, not a
     // second atomic release. Exclude them on repeated finalization as well.
-    if (name === 'play.html' || name === 'play') continue;
+    if (name === 'play.html' || /^play-v[\w.-]+\.html$/.test(name) || name === 'play') continue;
     if (entry.isDirectory()) result.push(...await listFiles(path.join(folder, entry.name), name + '/'));
     else if (entry.isFile() && !['sw.js', 'web-update.json'].includes(name)) result.push(name);
   }
@@ -243,7 +243,8 @@ function serviceWorkerRuntime(manifest) {
     const relative = url.pathname.slice(new URL(base).pathname.length);
     if (relative === 'sw.js' || relative === 'web-update.json') return;
     event.respondWith((async () => {
-      if (request.mode === 'navigate' && (relative === '' || relative === 'index.html' || relative === 'play.html')) {
+      if (request.mode === 'navigate' && (relative === '' || relative === 'index.html' || relative === 'play.html'
+        || relative === 'play-v' + manifest.version + '.html')) {
         await pin(event.resultingClientId, manifest.buildId);
         return await (await caches.open(cacheName)).match(new URL('index.html', base).href)
           || new Response('The verified game cache is unavailable.', { status: 503 });

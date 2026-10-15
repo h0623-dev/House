@@ -39,7 +39,9 @@ export async function createWebEntry(outDir, { base = '/House/', version }) {
   if (!html.includes(`src="${base}play/assets/`)) throw Error('The compiled game module is missing from the web entry');
   html = html.replace('</body>', `<small aria-label="실행 게임 버전" style="position:fixed;right:8px;bottom:calc(env(safe-area-inset-bottom,0px) + 3px);z-index:12;pointer-events:none;color:#345b47;background:#fff7dfd9;border-radius:4px;padding:2px 5px;font:10px sans-serif">v${version}</small></body>`);
   await writeFile(path.join(outDir, 'play.html'), html);
-  return { path: base + 'play.html', version, aliases };
+  const versioned = `play-v${version}.html`;
+  await writeFile(path.join(outDir, versioned), html);
+  return { path: base + 'play.html', versionedPath: base + versioned, version, aliases };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -5,10 +5,11 @@ import { getTruckAccessLanding, TRUCK_DECK_GROUND_RISE } from './truck-access';
 
 export interface PetPassageProgress { version: 1; open: boolean }
 export const PET_PASSAGE_LINK_ID = 'pet-road-1';
-/** The existing full boar paw envelope at its authored .7 scene scale. */
-export const PET_PASSAGE_MAX_BODY_RADIUS = 30.8;
-/** Wide enough for the full 61.6 world-pixel boar paw envelope. */
+/** Largest admitted animal's planted feet, shared with road passing clearance. */
+export const PET_PASSAGE_MAX_BODY_RADIUS = 44;
+/** The small truck admits only the smaller species. */
 export const PET_PASSAGE_WIDTH = 76;
+export function getPetPassageWidth(level: number): number { return level >= 6 ? 112 : level >= 4 ? 96 : PET_PASSAGE_WIDTH; }
 export function getPetPassage(state: Pick<GameState, 'petPassage'>): PetPassageProgress {
   return { version: 1, open: state.petPassage?.open ?? false };
 }
@@ -34,6 +35,7 @@ export function setPetPassageOpen(state: GameState, open: unknown): ActionResult
 }
 export function getPetPassageGeometry(level: number) {
   const { left,front } = getFloorBounds(level);
+  const width = getPetPassageWidth(level);
   // Keep the paid deck doorway in place, but land just outside the real truck
   // instead of stretching every gate toward one fixed point on the road.
   let v=Math.max(0,front-210);
@@ -46,13 +48,15 @@ export function getPetPassageGeometry(level: number) {
   }
   const entryUV: TruckPoint = [left + 70, v], hingeUV: TruckPoint = [left + 8, v], entry = projectTruckPoint(entryUV),
     hinge = projectTruckPoint(hingeUV),
-    ground = getTruckAccessLanding(level, hingeUV, [-1, 0], PET_PASSAGE_WIDTH / 2 + 2, 56);
+    // A diagonal roadward run retains a visible slope in this camera. Running
+    // straight left cancels the height in projection and looks like a hanging wall.
+    ground = getTruckAccessLanding(level, hingeUV, [-1, 1], width / 2 + 2, 100);
   const points: TruckPoint[] = [ground, hinge, entry];
   const heroApproaches: TruckPoint[] = [[entry[0] + 30, hinge[1] - 42],
     [entry[0] + 35, hinge[1] - 48], [entry[0] + 40, hinge[1] - 54]];
-  return { entryUV, hingeUV, entry, hinge, ground, points, heroApproaches, width: PET_PASSAGE_WIDTH, rise: TRUCK_DECK_GROUND_RISE,
-    bounds: { left: Math.min(...points.map(p => p[0])) - PET_PASSAGE_WIDTH / 2,
-      top: Math.min(...points.map(p => p[1])) - PET_PASSAGE_WIDTH / 2 - 32,
-      right: Math.max(...points.map(p => p[0])) + PET_PASSAGE_WIDTH / 2,
-      bottom: Math.max(...points.map(p => p[1])) + PET_PASSAGE_WIDTH / 2 } };
+  return { entryUV, hingeUV, entry, hinge, ground, points, heroApproaches, width, rise: TRUCK_DECK_GROUND_RISE,
+    bounds: { left: Math.min(...points.map(p => p[0])) - width / 2,
+      top: Math.min(...points.map(p => p[1])) - width / 2 - 32,
+      right: Math.max(...points.map(p => p[0])) + width / 2,
+      bottom: Math.max(...points.map(p => p[1])) + width / 2 } };
 }

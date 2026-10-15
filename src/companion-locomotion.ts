@@ -35,9 +35,11 @@ const TAU = Math.PI * 2;
 export const COMPANION_STANCE_FRACTION = .64;
 export const COMPANION_STRIDE: Readonly<Record<UnitId, number>> = {
   dog: 20, cat: 18, rabbit: 16, fox: 20, boar: 19, owl: 12,
+  monkey: 18, elephant: 32, giraffe: 34, panda: 24, deer: 30,
 };
 const lift: Readonly<Record<UnitId, number>> = {
   dog: 4.2, cat: 3.6, rabbit: 4.6, fox: 3.8, boar: 2.5, owl: 1.8,
+  monkey: 4, elephant: 3.3, giraffe: 5.2, panda: 3.1, deer: 5.8,
 };
 const finite = (n: number, fallback = 0): number => Number.isFinite(n) ? n : fallback;
 const clamp = (n: number): number => Math.max(0, Math.min(1, n));

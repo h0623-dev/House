@@ -1,8 +1,9 @@
 import catAtlasUrl from './assets/companions-cat-anime.png';
 import reserveAtlasUrl from './assets/companions-reserve-anime.png';
 import { creatureImage, drawPet, petPortrait, type PetPose } from './creatures';
-import { UNITS, type ReserveUnitId, type UnitId } from './units';
+import { UNITS, type UnitId } from './units';
 import { sampleCompanionGait, type CompanionGaitInput, type CompanionGaitSample, type CompanionPaw } from './companion-locomotion';
+import { drawSafariCompanion, isSafariUnitId, safariCompanionArtReady, safariCompanionPortrait, safariPawContacts } from './safari-companion-art';
 export { sampleCompanionGait } from './companion-locomotion';
 export type { CompanionGaitInput, CompanionGaitSample } from './companion-locomotion';
 
@@ -78,6 +79,7 @@ const quadrupedArt: Record<'dog' | 'cat', QuadrupedArt> = {
   },
 };
 type ReservePose = 'idle' | 'walk' | 'attack' | 'down';
+type OriginalReserveId = 'rabbit' | 'fox' | 'boar' | 'owl';
 interface ReserveArt {
   /** All four poses share this ratio, including shorter sleeping silhouettes. */
   pixelUnit: number;
@@ -90,7 +92,7 @@ interface ReserveArt {
 // Individual alpha bounds were measured after generating transparent gutters.
 // Every crop has >=4px of breathing room around its own silhouette; none contains
 // another animal's ears, tail, hoof, wing, or the atlas's very faint gutter noise.
-const reserveArt: Record<ReserveUnitId, ReserveArt> = {
+const reserveArt: Record<OriginalReserveId, ReserveArt> = {
   rabbit: {
     pixelUnit: 56 / 237, portrait: [121, 104, 180, 180],
     description: '약초 가방과 초록 스카프를 두른 토끼 루루', wash: '#d7e4bd',
@@ -145,7 +147,8 @@ reserveCompanionImage.src = reserveAtlasUrl;
 export function companionArtReady(): boolean {
   return creatureImage.complete && creatureImage.naturalWidth > 0
     && catCompanionImage.complete && catCompanionImage.naturalWidth > 0
-    && reserveCompanionImage.complete && reserveCompanionImage.naturalWidth > 0;
+    && reserveCompanionImage.complete && reserveCompanionImage.naturalWidth > 0
+    && safariCompanionArtReady();
 }
 
 function groundShadow(c: CanvasRenderingContext2D, moving: boolean): void {
@@ -272,6 +275,9 @@ function drawWalkingQuadruped(c: CanvasRenderingContext2D, o: CompanionOptions,
 /** The actual rendered paw centers, for scene hit/animation diagnostics. */
 export function companionPawContacts(o: CompanionOptions): Record<CompanionPaw,
   { x:number;y:number;phase:number;planted:boolean;lift:number }> | undefined {
+  if(isSafariUnitId(o.id)&&o.gait&&['idle','walk','run'].includes(o.pose??'idle')) {
+    return safariPawContacts(o,sampleCompanionGait(o.id,o.gait,o.scale));
+  }
   if((o.id!=='dog'&&o.id!=='cat')||!o.gait
     ||!['idle','walk','run'].includes(o.pose??'idle'))return;
   const art=quadrupedArt[o.id],gait=sampleCompanionGait(o.id,o.gait,o.scale);
@@ -336,7 +342,7 @@ function recoveryHeart(c: CanvasRenderingContext2D, time: number): void {
   c.bezierCurveTo(4, -9, 9, -3, 0, 2); c.fill(); c.restore();
 }
 
-function drawReserve(c: CanvasRenderingContext2D, id: ReserveUnitId,
+function drawReserve(c: CanvasRenderingContext2D, id: OriginalReserveId,
   time: number, pose: CompanionPose, progress?: number): void {
   const art = reserveArt[id], moving = pose === 'walk' || pose === 'run';
   const striking = pose === 'attack' || pose === 'skill';
@@ -384,13 +390,14 @@ function drawReserve(c: CanvasRenderingContext2D, id: ReserveUnitId,
   c.restore();
 }
 
-/** Feet anchors are shared; nominal heights are 52–65px across all six animals. */
+/** Feet stay grounded; the eleven animals retain their species-specific size. */
 export function drawCompanion(c: CanvasRenderingContext2D, o: CompanionOptions): void {
   const pose = o.pose ?? 'idle';
   const gait=o.gait?sampleCompanionGait(o.id,o.gait,o.scale):undefined;
   const naturalWalk=gait&&(pose==='idle'||pose==='walk'||pose==='run')
     &&(o.id==='dog'?creatureImage.complete&&creatureImage.naturalWidth>0
-      :o.id==='cat'?catCompanionImage.complete&&catCompanionImage.naturalWidth>0:false);
+      :o.id==='cat'?catCompanionImage.complete&&catCompanionImage.naturalWidth>0
+      :isSafariUnitId(o.id)?safariCompanionArtReady():false);
   c.save(); c.translate(o.x, o.y); c.scale(o.scale * (naturalWalk?1:o.facing), o.scale);
   if (pose === 'hurt') c.globalAlpha *= .65 + Math.abs(Math.sin(o.time * 19)) * .35;
   if (pose === 'down') {
@@ -399,7 +406,8 @@ export function drawCompanion(c: CanvasRenderingContext2D, o: CompanionOptions):
     c.globalAlpha *= o.id === 'dog' || o.id === 'cat' ? .65 : .78;
     if (o.id === 'dog' || o.id === 'cat') { c.scale(1, .55); c.rotate(-.1); }
   }
-  if(naturalWalk)drawWalkingQuadruped(c,o,gait);
+  if(isSafariUnitId(o.id))drawSafariCompanion(c,o,naturalWalk?gait:undefined);
+  else if(naturalWalk)drawWalkingQuadruped(c,o,gait);
   else if (o.id === 'dog') {
     const dogPose: PetPose = pose === 'attack' || pose === 'skill' ? 'pounce'
       : pose === 'hurt' || pose === 'down' ? 'idle' : pose;
@@ -415,6 +423,7 @@ let catPortraitSequence = 0;
 /** Portraits crop the exact gameplay art, keeping the party and village coherent. */
 export function companionPortrait(id: UnitId): string {
   if (id === 'dog') return petPortrait();
+  if (isSafariUnitId(id)) return safariCompanionPortrait(id);
   if (id !== 'cat') {
     const art = reserveArt[id], clipId = `${id}-portrait-${++catPortraitSequence}`;
     return `<svg class="pet-portrait companion-portrait" viewBox="0 0 100 100" role="img" aria-label="${art.description}"><title>${UNITS[id].name}</title><defs><clipPath id="${clipId}-crop"><circle cx="50" cy="50" r="47"/></clipPath><radialGradient id="${clipId}-wash"><stop stop-color="#faf4d9"/><stop offset="1" stop-color="${art.wash}"/></radialGradient></defs><circle cx="50" cy="50" r="49" fill="url(#${clipId}-wash)" stroke="#b8ae79" stroke-width="1.3"/><g clip-path="url(#${clipId}-crop)"><svg x="4" y="4" width="92" height="92" viewBox="${art.portrait.join(' ')}"><image href="${reserveAtlasUrl}" width="1254" height="1254"/></svg></g></svg>`;

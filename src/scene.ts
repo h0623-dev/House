@@ -8,11 +8,11 @@ import { drawCompanion, companionPawContacts, sampleCompanionGait, type Companio
 import { drawTruckFloor } from './truck-floor-art';
 import { drawTruckAccessStairs } from './truck-stair-art';
 import { drawSkyBirds, skyNightAmount } from './sky-birds';
-import { createPetPatrol, stepPetPatrol, getPetGroundRadius, type PetPatrolState } from './scene-patrol';
+import { createPetPatrol, stepPetPatrol, getPetGroundRadius, getPetPatrolDestination, type PetPatrolState } from './scene-patrol';
 import { planPlacementPetRelocations } from './scene-placement';
 import { getFloorBounds, getFloorSlots, getFloorStairs,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
-import { getSelectedTeam, getUnitRoster, type UnitId } from './units';
+import { getUnlockedUnitIds, getUnitRoster, getAnimalDeckUnlockLevel, canAnimalBoardTruck, type UnitId } from './units';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady } from './world-art';
 import { drawCropSprite } from './crop-art';
 import { BUILDINGS, getSettlement, type Building, type BuildingType } from './settlement';
@@ -67,7 +67,6 @@ const CROP_SEED_COLOR: Record<CropId, string> = { carrot: '#d29b57', potato: '#b
 // New beds occupy the deck's front garden; facilities stay behind the central path.
 const SETTLEMENT_SLOTS = SETTLEMENT_POSITIONS;
 const FACILITY_SIZE = VILLAGE_FACILITY_SIZE;
-const PET_GROUND_SIZE: Record<UnitId,number>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31};
 
 /** A live isometric home built from our original painted anime environment art. */
 export class Scene {
@@ -387,7 +386,7 @@ export class Scene {
   setState(state: GameState) {
     this.state = state;
     if(this.petGatePendingOpen!==null&&this.action?.kind!=='pet-gate')this.clearPetPassageGateOperation();
-    const team=getSelectedTeam(state);
+    const team=getUnlockedUnitIds(state);
     for(const id of this.petMotion.keys())if(!team.includes(id)){this.petMotion.delete(id);this.petYields.delete(id);}
     if(this.activeFloor>getTruckFloorCount(state))this.activeFloor=1;
     if (this.selectedPlotId !== null && !state.plots.some(plot => plot.id === this.selectedPlotId)) this.selectedPlotId = null;
@@ -545,16 +544,18 @@ export class Scene {
       motion.blockedReason=null;motion.retryRemaining=0;motion.pauseRemaining=.35;
       motion.facingBlend=motion.facing;motion.turnFrom=motion.facing;motion.nextFacing=motion.facing;motion.turnHeading=motion.heading;
       const world=worldFor(motion.radius,[]);
-      motion.worldKey=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
+      motion.worldKey=JSON.stringify([world.floors,world.obstacles,world.links,world.road,world.petMaxFloor]);
       motion.desiredFloor=this.currentHeroLocation().floor??1;this.petYields.delete(id);
     }
     this.canvas.dataset.placementPetRelocation=JSON.stringify({sequence:++this.placementRelocationSequence,moved:relocations});
     return true;
   }
-  private petScale(id:UnitId) { return id==='dog'?.78:id==='boar'?.7:.73; }
+  private petScale(id:UnitId) {
+    return id==='dog'?.78:id==='boar'?.7:id==='elephant'||id==='giraffe'?.82:id==='panda'||id==='deer'?.78:.73;
+  }
   private physicalActors():NavigationActor[] {
     const hero:NavigationActor={id:'hero',location:this.currentHeroLocation(),radius:HERO_BODY_RADIUS};
-    const team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
+    const team=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[];
     return[hero,...team.flatMap(id=>{const motion=this.petMotion.get(id),route=motion?.route,
       approaching=motion&&route&&motion.location.surface===route.start.surface&&(motion.location.floor??1)===(route.start.floor??1),
       reserved=[...this.petYields.values()].find(yielding=>yielding.passageOwner===id&&yielding.passage&&motion&&this.holdsPetPassageIntent(motion,yielding.passage)),
@@ -591,7 +592,7 @@ export class Scene {
       return;
     }
     motion.route=route;motion.elapsed=0;motion.retryRemaining=0;motion.pauseRemaining=0;motion.blockedReason=null;
-    if(passage)motion.worldKey=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
+    if(passage)motion.worldKey=JSON.stringify([world.floors,world.obstacles,world.links,world.road,world.petMaxFloor]);
     this.petYields.set(id,{route,reserved:reserved.map(location=>({...location,point:[...location.point]})),reservedRadius,
       ...(passage?{passage:{...passage,points:passage.points.map(point=>[...point])},...(passageOwner?{passageOwner}:{})}:{})});
   }
@@ -1057,11 +1058,13 @@ export class Scene {
       {floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>(i+1)as TruckFloor),activeFloor:this.activeFloor,
         radius,actors,facilityFootprints:this.state?this.facilityFootprints(this.state):[]});
   }
-  private petNavigationWorld(radius:number,actors:NavigationActor[],motion?:PetPatrolState): NavigationWorld {
+  private petNavigationWorld(radius:number,actors:NavigationActor[],motion?:PetPatrolState,id=motion?.id): NavigationWorld {
+    const level=this.state?.deckLevel??1,petMaxFloor:0|TruckFloor=id&&!canAnimalBoardTruck(id,level)?0
+      :id&&getAnimalDeckUnlockLevel(id)>1?1:3;
     return createNavigationWorld(this.state?.deckLevel??1,this.state?.plots.length??3,
       this.state?getSettlement(this.state).buildings.map(building=>building.slot):[],
       {floors:Array.from({length:this.state?getTruckFloorCount(this.state):1},(_,i)=>(i+1)as TruckFloor),activeFloor:this.activeFloor,
-        radius,actors,actor:'pet',petPassageOpen:getPetPassage(this.state??{}).open&&!this.petGateClosing,petPassageLease:motion?.passageLease,
+        radius,actors,actor:'pet',petMaxFloor,petPassageOpen:petMaxFloor>0&&getPetPassage(this.state??{}).open&&!this.petGateClosing,petPassageLease:motion?.passageLease,
         facilityFootprints:this.state?this.facilityFootprints(this.state):[]});
   }
   private reservePetPassage(world:NavigationWorld,passage?:NavigationLink): NavigationWorld {
@@ -1096,7 +1099,7 @@ export class Scene {
     const actors=this.physicalActors(),passage=this.petNavigationWorld(waiter.radius,actors,waiter).links.find(link=>link.id===waiter.waitingForPassage);
     if(!passage||actors.some(actor=>actor.id!==waiter.id&&(actor.passageIntent===passage.id
       ||actor.location.surface==='ramp'&&actor.location.link===passage.id)))return;
-    const onRoad=waiter.location.surface==='road',hero=this.currentHeroLocation();
+    const onRoad=waiter.location.surface==='road',hero=getPetPatrolDestination(waiter,this.petNavigationWorld(waiter.radius,actors,waiter),this.currentHeroLocation());
     if(!onRoad&&(waiter.location.surface!=='deck'||(waiter.location.floor??1)!==passage.upper)
       ||(onRoad?hero.surface==='road':hero.surface!=='road'))return;
     const landing=onRoad?passage.points[passage.points.length-1]:passage.points[0],
@@ -1113,12 +1116,26 @@ export class Scene {
     return this.navigationWorld(HERO_BODY_RADIUS,this.physicalActors().filter(actor=>actor.id!=='hero'&&(this.reducedMotion||roster[actor.id as UnitId].health<=0)));
   }
   private ensurePets() {
-    const team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
-    team.forEach((id,index)=>{if(this.petMotion.has(id))return;const scale=this.petScale(id),radius=getPetGroundRadius(id,scale),actors=this.physicalActors();
-      const motion=createPetPatrol(id,this.petNavigationWorld(radius,actors),this.currentHeroLocation(),actors,index,scale);if(motion)this.petMotion.set(id,motion);});
+    const residents=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[],level=this.state?.deckLevel??1;
+    residents.forEach((id,index)=>{
+      const previous=this.petMotion.get(id);
+      if(previous&&(!canAnimalBoardTruck(id,level)&&previous.location.surface!=='road'
+        ||getAnimalDeckUnlockLevel(id)>1&&(previous.location.floor??1)>1)){
+        this.petMotion.delete(id);this.petYields.delete(id);
+      }
+      if(this.petMotion.has(id))return;
+      const scale=this.petScale(id),radius=getPetGroundRadius(id,scale),actors=this.physicalActors(),
+        world=this.petNavigationWorld(radius,actors,undefined,id),
+        // Only the original household pair starts on the little deck. Every
+        // other species receives its own clear roadside space from day one.
+        initialSurface=id==='dog'||id==='cat'?'deck' as const:'road' as const,
+        motion=createPetPatrol(id,world,this.currentHeroLocation(),actors,index,scale,{initialSurface})
+          ??(initialSurface==='deck'?createPetPatrol(id,world,this.currentHeroLocation(),actors,index,scale,{initialSurface:'road'}):undefined);
+      if(motion)this.petMotion.set(id,motion);
+    });
   }
   private advancePets(delta:number) {
-    this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[];
+    this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[];
     for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
       if(roster[id].health<=0){motion.speed=0;motion.blend=0;continue;}
       this.requestPetPassageEntryClearance(motion);
@@ -1139,9 +1156,10 @@ export class Scene {
         }else{
           // An explicit corridor exit has priority until its actual feet arrive.
           // Following the hero's new floor must not cancel it halfway out.
-          motion.desiredFloor=hero.floor??1;
-          motion.desiredSurface=hero.surface==='road'?'road':'deck';
-          const key=JSON.stringify([world.floors,world.obstacles,world.links,world.road]);
+          const destination=getPetPatrolDestination(motion,world,hero);
+          motion.desiredFloor=destination.floor??1;
+          motion.desiredSurface=destination.surface==='road'?'road':'deck';
+          const key=JSON.stringify([world.floors,world.obstacles,world.links,world.road,world.petMaxFloor]);
           if(motion.route!==yielding.route||key!==motion.worldKey){
             const blocker=actors.find(actor=>motion.blockedReason===`actor:${actor.id}`);
             if(blocker)this.tryPetYield(blocker,[...yielding.reserved,motion.location,target],Math.max(motion.radius,yielding.reservedRadius));
@@ -1171,18 +1189,20 @@ export class Scene {
     }
   }
   private drawPets(onDeck:boolean,onlyId?:UnitId,excludeRoad=false) {
-    this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[],telemetry:unknown[]=[];
-    for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
+    this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[],telemetry:unknown[]=[];
+    for(const id of team){if(onlyId&&id!==onlyId)continue;const motion=this.petMotion.get(id);if(!motion)continue;
       const location=motion.location,[x,y]=location.point,visible=(location.floor??1)===this.activeFloor;
       const options:CompanionOptions={id,x,y,scale:this.petScale(id),time:this.reducedMotion?0:this.time,facing:motion.facing,
         pose:roster[id].health<=0?'down':motion.speed>.05&&!motion.turnRemaining?'walk':'idle',
         gait:{distance:motion.distance,speed:motion.speed,heading:motion.heading,blend:motion.blend,facingBlend:motion.facingBlend,reducedMotion:this.reducedMotion}};
-      if(visible&&(!onlyId||onlyId===id)&&(!excludeRoad||location.surface!=='road')&&(onDeck?location.surface==='deck':location.surface!=='deck')){drawCompanion(this.ctx,options);this.hits.push({kind:'pet',x,y:y-14,radius:24});this.pulse('pet',x,y-15,26);}
-      telemetry.push({id,x,y,visible,scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,passageLease:motion.passageLease??null,waitingForPassage:motion.waitingForPassage??null,
+      if(visible&&(!onlyId||onlyId===id)&&(!excludeRoad||location.surface!=='road')&&(onDeck?location.surface==='deck':location.surface!=='deck')){
+        drawCompanion(this.ctx,options);this.hits.push({kind:'pet',x,y:y-14,radius:Math.max(24,motion.radius)});this.pulse('pet',x,y-15,Math.max(26,motion.radius));
+      }
+      telemetry.push({id,x,y,visible,deckUnlockLevel:getAnimalDeckUnlockLevel(id),canBoardTruck:canAnimalBoardTruck(id,this.state?.deckLevel??1),scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,passageLease:motion.passageLease??null,waitingForPassage:motion.waitingForPassage??null,
         body:{x,y,radius:motion.radius,floor:location.floor??1,surface:location.surface,link:location.link??null},blockedReason:motion.blockedReason,
         facing:options.facing,pose:options.pose,turnRemaining:motion.turnRemaining,gait:options.gait,sample:sampleCompanionGait(id,options.gait!,options.scale),contacts:companionPawContacts(options)??null});
     }
-    this.canvas.dataset.petMotion=JSON.stringify(telemetry);
+    if(!onlyId)this.canvas.dataset.petMotion=JSON.stringify(telemetry);
   }
   private currentHeroLocation(): NavigationLocation {
     const action=this.action;
@@ -2128,7 +2148,7 @@ export class Scene {
     const order=GROUND_RESOURCE_NODES.map((node,index)=>({y:node.point[1],paint:()=>paintNode(node,index)}));
     if(heroLocation.surface==='road')order.push({y:heroLocation.point[1],paint:()=>this.hero()});
     this.ensurePets();
-    for(const id of this.state?getSelectedTeam(this.state):['dog','cat']as UnitId[]){
+    for(const id of this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[]){
       const motion=this.petMotion.get(id);
       if(motion?.location.surface==='road'&&(motion.location.floor??1)===this.activeFloor)
         order.push({y:motion.location.point[1],paint:()=>this.drawPets(false,id)});

@@ -1,6 +1,6 @@
 import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRoute } from './scene-motion';
 import { GROUND_RESOURCE_BOUNDS, GROUND_RESOURCE_NODES } from './ground-resources';
-import { getPetPassageGeometry, PET_PASSAGE_LINK_ID, PET_PASSAGE_WIDTH, PET_PASSAGE_MAX_BODY_RADIUS } from './pet-passage';
+import { getPetPassageGeometry, PET_PASSAGE_LINK_ID, getPetPassageWidth, PET_PASSAGE_MAX_BODY_RADIUS } from './pet-passage';
 import { getTruckGroundFootprint } from './truck-ground';
 import { getTruckAccessGeometry } from './truck-access';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
@@ -29,6 +29,8 @@ export interface NavigationWorld {
   obstacles: NavigationObstacle[]; links: NavigationLink[];
   ladder: { entry: NavigationPoint; top: NavigationPoint; bottom: NavigationPoint };
   actor?: 'hero' | 'pet'; petPassageOpen?: boolean;
+  /** Zero keeps a large animal on the road; large boarders use the first deck only. */
+  petMaxFloor?: 0 | TruckFloor;
 }
 export interface NavigationPath {
   points: NavigationPoint[]; surfaces: NavigationSurface[]; climbSegments: number[];
@@ -38,7 +40,7 @@ export interface NavigationPath {
 }
 export interface NavigationWorldOptions {
   floors?: readonly TruckFloor[]; home?: HomeLocation; activeFloor?: TruckFloor; radius?: number; actors?: NavigationActor[];
-  actor?: 'hero' | 'pet'; petPassageOpen?: boolean; petPassageLease?: NavigationLink;
+  actor?: 'hero' | 'pet'; petPassageOpen?: boolean; petPassageLease?: NavigationLink; petMaxFloor?: 0 | TruckFloor;
   /** Actual editable deck footprints. Omitted only for older callers and saves. */
   facilityFootprints?: readonly { floor: TruckFloor; bounds: NavigationRect }[];
 }
@@ -63,7 +65,7 @@ export function getRoadBounds(level:number):NavigationRect {
     [deck.end,deck.front],[deck.left,deck.front]].map(point=>projectDeckPoint(point as NavigationPoint)),
     // A pet parked beyond the ramp landing must leave another full paw body
     // room to pass between it and the road edge beside the solid truck.
-    passingRoom=PET_PASSAGE_WIDTH/2+3*PET_PASSAGE_MAX_BODY_RADIUS+4,
+    passingRoom=getPetPassageWidth(level)/2+3*PET_PASSAGE_MAX_BODY_RADIUS+4,
     groundPassingRoom=2*PET_PASSAGE_MAX_BODY_RADIUS+4;
   return {left:Math.min(-40,getTruckGroundFootprint(level).bounds.left-passingRoom,GROUND_RESOURCE_BOUNDS.left-groundPassingRoom,
       ...corners.map(point=>point[0]-100)),top:Math.min(360,GROUND_RESOURCE_BOUNDS.top-groundPassingRoom),
@@ -90,21 +92,23 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   const body=getTruckGroundFootprint(level);obstacles.push({surface:'road',kind:'truck-body',...body});
   const access = getTruckAccessGeometry(level), ladder = { entry: access.entry, top: access.top, bottom: access.bottom };
   const links:NavigationLink[]=options.actor==='pet'
-    ?options.petPassageLease?.id===PET_PASSAGE_LINK_ID
+    ?options.petMaxFloor===0?[]:options.petPassageLease?.id===PET_PASSAGE_LINK_ID
       ?[{...options.petPassageLease,points:options.petPassageLease.points.map(point=>[...point]),surface:'ramp',entryAllowed:options.petPassageOpen??false}]
       :options.petPassageOpen?[getPetPassageLink(level)]:[]
     :[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry],gait:'stairs'}];
   for(const upper of ids.filter(id=>id>1)){
     const stair=getFloorStairs(level,upper as 2|3);
-    links.push({id:String(stair.lowerFloor)+'-'+String(upper),lower:stair.lowerFloor,upper,
-      points:[stair.lowerEntry,stair.bottom,stair.top,stair.upperEntry]});
+    if(options.actor!=='pet'||upper<=(options.petMaxFloor??3))
+      links.push({id:String(stair.lowerFloor)+'-'+String(upper),lower:stair.lowerFloor,upper,
+        points:[stair.lowerEntry,stair.bottom,stair.top,stair.upperEntry]});
     for(const floor of [stair.lowerFloor,upper])obstacles.push({surface:'deck',floor,kind:'stairs',bounds:{...stair.reserved}});
   }
   const active=floors.find(f=>f.id===activeFloor)??floors[0];
   const roadOuter=getRoadBounds(level);
   return {deck:active.deck,deckOuter:active.outer,activeFloor:active.id,floors,radius,actors:(options.actors??[]).map(a=>({...a,location:copyLocation(a.location)})),
     obstacles,links,roadOuter,road:{left:roadOuter.left+radius,top:roadOuter.top+radius,right:roadOuter.right-radius,bottom:roadOuter.bottom-radius},ladder,
-    actor:options.actor??'hero',petPassageOpen:options.petPassageOpen??false};
+    actor:options.actor??'hero',petPassageOpen:options.petPassageOpen??false,
+    ...(options.actor==='pet'?{petMaxFloor:options.petMaxFloor??3}:{})};
 }
 function obstaclesFor(world:NavigationWorld,floor:number):NavigationRect[] {
   const clearance=floor?margin(world.radius):{x:world.radius,y:world.radius};
@@ -237,6 +241,7 @@ function escapePoint(world:NavigationWorld,location:NavigationLocation):Navigati
 /** Multi-floor routes always use a built stair link; selecting a view never teleports feet. */
 export function planNavigation(world:NavigationWorld,start:NavigationLocation,target:NavigationLocation):NavigationPath|undefined {
   if(!finite(start.point)||!finite(target.point)||!['deck','road','ladder','ramp'].includes(start.surface)||(target.surface!=='deck'&&target.surface!=='road'))return;
+  if(world.actor==='pet'&&floorId(target)>(world.petMaxFloor??3))return;
   const points:NavigationPoint[]=[[...start.point]],surfaces:NavigationSurface[]=[],segments:NavigationPath['segments']=[];
   const append=(point:MotionPoint,surface:NavigationSurface,fromFloor:number,toFloor=fromFloor,link?:string)=>{
     if(distance(points[points.length-1],point)>1e-6){points.push([...point]);surfaces.push(surface);segments.push({fromFloor,toFloor,...(link?{link}:{})});}
@@ -396,6 +401,7 @@ export function blocksActorStep(from:NavigationLocation,to:NavigationLocation,ra
   });
 }
 export function getPatrolTargets(world:NavigationWorld,floor:TruckFloor|0):NavigationLocation[] {
+  if(world.actor==='pet'&&floor>(world.petMaxFloor??3))return [];
   if(floor===0){
     const result:NavigationLocation[]=[];
     for(let y=world.road.top+18;y<world.road.bottom-18;y+=58)for(let x=world.road.left+18;x<world.road.right-18;x+=64){

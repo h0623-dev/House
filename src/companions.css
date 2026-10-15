@@ -7,3 +7,5 @@
 .companion-xp{display:block;margin-top:6px;font-size:9px;line-height:1.5;color:#8e7550}.companion-resting .companion-card-art{filter:saturate(.45)}.companion-resting .companion-xp{color:#a16f48}
 .companion-party-note{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:7px;font-size:11px;color:#816c45}.companion-party-note>span{display:flex;align-items:center;gap:4px}.companion-party-note .icon{width:15px;height:15px;vertical-align:middle}
 @media(max-width:420px){.companion-card{flex-direction:column;text-align:center;padding:10px 8px;gap:6px}.companion-card-art{width:55px;flex-basis:auto}.companion-card-info{width:100%}.companion-card-info>strong{justify-content:center}.companion-party-note{font-size:10px}}
+
+.companion-card-info>.animal-home-label{font-size:9px;line-height:1.55;color:#466c49;background:#e0e6c5;border:1px solid #bdcda3;border-radius:6px;padding:3px 5px;margin:5px 0;white-space:normal}

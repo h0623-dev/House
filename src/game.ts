@@ -14,7 +14,7 @@ import { clonePetPassageFields, validatePetPassage, type PetPassageProgress } fr
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 import { COMPANION_IDS, MAX_COMPANION_XP, getCompanions, isCompanionId, validateCompanionHealth, validateCompanions, type CompanionHealth, type CompanionId, type CompanionRoster } from './companions';
-import { UNIT_IDS, RESERVE_UNIT_IDS, cloneUnitProgressFields, getReadyTeam, getSelectedTeam, getUnitRoster, getUnlockedUnitIds, getMaxTeamSize, getUnitBattleBonuses, validateAnimalReserve, validateCompanionTeam, validateReserveHealth, validateUnitBattleBonuses, type AnimalReserve, type ReserveHealth, type UnitId, type UnitRoster, type UnitBattleBonuses } from './units';
+import { UNIT_IDS, RESERVE_UNIT_IDS, cloneUnitProgressFields, getReadyTeam, getSelectedTeam, getUnitRoster, getUnlockedUnitIds, getMaxTeamSize, getUnitBattleBonuses, normalizeAnimalReserve, normalizeReserveHealth, validateAnimalReserve, validateCompanionTeam, validateUnitBattleBonuses, type AnimalReserve, type ReserveHealth, type UnitId, type UnitRoster, type UnitBattleBonuses } from './units';
 export { CROPS, CROP_IDS, type CropId } from './crops';
 
 export type Resource = 'wood' | 'scrap' | 'food' | 'water' | 'seeds';
@@ -28,7 +28,7 @@ export interface Expedition {
   animalParty?: true;
   /** Starting healthy animals; defeat does not remove their earned participation. */
   participantIds?: CompanionId[];
-  /** Selected, healthy participants in the six-animal formation system. */
+  /** Selected, healthy participants in the animal formation system. */
   unitParty?: true;
   unitParticipantIds?: UnitId[];
   unitBattleBonuses?: UnitBattleBonuses;
@@ -379,17 +379,18 @@ export function finishHunt(state: GameState, result: HuntResult, expeditionId: n
   }
   const animalParty = state.expedition.animalParty === true;
   const unitParty = state.expedition.unitParty === true;
+  const reserveHealth = unitParty ? normalizeReserveHealth(result.reserveHealth, getUnitRoster(state)) : null;
   if (unitParty && (animalParty || !validateCompanions(state.companions) || !validateAnimalReserve(state.animalReserve)
     || !validUnitParticipants(state.expedition.unitParticipantIds, state)
     || !validateCompanionTeam(state.companionTeam, state)
-    || !validateCompanionHealth(result.companionHealth) || !validateReserveHealth(result.reserveHealth)
+    || !validateCompanionHealth(result.companionHealth) || !reserveHealth
     || !isNumber(result.remainingHealth, 0, 100) || !isInteger(result.enemiesDefeated, 0, 8))) {
     return fail('동물 편성과 전투 결과를 확인할 수 없어요. 현재 탐험을 마무리하거나 철수해 주세요.');
   }
   if (unitParty) {
     const participants = state.expedition.unitParticipantIds!, roster = getUnitRoster(state);
     if (participants.some(id => roster[id].health <= 0 || !state.companionTeam!.includes(id))) return fail('출전 동료의 편성 기록을 확인해 주세요.');
-    const health = { ...result.companionHealth!, ...result.reserveHealth! };
+    const health = { ...result.companionHealth!, ...reserveHealth! };
     if (UNIT_IDS.some(id => !participants.includes(id) && health[id] !== roster[id].health)) {
       return fail('출전하지 않은 동물의 체력이 달라졌어요. 전투 결과를 다시 확인해 주세요.');
     }
@@ -420,7 +421,7 @@ export function finishHunt(state: GameState, result: HuntResult, expeditionId: n
   let next = copy(state);
   next.expedition = null;
   if (unitParty) {
-    const roster = getUnitRoster(state), health = { ...result.companionHealth!, ...result.reserveHealth! };
+    const roster = getUnitRoster(state), health = { ...result.companionHealth!, ...reserveHealth! };
     for (const id of state.expedition.unitParticipantIds!) roster[id].health = health[id];
     applyRoster(next, roster);
   } else if (animalParty) {
@@ -754,10 +755,17 @@ function migrateCropFields(value: unknown): unknown {
   return result;
 }
 
+/** Expanding the roster leaves all old health, XP, purchases and active expeditions intact. */
+function migrateAnimalFields(value: unknown): unknown {
+  if (!isRecord(value) || value.version !== 1 || !Object.hasOwn(value, 'animalReserve')) return value;
+  const animalReserve = normalizeAnimalReserve(value.animalReserve);
+  return animalReserve ? { ...value, animalReserve } : value;
+}
+
 export function saveGame(state: GameState, storage?: SaveStorage): boolean {
   try {
     const target = storage ?? globalThis.localStorage;
-    const candidate = migrateCropFields(state);
+    const candidate = migrateAnimalFields(migrateCropFields(state));
     if (!target || !validateSave(candidate)) return false;
     target.setItem(SAVE_KEY, JSON.stringify({ ...candidate, lastSaved: Date.now() }));
     return true;
@@ -779,7 +787,7 @@ export function loadGame(storage?: SaveStorage): GameState | null {
       }
       value = { ...value, stats, expedition: Object.hasOwn(value, 'expedition') ? value.expedition : null };
     }
-    value = migrateCropFields(value);
+    value = migrateAnimalFields(migrateCropFields(value));
     return validateSave(value) ? value : null;
   } catch { return null; }
 }

@@ -1,6 +1,6 @@
 import { GAME_SPEED_MULTIPLIER, realDuration } from './game-speed';
 import { MAX_COMPANION_XP, type CompanionHealth, type CompanionRoster } from './companions';
-import { UNIT_IDS, RESERVE_UNIT_IDS, UNITS, getUnitLevel, getUnitMaxHealth, getUnitRoster, isUnitId, type ReserveHealth, type UnitBattleBonuses, type UnitId, type UnitRoster, type UnitSkillId } from './units';
+import { UNIT_IDS, RESERVE_UNIT_IDS, UNITS, getUnitLevel, getUnitMaxHealth, getUnitRoster, getUnitSkillFamily, isUnitId, type ReserveHealth, type UnitBattleBonuses, type UnitId, type UnitRoster, type UnitSkillId } from './units';
 
 /** Small deterministic animal combat engine. No DOM, wall clock or random state. */
 export type BattleOutcome = 'victory' | 'defeat' | 'retreat';
@@ -79,7 +79,7 @@ export interface BattleState {
 }
 export type BattleSkillUnavailableReason = 'ready' | 'invalid' | 'paused' | 'finished' | 'transition' | 'cooldown' | 'down' | 'full' | 'no-targets';
 export interface BattleSkillAvailability { available: boolean; reason: BattleSkillUnavailableReason }
-export const SKILL_COOLDOWNS: Record<BattleSkill, number> = { sweep: 12, dash: 10, heal: 23, mend: 18, volley: 11, fortify: 14, burst: 16 };
+export const SKILL_COOLDOWNS: Record<BattleSkill, number> = { sweep: 12, dash: 10, heal: 23, mend: 18, volley: 11, fortify: 14, burst: 16, fruit: 11, stomp: 17, leaf: 18, paw: 14, antler: 10 };
 export const STAGE_NAMES = ['서울 숲길 · 옛 요금소', '한강 북단 · 끊어진 교량', '남산 순환로 · 녹슨 검문소'] as const;
 const valid = (value: number, fallback: number, min: number, max: number): number => Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 const isSkill = (value: unknown): value is BattleSkill => typeof value === 'string' && (value === 'heal' || UNIT_IDS.some(id => UNITS[id].skillId === value));
@@ -98,7 +98,8 @@ export function getBattleSkillAvailability(state: BattleState, skill: unknown): 
   const alive = state.teamIds.map(id => state.allies[id]).filter(ally => ally.health > 0);
   if (!alive.length) return unavailable('down');
   if (!state.enemies.some(enemy => enemy.health > 0)) return unavailable('no-targets');
-  if ((skill === 'heal' || skill === 'mend') && alive.every(ally => ally.health >= ally.maxHealth)) return unavailable('full');
+  const family = skill === 'heal' ? 'heal' : getUnitSkillFamily(skill);
+  if ((family === 'heal' || family === 'mend') && alive.every(ally => ally.health >= ally.maxHealth)) return unavailable('full');
   return { available: true, reason: 'ready' };
 }
 export function canUseSkill(state: BattleState, skill: unknown): boolean { return getBattleSkillAvailability(state, skill).available; }
@@ -136,14 +137,14 @@ export class BattleSimulation {
     };
     const allies = Object.fromEntries(UNIT_IDS.map(id => [id, createAlly(id)])) as Record<UnitId, BattleAlly>;
     // Role determines position independently of selection order, so a tank actually protects the rear.
-    const priority: Record<UnitId, number> = { boar: 0, dog: 1, cat: 2, fox: 3, owl: 4, rabbit: 5 };
+    const priority: Record<UnitId, number> = { elephant: 0, boar: 1, panda: 2, dog: 3, deer: 4, cat: 5, fox: 6, monkey: 7, owl: 8, giraffe: 9, rabbit: 10 };
     [...teamIds].sort((a, b) => priority[a] - priority[b]).forEach((id, index) => { allies[id].x = teamIds.length === 3 ? 35 - index * 10 : index === 0 ? 35 : 21; });
     this.state = {
       stage: Math.floor(valid(options.stage, 1, 1, 3)), wave: 1, time: 0, health: 100, maxHealth: 100,
       level: Math.floor(valid(options.level, 1, 1, 100)), teamIds, allies,
       bonuses: { attackMultiplier: valid(options.bonuses?.attackMultiplier ?? 1, 1, 1, 1.2), enemyDamageMultiplier: valid(options.bonuses?.enemyDamageMultiplier ?? 1, 1, .85, 1) },
       enemies: [], enemiesDefeated: 0,
-      cooldowns: { sweep: 0, dash: 0, heal: 0, mend: 0, volley: 0, fortify: 0, burst: 0 }, transition: 1.4,
+      cooldowns: { sweep: 0, dash: 0, heal: 0, mend: 0, volley: 0, fortify: 0, burst: 0, fruit: 0, stomp: 0, leaf: 0, paw: 0, antler: 0 }, transition: 1.4,
       paused: false, auto: false, events: [], result: null,
     };
     this.updateTeamHealth();
@@ -170,35 +171,36 @@ export class BattleSimulation {
     const s = this.state;
     if (!isSkill(skill) || !canUseSkill(s, skill)) return false;
     const targets = s.enemies.filter(enemy => enemy.health > 0), ownerId = skillOwner(skill), owner = ownerId ? s.allies[ownerId] : undefined;
+    const family = skill === 'heal' ? 'heal' : getUnitSkillFamily(skill);
     s.cooldowns[skill] = SKILL_COOLDOWNS[skill];
-    if (owner) owner.skillUntil = s.time + (skill === 'dash' ? .9 : .8);
-    if (skill === 'heal' || skill === 'mend') {
-      if (skill === 'mend') this.event('mend', ownerId!, 0, owner!.x, ownerId);
+    if (owner) owner.skillUntil = s.time + (family === 'dash' ? .9 : .8);
+    if (family === 'heal' || family === 'mend') {
+      if (family === 'mend') this.event('mend', ownerId!, 0, owner!.x, ownerId);
       for (const id of s.teamIds) {
         const ally = s.allies[id];
         if (ally.health <= 0) continue;
-        const amount = Math.min(skill === 'mend' ? 29 + owner!.level * 2 : 29, ally.maxHealth - ally.health);
+        const amount = Math.min(family === 'mend' ? 29 + owner!.level * 2 : 29, ally.maxHealth - ally.health);
         if (amount > 0) {
           ally.health += amount;
           ally.skillUntil = s.time + .8;
           this.event('heal', id, amount, ally.x, ownerId);
         }
-        if (skill === 'mend') this.guard(ally, 2, ownerId!);
+        if (family === 'mend') this.guard(ally, 2, ownerId!);
       }
       this.updateTeamHealth();
-    } else if (skill === 'sweep' || skill === 'burst') {
-      this.event(skill, targets[0].id, 0, targets[0].x, ownerId);
+    } else if (family === 'sweep' || family === 'burst') {
+      this.event(family, targets[0].id, 0, targets[0].x, ownerId);
       for (const enemy of targets) {
-        this.hit(enemy, (skill === 'sweep' ? 23 : 28) + owner!.level * 2, ownerId!);
-        if (skill === 'burst' && enemy.health > 0) enemy.slowUntil = s.time + 4;
+        this.hit(enemy, (family === 'sweep' ? 23 : 28) + owner!.level * 2, ownerId!);
+        if (family === 'burst' && enemy.health > 0) enemy.slowUntil = s.time + 4;
       }
-    } else if (skill === 'dash') {
+    } else if (family === 'dash') {
       owner!.attackUntil = s.time + .9;
       this.guard(owner!, 2.2, ownerId!);
       this.event('dash', targets[0].id, 0, targets[0].x, ownerId);
       this.hit(targets[0], 34 + owner!.level * 2, ownerId!);
       for (const enemy of targets) if (enemy.health > 0) enemy.attackIn = Math.max(enemy.attackIn, 2.2);
-    } else if (skill === 'volley') {
+    } else if (family === 'volley') {
       const target = [...targets].sort((a, b) => b.health - a.health)[0];
       this.event('volley', target.id, 0, target.x, ownerId);
       for (let hit = 0; hit < 3 && target.health > 0; hit++) this.hit(target, 18 + owner!.level * 2, ownerId!);

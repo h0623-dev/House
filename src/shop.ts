@@ -16,7 +16,8 @@ export interface ShopProgress {
 }
 export type ShopSaleResource = 'food' | 'wood' | 'scrap';
 export const SHOP_SEED_PRICES: Readonly<Record<CropId, number>> = { carrot: 2, potato: 3, tomato: 4, corn: 5, strawberry: 7, pumpkin: 9 };
-export const SHOP_PET_PRICES: Readonly<Record<UnitId, number>> = { dog: 0, cat: 0, rabbit: 60, fox: 90, boar: 120, owl: 150 };
+/** One of every species is already a village companion; historical purchases remain recorded. */
+export const SHOP_PET_PRICES: Readonly<Record<UnitId, number>> = { dog: 0, cat: 0, rabbit: 0, fox: 0, boar: 0, owl: 0, monkey: 0, elephant: 0, giraffe: 0, panda: 0, deer: 0 };
 export const SHOP_SALE_PRICES: Readonly<Record<ShopSaleResource, number>> = { food: 3, wood: 1, scrap: 2 };
 export const SHOP_OUTFITS: Readonly<Record<OutfitId, { id: OutfitId; name: string; description: string; price: number }>> = {
   garden: { id: 'garden', name: '텃밭 나들이', description: '밀짚모자와 앞치마로 즐기는 트럭 텃밭의 하루', price: 40 },
