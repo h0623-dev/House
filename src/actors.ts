@@ -200,6 +200,106 @@ function interactionArm(c: CanvasRenderingContext2D, rig: InteractionRig, should
   interactionSegment(c, rig.upper, shoulder, elbow, width); interactionSegment(c, openPalm ? rig.openFore : rig.fore, elbow, hand, width);
 }
 
+interface WalkingRig {
+  body: HTMLCanvasElement;
+  nearThigh: InteractionPart; nearShin: InteractionPart;
+  farThigh: InteractionPart; farShin: InteractionPart;
+  nearUpper: InteractionPart; nearFore: InteractionPart;
+  farUpper: InteractionPart; farFore: InteractionPart;
+}
+
+// These joints are registered to the new sculpted survivor atlas. The original
+// painted pixels move continuously; the torso never swaps between contact poses.
+const walkingSources = {
+  female: {
+    hip: [199, 324], knee: [182, 401], ankle: [171, 463],
+    farHip: [258, 329], farKnee: [264, 400], farAnkle: [265, 463],
+    farThigh: [[232, 317], [276, 316], [294, 358], [293, 414], [240, 421], [222, 400]],
+    farShin: [[240, 393], [294, 394], [302, 432], [320, 454], [318, 478], [266, 484], [230, 463]],
+    nearShoulder: [159, 246], nearElbow: [157, 300], nearHand: [155, 350],
+    nearUpper: [[139, 222], [180, 222], [186, 261], [173, 302], [142, 310], [132, 287]],
+    nearFore: [[139, 288], [171, 289], [174, 326], [180, 356], [157, 380], [126, 361], [132, 330]],
+    farShoulder: [279, 252], farElbow: [290, 301], farHand: [299, 344],
+    farUpper: [[265, 235], [294, 238], [304, 278], [308, 309], [276, 315], [266, 284]],
+    farFore: [[276, 298], [308, 297], [316, 330], [318, 353], [299, 367], [276, 355]],
+  },
+  male: {
+    hip: [192, 811], knee: [169, 898], ankle: [161, 957],
+    farHip: [257, 815], farKnee: [265, 899], farAnkle: [270, 959],
+    farThigh: [[231, 800], [276, 799], [294, 845], [294, 905], [241, 919], [220, 890]],
+    farShin: [[239, 890], [294, 892], [301, 929], [326, 953], [325, 981], [271, 985], [229, 965]],
+    nearShoulder: [147, 724], nearElbow: [145, 781], nearHand: [146, 826],
+    nearUpper: [[126, 697], [174, 692], [184, 737], [170, 785], [125, 789], [116, 761]],
+    nearFore: [[122, 771], [169, 770], [164, 805], [174, 837], [150, 854], [116, 839], [116, 811]],
+    farShoulder: [280, 736], farElbow: [293, 782], farHand: [300, 817],
+    farUpper: [[265, 711], [295, 716], [309, 759], [310, 789], [276, 794], [265, 753]],
+    farFore: [[275, 778], [309, 777], [320, 811], [321, 829], [300, 842], [276, 823]],
+  },
+} as const;
+const walkingRigs = new Map<HeroOptions['gender'], WalkingRig>();
+
+function walkingRig(gender: HeroOptions['gender'], frame: SurvivorFrame): WalkingRig | undefined {
+  const cached = walkingRigs.get(gender); if (cached) return cached;
+  const image = heroImages.survivors;
+  if (!image.complete || !image.naturalWidth) return undefined;
+  const source = walkingSources[gender], near = interactionSources[gender];
+  const nearThigh = interactionPart(image, near.thigh, source.hip, source.knee);
+  const nearShin = interactionPart(image, near.shin, source.knee, source.ankle);
+  const farThigh = interactionPart(image, source.farThigh, source.farHip, source.farKnee);
+  const farShin = interactionPart(image, source.farShin, source.farKnee, source.farAnkle);
+  const nearUpper = interactionPart(image, source.nearUpper, source.nearShoulder, source.nearElbow);
+  const nearFore = interactionPart(image, source.nearFore, source.nearElbow, source.nearHand);
+  const farUpper = interactionPart(image, source.farUpper, source.farShoulder, source.farElbow);
+  const farFore = interactionPart(image, source.farFore, source.farElbow, source.farHand);
+  const body = document.createElement('canvas'); body.width = frame.width; body.height = frame.height;
+  const c = body.getContext('2d');
+  if (!c || !nearThigh || !nearShin || !farThigh || !farShin || !nearUpper || !nearFore || !farUpper || !farFore) return undefined;
+  c.drawImage(image, frame.x, frame.y, frame.width, frame.height, 0, 0, frame.width, frame.height);
+  c.translate(-frame.x, -frame.y); c.globalCompositeOperation = 'destination-out';
+  c.fillRect(frame.x - 1, source.hip[1] + 13, frame.width + 2, frame.height);
+  for (const arm of [source.nearUpper, source.nearFore, source.farUpper, source.farFore]) { interactionPath(c, arm); c.fill(); }
+  const rig = { body, nearThigh, nearShin, farThigh, farShin, nearUpper, nearFore, farUpper, farFore };
+  walkingRigs.set(gender, rig); return rig;
+}
+
+/** A boot stays on the ground for the stance; only the returning boot lifts. */
+function walkingFoot(phase: number, center: number): InteractionPoint {
+  const p = ((phase % 1) + 1) % 1;
+  if (p < .62) return [center + 11 - p / .62 * 22, -7];
+  const swing = (p - .62) / .38, ease = swing * swing * (3 - 2 * swing);
+  return [center - 11 + ease * 22, -7 - Math.sin(swing * Math.PI) * 7];
+}
+
+function walkingKnee(hip: InteractionPoint, ankle: InteractionPoint): InteractionPoint {
+  const dx = ankle[0] - hip[0], dy = ankle[1] - hip[1], distance = Math.min(43.95, Math.max(.1, Math.hypot(dx, dy)));
+  const angle = Math.atan2(dy, dx), along = (21 * 21 - 23 * 23 + distance * distance) / (2 * distance);
+  const bend = Math.sqrt(Math.max(0, 21 * 21 - along * along));
+  return [hip[0] + Math.cos(angle) * along + Math.sin(angle) * bend, hip[1] + Math.sin(angle) * along - Math.cos(angle) * bend];
+}
+
+function drawHeroWalking(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawResult | undefined {
+  const frame = heroFrame(o.gender, 'idle', o.time), rig = walkingRig(o.gender, frame); if (!rig) return undefined;
+  const outfit = o.outfit ?? 'default', phase = o.time * 9 / TAU;
+  const lift = Math.cos(phase * TAU * 2) * .55, unit = 128 / (frame.referenceHeight ?? frame.footY - frame.y);
+  const nearHip: InteractionPoint = [-5, -43 + lift], farHip: InteractionPoint = [9, -43 + lift];
+  const nearFoot = walkingFoot(phase, -9), farFoot = walkingFoot(phase + .5, 10);
+  const nearKnee = walkingKnee(nearHip, nearFoot), farKnee = walkingKnee(farHip, farFoot);
+  c.save(); c.translate(o.x, o.y); c.scale(o.scale * o.facing, o.scale); drawContactShadow(c);
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+  interactionSegment(c, rig.farThigh, farHip, farKnee); interactionSegment(c, rig.farShin, farKnee, farFoot);
+  const armSwing = Math.sin(phase * TAU) * 8;
+  interactionSegment(c, rig.farUpper, [17, -68 + lift], [19 - armSwing * .55, -50 + lift]);
+  interactionSegment(c, rig.farFore, [19 - armSwing * .55, -50 + lift], [20 - armSwing, -33 + lift]);
+  interactionSegment(c, rig.nearThigh, nearHip, nearKnee); interactionSegment(c, rig.nearShin, nearKnee, nearFoot);
+  c.save(); c.translate(0, lift);
+  c.drawImage(rig.body, (frame.x - frame.footX) * unit, (frame.y - frame.footY) * unit, frame.width * unit, frame.height * unit);
+  const layers = drawSurvivorOutfit(c, o.gender, frame, outfit); c.restore();
+  interactionSegment(c, rig.nearUpper, [-17, -69 + lift], [-18 + armSwing * .6, -51 + lift]);
+  interactionSegment(c, rig.nearFore, [-18 + armSwing * .6, -51 + lift], [-15 + armSwing, -31 + lift]);
+  c.restore();
+  return { outfit, gender: o.gender, frame: `walk-rig:${frame.sheet}:${frame.x}`, imageReady: true, layers };
+}
+
 /** A short wooden handle and squared iron head read as a hammer, not an axe. */
 function drawConstructionHammer(c: CanvasRenderingContext2D, x: number, y: number, angle: number): void {
   c.save(); c.translate(x, y); c.rotate(angle);
@@ -289,6 +389,9 @@ function drawHeroInteraction(c: CanvasRenderingContext2D, o: HeroOptions): HeroD
 
 /** x/y are the soles, or the hip/seat for 'ride'; standing height is 128 at scale 1. */
 export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawResult {
+  if (o.pose === 'walk') {
+    const walking = drawHeroWalking(c, o); if (walking) return walking;
+  }
   if (o.pose === 'hammer') {
     const construction = drawHeroConstruction(c, o); if (construction) return construction;
   }

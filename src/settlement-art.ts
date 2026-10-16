@@ -1,27 +1,27 @@
-import atlasUrl from './assets/settlement-buildings.png';
+import atlasUrl from './assets/haven-facilities-v047.png';
 import type { BuildingType } from './settlement';
 import { drawFacilityUpgradeDetails, facilityUpgradeDetailsSvg } from './facility-upgrade-art';
 import { alignArtContext, type AlignedArtTransform } from './layout-art-projection';
 import type { LayoutDirection } from './layout-direction';
 
-/** Original facilities, measured independently so adjacent sprites never leak. */
+/** Warm miniature work stations, independently framed with alpha gutters. */
 export const FACILITY_ART_URL = atlasUrl;
 export const FACILITY_FRAMES: Record<BuildingType, { x:number; y:number; width:number; height:number }> = {
- workshop: {x:24,y:35,width:490,height:450},
- kitchen: {x:548,y:23,width:457,height:459},
- waterworks: {x:1070,y:63,width:459,height:430},
- greenhouse: {x:29,y:532,width:491,height:444},
- watchtower: {x:564,y:491,width:442,height:492},
- petHouse: {x:1062,y:586,width:472,height:390},
+ workshop: {x:39,y:22,width:471,height:481},
+ kitchen: {x:543,y:28,width:470,height:474},
+ waterworks: {x:1067,y:33,width:451,height:470},
+ greenhouse: {x:41,y:526,width:484,height:452},
+ watchtower: {x:595,y:495,width:379,height:482},
+ petHouse: {x:1045,y:566,width:475,height:415},
 };
 const art = new Image();
 art.decoding='async';
 art.src=atlasUrl;
 export function facilityArtReady(){return art.complete&&art.naturalWidth>0;}
-/** Measured front platform edges in the original atlas, before fitting. */
+/** Measured front platform edges before fitting to the live deck axes. */
 export const FACILITY_BASE_SLOPES: Record<BuildingType,[number,number]> = {
- workshop:[98/257,-93/204], kitchen:[68/219,-76/210], waterworks:[89/214,-85/216],
- greenhouse:[93/232,-96/226], watchtower:[82/220,-92/195], petHouse:[103/205,-96/221],
+ workshop:[117/254,-91/199], kitchen:[114/263,-83/186], waterworks:[117/250,-91/180],
+ greenhouse:[116/256,-86/204], watchtower:[83/180,-74/181], petHouse:[94/250,-89/204],
 };
 
 /** Fit each facility into its box, anchored at the bottom centre. */

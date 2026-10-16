@@ -1,6 +1,6 @@
-import catAtlasUrl from './assets/companions-cat-anime.png';
-import reserveAtlasUrl from './assets/companions-reserve-anime.png';
-import { creatureImage, drawPet, petPortrait, type PetPose } from './creatures';
+import dogAtlasUrl from './assets/haven-companions-dog.png';
+import catAtlasUrl from './assets/haven-companions-cat.png';
+import reserveAtlasUrl from './assets/haven-companions-reserve.png';
 import { UNITS, type UnitId } from './units';
 import { sampleCompanionGait, type CompanionGaitInput, type CompanionGaitSample, type CompanionPaw } from './companion-locomotion';
 import { drawSafariCompanion, isSafariUnitId, safariCompanionArtReady, safariCompanionPortrait, safariPawContacts } from './safari-companion-art';
@@ -63,6 +63,14 @@ const catFrames: Record<'idle' | 'walk' | 'pounce' | 'celebrate', CatFrame> = {
   walk: { x: 666, y: 103, width: 580, height: 508, footX: 948, footY: 601 },
   pounce: { x: 49, y: 685, width: 735, height: 434, footX: 426, footY: 1110 },
   celebrate: { x: 805, y: 670, width: 433, height: 513, footX: 1068, footY: 1176 },
+};
+// The dog now has its own transparent miniature-art atlas. Keeping the original
+// source coordinates preserves grounded paws and the existing petting anchors.
+const dogFrames: Record<'idle' | 'walk' | 'run' | 'pounce', CatFrame> = {
+  idle: { x: 42, y: 73, width: 309, height: 377, footX: 196, footY: 445 },
+  walk: { x: 405, y: 99, width: 318, height: 342, footX: 566, footY: 437 },
+  run: { x: 764, y: 121, width: 395, height: 339, footX: 968, footY: 455 },
+  pounce: { x: 1175, y: 90, width: 352, height: 310, footX: 1338, footY: 395 },
 };
 /** One fixed ratio prevents a cat from growing when it changes animation. */
 const CAT_PIXEL_UNIT = 58 / 520;
@@ -241,9 +249,12 @@ catCompanionImage.src = catAtlasUrl;
 export const reserveCompanionImage = new Image();
 reserveCompanionImage.decoding = 'async';
 reserveCompanionImage.src = reserveAtlasUrl;
+export const dogCompanionImage = new Image();
+dogCompanionImage.decoding = 'async';
+dogCompanionImage.src = dogAtlasUrl;
 
 export function companionArtReady(): boolean {
-  return creatureImage.complete && creatureImage.naturalWidth > 0
+  return dogCompanionImage.complete && dogCompanionImage.naturalWidth > 0
     && catCompanionImage.complete && catCompanionImage.naturalWidth > 0
     && reserveCompanionImage.complete && reserveCompanionImage.naturalWidth > 0
     && safariCompanionArtReady();
@@ -355,7 +366,7 @@ function drawWalkingCompanion(c: CanvasRenderingContext2D, o: CompanionOptions,
   gait: CompanionGaitSample): void {
   if(isSafariUnitId(o.id))return;
   const art=o.id==='dog'||o.id==='cat'?quadrupedArt[o.id]:reservePuppets[o.id];
-  const image=o.id==='dog'?creatureImage:o.id==='cat'?catCompanionImage:reserveCompanionImage;
+  const image=o.id==='dog'?dogCompanionImage:o.id==='cat'?catCompanionImage:reserveCompanionImage;
   if(!image.complete||!image.naturalWidth)return;
   groundShadow(c,gait.strength>.15);
   c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';
@@ -403,6 +414,40 @@ export function companionPawContacts(o: CompanionOptions): Record<CompanionPaw,
     };
   }
   return result;
+}
+
+function drawDog(c: CanvasRenderingContext2D, time: number, pose: CompanionPose, progress?: number): void {
+  const moving = pose === 'walk' || pose === 'run';
+  const striking = pose === 'attack' || pose === 'skill';
+  const phase = progress === undefined ? (time * 1.25) % 1 : clamp(progress);
+  const leap = striking ? Math.sin(phase * Math.PI) : 0;
+  const gait = Math.sin(time * (pose === 'run' ? 10 : 7));
+  const happy = pose === 'celebrate' ? Math.abs(Math.sin(time * 5.5)) : 0;
+  const frame = striking ? dogFrames.pounce
+    : pose === 'run' ? (gait > -.45 ? dogFrames.run : dogFrames.walk)
+    : pose === 'walk' ? (gait > -.15 ? dogFrames.walk : dogFrames.idle) : dogFrames.idle;
+  const unit = quadrupedArt.dog.unit;
+  groundShadow(c, moving || striking);
+  c.save();
+  c.translate(0, moving ? -Math.abs(gait) * (pose === 'run' ? 3 : 1.5)
+    : -happy * 7 - leap * 14 + Math.sin(time * 2.3) * .45);
+  c.rotate(striking ? -.045 * leap : moving ? gait * .025 : Math.sin(time * 2) * .008);
+  if (dogCompanionImage.complete && dogCompanionImage.naturalWidth) {
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    c.drawImage(dogCompanionImage, frame.x, frame.y, frame.width, frame.height,
+      (frame.x - frame.footX) * unit, (frame.y - frame.footY) * unit,
+      frame.width * unit, frame.height * unit);
+  }
+  if (striking && leap > .18) {
+    c.save(); c.globalAlpha *= leap * .55; c.strokeStyle = '#fff0ba';
+    c.lineCap = 'round'; c.lineWidth = 1.5;
+    for (let index = 0; index < 3; index++) {
+      c.beginPath(); c.moveTo(-39 - index * 5, -23 - index * 8);
+      c.lineTo(-28 - index * 4, -24 - index * 8); c.stroke();
+    }
+    c.restore();
+  }
+  c.restore();
 }
 
 function drawCat(c: CanvasRenderingContext2D, time: number, pose: CompanionPose, progress?: number): void {
@@ -506,7 +551,7 @@ export function drawCompanion(c: CanvasRenderingContext2D, o: CompanionOptions):
   const pose = o.pose ?? 'idle';
   const gait=o.gait?sampleCompanionGait(o.id,o.gait,o.scale):undefined;
   const naturalWalk=gait&&(pose==='idle'||pose==='walk'||pose==='run')
-    &&(o.id==='dog'?creatureImage.complete&&creatureImage.naturalWidth>0
+    &&(o.id==='dog'?dogCompanionImage.complete&&dogCompanionImage.naturalWidth>0
       :o.id==='cat'?catCompanionImage.complete&&catCompanionImage.naturalWidth>0
       :isSafariUnitId(o.id)?safariCompanionArtReady()
       :reserveCompanionImage.complete&&reserveCompanionImage.naturalWidth>0);
@@ -520,12 +565,8 @@ export function drawCompanion(c: CanvasRenderingContext2D, o: CompanionOptions):
   }
   if(isSafariUnitId(o.id))drawSafariCompanion(c,o,naturalWalk?gait:undefined);
   else if(naturalWalk)drawWalkingCompanion(c,o,gait);
-  else if (o.id === 'dog') {
-    const dogPose: PetPose = pose === 'attack' || pose === 'skill' ? 'pounce'
-      : pose === 'hurt' || pose === 'down' ? 'idle' : pose;
-    drawPet(c, { x: 0, y: 0, scale: 1, time: pose === 'down' ? 0 : o.time,
-      facing: 1, pose: dogPose, progress: o.progress });
-  } else if (o.id === 'cat') drawCat(c, pose === 'down' ? 0 : o.time, pose, o.progress);
+  else if (o.id === 'dog') drawDog(c, pose === 'down' ? 0 : o.time, pose, o.progress);
+  else if (o.id === 'cat') drawCat(c, pose === 'down' ? 0 : o.time, pose, o.progress);
   else drawReserve(c, o.id, pose === 'down' ? 0 : o.time, pose, o.progress);
   if (pose === 'down') recoveryHeart(c, o.time);
   c.restore();
@@ -534,7 +575,10 @@ export function drawCompanion(c: CanvasRenderingContext2D, o: CompanionOptions):
 let catPortraitSequence = 0;
 /** Portraits crop the exact gameplay art, keeping the party and village coherent. */
 export function companionPortrait(id: UnitId): string {
-  if (id === 'dog') return petPortrait();
+  if (id === 'dog') {
+    const clipId = `bori-miniature-portrait-${++catPortraitSequence}`;
+    return `<svg class="pet-portrait companion-portrait" viewBox="0 0 100 100" role="img" aria-label="초록 스카프를 두른 진돗개 보리"><title>${UNITS[id].name}</title><defs><clipPath id="${clipId}-crop"><circle cx="50" cy="50" r="47"/></clipPath><radialGradient id="${clipId}-wash"><stop stop-color="#faf4d9"/><stop offset="1" stop-color="#d7e0b9"/></radialGradient></defs><circle cx="50" cy="50" r="49" fill="url(#${clipId}-wash)" stroke="#b8ae79" stroke-width="1.3"/><g clip-path="url(#${clipId}-crop)"><svg x="4" y="4" width="92" height="92" viewBox="190 69 177 177"><image href="${dogAtlasUrl}" width="1536" height="1024"/></svg></g></svg>`;
+  }
   if (isSafariUnitId(id)) return safariCompanionPortrait(id);
   if (id !== 'cat') {
     const art = reserveArt[id], clipId = `${id}-portrait-${++catPortraitSequence}`;

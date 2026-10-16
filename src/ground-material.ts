@@ -3,10 +3,10 @@ import { GROUND_LANDSCAPE_BOUNDS } from './ground-visuals';
 
 type Point = readonly [number, number];
 const tones = {
-  tree: ['#9ca27b', '#afa184', '#8e9774'],
-  seed: ['#acb387', '#b4b690', '#9ca97e'],
-  scrap: ['#b7ac96', '#a69c88', '#beb39c'],
-  water: ['#a3afa0', '#afb59d', '#96a69a'],
+  tree: ['#91a76a', '#baa877', '#7b965b'],
+  seed: ['#a4ba79', '#bdc787', '#8eab65'],
+  scrap: ['#baa47f', '#a99a79', '#c7b38a'],
+  water: ['#8aaf91', '#a9bd8e', '#76a79a'],
 } as const;
 
 function random(seed: number) {
@@ -31,10 +31,10 @@ export function paintGatheringGround(c: CanvasRenderingContext2D, width: number,
   GROUND_RESOURCE_NODES.forEach((node, index) => {
     const rng = random(0x71a3 + index * 977), palette = tones[node.kind], [x, y] = node.point;
     // Break up the bank into offset, differently sized brush marks.
-    for (let mark = 0; mark < 7; mark++) {
+    for (let mark = 0; mark < 4; mark++) {
       const angle = rng() * Math.PI * 2, distance = rng() * 34 * node.scale;
       wash(c, [x + Math.cos(angle) * distance, y + Math.sin(angle) * distance * .45],
-        (28 + rng() * 30) * node.scale, palette[mark % palette.length], .20);
+        (24 + rng() * 22) * node.scale, palette[mark % palette.length], .07);
     }
     // Join nearby habitats gently so forest trees grow out of shared soil.
     const neighbours = GROUND_RESOURCE_NODES.filter(other => other !== node && other.regionId === node.regionId)
@@ -48,7 +48,7 @@ export function paintGatheringGround(c: CanvasRenderingContext2D, width: number,
         const t = step / steps;
         wash(c, [x + (neighbour.node.point[0] - x) * t + (rng() - .5) * 14,
           y + (neighbour.node.point[1] - y) * t + (rng() - .5) * 9], 25 + rng() * 18,
-          palette[step % palette.length], .10);
+          palette[step % palette.length], .035);
       }
     }
     scatter(c, node, rng);
@@ -62,12 +62,12 @@ function scatter(c: CanvasRenderingContext2D, node: GroundResourceNode, rng: () 
     const angle = rng() * Math.PI * 2, distance = 12 + rng() * 43 * node.scale,
       px = x + Math.cos(angle) * distance, py = y + Math.sin(angle) * distance * .43;
     c.save(); c.translate(px, py); c.rotate((rng() - .5) * 1.1);
-    c.globalAlpha = .12 + rng() * .15;
+    c.globalAlpha = .18 + rng() * .18;
     if (node.kind === 'scrap' || node.kind === 'water') {
-      c.fillStyle = index % 2 ? '#87917b' : '#d2c4a6'; c.beginPath();
+      c.fillStyle = index % 2 ? '#8a9876' : '#dcc79f'; c.beginPath();
       c.ellipse(0, 0, 1.5 + rng() * 2.6, .6 + rng(), 0, 0, Math.PI * 2); c.fill();
     } else {
-      c.strokeStyle = node.kind === 'tree' ? '#867c59' : '#8d9d6b'; c.lineWidth = .8 + rng() * .6;
+      c.strokeStyle = node.kind === 'tree' ? '#7d8b52' : '#86a35d'; c.lineWidth = .8 + rng() * .6;
       c.beginPath(); c.moveTo(-2, 1); c.quadraticCurveTo(-1, -2, 2, -3 - rng() * 3); c.stroke();
     }
     c.restore();

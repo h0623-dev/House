@@ -1,4 +1,6 @@
 import { paintWorldQuad, drawWorldFence } from './world-art';
+import { FLOOR_HEIGHT } from './truck-layout';
+import { drawTruckAccessStairs } from './truck-stair-art';
 
 export type TruckFloorId = 1 | 2 | 3;
 export type FloorArtPoint = [number, number];
@@ -48,10 +50,11 @@ function fascia(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,z:number,opaci
     [p(b.left,b.front,z),p(b.end,b.front,z),p(b.end,b.front,z-12),p(b.left,b.front,z-12)],
     [p(b.end,b.back,z),p(b.end,b.front,z),p(b.end,b.front,z-12),p(b.end,b.back,z-12)],
   ] as [FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint][]){
-    polygon(c,face,'#557e6b');paintWorldQuad(c,'metal',face,.09);polygon(c,face,'','#65513a',1);
+    polygon(c,face,'#677653');paintWorldQuad(c,'metal',face,.035);polygon(c,face,'','#69704b',.7);
+    line(c,face[2],face[3],'#38463366',1.8);
   }
-  line(c,p(b.left,b.front,z),p(b.end,b.front,z),'#d4b26e',2);
-  line(c,p(b.end,b.back,z),p(b.end,b.front,z),'#c9a567',1.4);
+  line(c,p(b.left,b.front,z),p(b.end,b.front,z),'#e3c087',2);
+  line(c,p(b.end,b.back,z),p(b.end,b.front,z),'#cfb27d',1.4);
   c.restore();
 }
 function stairLanding(c:CanvasRenderingContext2D,center:FloorArtPoint):void{
@@ -61,43 +64,14 @@ function stairLanding(c:CanvasRenderingContext2D,center:FloorArtPoint):void{
   const corners=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>[
     center[0]+across[0]*a+depth[0]*b,center[1]+across[1]*a+depth[1]*b,
   ] as FloorArtPoint) as [FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint];
-  polygon(c,corners,'#b89960','#6e5a3c',1);paintWorldQuad(c,'wood',corners,.06);
-  line(c,corners[2],corners[3],'#d4b26e',1.4);
+  polygon(c,corners,'#d7b47e','#9b8154',.8);paintWorldQuad(c,'wood',corners,-.015);
+  line(c,corners[2],corners[3],'#e7c990',1.4);
 }
-function stairRail(c:CanvasRenderingContext2D,top:FloorArtPoint,bottom:FloorArtPoint):void{
-  const height=22;
-  for(let t=0;t<=1.001;t+=.25){
-    const foot:FloorArtPoint=[top[0]+(bottom[0]-top[0])*t,top[1]+(bottom[1]-top[1])*t],cap:FloorArtPoint=[foot[0],foot[1]-height];
-    line(c,foot,cap,'#665339',4.2);line(c,[foot[0]-.6,foot[1]],[cap[0]-.6,cap[1]],'#73906a',2.5);
-    c.beginPath();c.ellipse(foot[0],foot[1],3.5,1.25,0,0,Math.PI*2);c.fillStyle='#506b54';c.fill();
-    c.beginPath();c.arc(cap[0],cap[1],2.1,0,Math.PI*2);c.fillStyle='#d5b77a';c.fill();
-  }
-  const a:FloorArtPoint=[top[0],top[1]-height],b:FloorArtPoint=[bottom[0],bottom[1]-height];
-  line(c,a,b,'#67583c',4.8);line(c,[a[0]-.6,a[1]-.6],[b[0]-.6,b[1]-.6],'#8b9867',2.8);
-  line(c,[a[0]-.7,a[1]-1.5],[b[0]-.7,b[1]-1.5],'#dbc48b',.8);
-}
-
-/** One broad painted flight; no repeated internal ladder rails. Feet endpoints
- * stay unchanged, and the ~90-UV width fits the shared 91-UV stair footprint. */
+/** The same warm oak and olive stair construction connects every floor.
+ * Physical endpoints and the reserved free-placement footprint stay unchanged. */
 export function drawTruckStairway(c:CanvasRenderingContext2D,top:FloorArtPoint,bottom:FloorArtPoint):void{
-  const across:FloorArtPoint=[41,41*.34/.91],length=Math.hypot(bottom[0]-top[0],bottom[1]-top[1]);
-  if(length<.001)return;
-  const edge=(t:number,side:1|-1,down=0):FloorArtPoint=>[
-    top[0]+(bottom[0]-top[0])*t+across[0]*side,
-    top[1]+(bottom[1]-top[1])*t+across[1]*side+down,
-  ];
-  c.save();
-  polygon(c,[edge(0,-1,4),edge(0,1,4),edge(1,1,4),edge(1,-1,4)],'#66563b');
-  stairRail(c,edge(0,-1),edge(1,-1));
-  const steps=Math.max(4,Math.ceil(length/16));
-  for(let index=0;index<steps;index++){
-    const start=index/steps,end=(index+1)/steps;
-    const tread:[FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint]=[edge(start,-1),edge(start,1),edge(end,1),edge(end,-1)];
-    polygon(c,[edge(end,-1),edge(end,1),edge(end,1,3.2),edge(end,-1,3.2)],'#8b6e46','#6e543a',.6);
-    polygon(c,tread,'#c8a269');paintWorldQuad(c,'wood',tread,index%2?.055:.015);
-    line(c,tread[2],tread[3],'#6c5339',1);line(c,[tread[2][0],tread[2][1]-.7],[tread[3][0],tread[3][1]-.7],'#edcb89',.65);
-  }
-  stairLanding(c,bottom);stairLanding(c,top);stairRail(c,edge(0,1),edge(1,1));c.restore();
+  drawTruckAccessStairs(c,top,bottom,{width:86,rise:FLOOR_HEIGHT,treadCount:12});
+  stairLanding(c,bottom);stairLanding(c,top);
 }
 function wideStairs(c:CanvasRenderingContext2D,stairs:FloorArtStairway):void{
   drawTruckStairway(c,stairs.top,stairs.bottom);
@@ -129,8 +103,8 @@ function rail(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,edge:FloorRailGa
 function floorPlate(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,floor:FloorArtLevel):void{
   const b=o.bounds,p=o.project,anchor=p(Math.min(b.end-75,b.left+130),b.front+1,floor.z-10);
   c.save();c.translate(...anchor);c.transform(1,.34/.91,0,1,0,0);
-  const gradient=c.createLinearGradient(0,-9,0,10);gradient.addColorStop(0,'#6f8b68');gradient.addColorStop(1,'#3f6554');
-  c.fillStyle=gradient;c.strokeStyle='#d5b778';c.lineWidth=1.3;c.beginPath();c.roundRect(-48,-9,96,22,3);c.fill();c.stroke();
+  const gradient=c.createLinearGradient(0,-9,0,10);gradient.addColorStop(0,'#80926b');gradient.addColorStop(1,'#586b49');
+  c.fillStyle=gradient;c.strokeStyle='#d6bd84';c.lineWidth=1.3;c.beginPath();c.roundRect(-48,-9,96,22,3);c.fill();c.stroke();
   for(const x of[-43,43]){c.beginPath();c.arc(x,2,1.3,0,Math.PI*2);c.fillStyle='#e0c28c';c.fill();}
   c.fillStyle='#fff1c9';c.textAlign='center';c.textBaseline='middle';c.font='700 10px "Noto Sans KR Variable", sans-serif';
   c.fillText(`${floor.id}층 생활 데크`,0,2);c.restore();
@@ -147,10 +121,10 @@ export function drawTruckFloor(c:CanvasRenderingContext2D,o:TruckFloorArtOptions
     // The selected floor's fascia/rails and clipped local stairwell suffice.
   }else if(o.pass==='surface'){
     fascia(c,o,floor.z);const surface=quad(o,floor.z,1);
-    polygon(c,surface,'#d8ad6e');paintWorldQuad(c,'wood',surface,-.025);polygon(c,surface,'','#73543a',1.4);
+    polygon(c,surface,'#d7b47f');paintWorldQuad(c,'wood',surface,-.025);polygon(c,surface,'','#9a7c51',1.2);
     for(let v=b.back+24;v<b.front;v+=24){
-      line(c,p(b.left+1,v,floor.z),p(b.end-1,v,floor.z),'#79533559',.9);
-      line(c,p(b.left+1,v+1,floor.z),p(b.end-1,v+1,floor.z),'#ffdfaa54',.7);
+      line(c,p(b.left+1,v,floor.z),p(b.end-1,v,floor.z),'#94744840',.65);
+      line(c,p(b.left+1,v+1,floor.z),p(b.end-1,v+1,floor.z),'#fff0c668',.7);
     }
     if(o.night){c.save();c.globalAlpha*=clamp(o.night)*.1;polygon(c,surface,'#263e45');c.restore();}
   }else if(o.pass==='back'){

@@ -57,6 +57,7 @@ import { initializeGameOrientation, type GameOrientationController, type GameOri
 import './landscape.css';
 import './gathering-dock.css';
 import './animal-interactions.css';
+import './haven-visuals.css';
 
 const stored = loadGame();
 let state = stored ?? createGame('female', '하루');
@@ -126,7 +127,7 @@ const contentApplyingNotice=document.createElement('div');
 contentApplyingNotice.className='content-applying-notice';contentApplyingNotice.hidden=true;contentApplyingNotice.setAttribute('role','status');contentApplyingNotice.setAttribute('aria-live','polite');
 contentApplyingNotice.innerHTML='<strong>게임 업데이트 적용 중</strong><span>진행을 저장했어요. 잠시만 기다려 주세요.</span>';document.body.append(contentApplyingNotice);
 const escape=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const navItems=[['truck','트럭','home'],['hammer','건설','build'],['seeds','농사','farm'],['map','탐험','hunt'],['bag','창고','bag'],['bag','상점','shop']];
+const navItems=[['hammer','건설','build'],['seeds','농사','farm'],['map','탐험','hunt'],['shop','상점','shop']];
 const quickItems=[['harvest','food','수확'],['water','water','물 주기'],['plant','seeds','씨앗 심기'],['fertilize','seeds','영양 주기'],['chop','axe','벌목'],['gather','scrap','고철']] as const;
 const gatheringShortcuts=[['wood','나무'],['scrap','고철'],['seeds','씨앗'],['water','샘물']] as const;
 type GatheringShortcutResource=typeof gatheringShortcuts[number][0];
@@ -143,7 +144,7 @@ app.innerHTML=`
   <button class="resource-bar" data-open="bag" aria-label="보유 자원과 창고 열기" id="resources"></button>
   <main class="game-main">
    <section class="scene-card" aria-label="트럭 위 우리집 게임 화면">
-    <canvas id="world" aria-label="농장과 집이 있는 거대한 트럭. 빈 바닥을 눌러 이동하고, 시설을 눌러 재배치할 수 있어요."></canvas>
+    <canvas id="world" aria-label="텃밭과 생활 시설이 있는 거대한 트럭. 빈 바닥을 눌러 이동하고, 시설을 눌러 재배치할 수 있어요."></canvas>
     <div class="scene-top"><div class="scene-label"><span class="live-dot"></span><strong id="zone-name">우리 트럭</strong><span id="truck-level">Lv.1</span></div><button class="scene-icon" data-open="guide" aria-label="게임 도움말">?</button></div>
     <div class="scene-weather"><span id="weather-icon">${icon('sun')}</span><div><strong id="clock">08:00</strong><small id="weather-text">기분 좋은 아침</small></div><button data-pause class="time-button" aria-label="시간 일시정지">${icon('pause')}</button></div>
     <div class="truck-floor-controls" role="group" aria-label="트럭 층 선택"><button data-truck-floor="1" aria-pressed="true">1층</button><button data-truck-floor="2" aria-pressed="false">2층 <small>Lv.4</small></button><button data-truck-floor="3" aria-pressed="false">3층 <small>Lv.7</small></button><button data-open="floors" aria-label="층 증축">${icon('plus')}<small>증축</small></button></div>
@@ -162,7 +163,7 @@ app.innerHTML=`
     </div>
     <section class="animal-sheet" id="animal-sheet" hidden aria-label="동물과 함께하기"></section>
     <section class="animal-ride-hud" id="animal-ride-hud" hidden aria-label="동물 탑승 중"></section>
-    <div class="road-controls" aria-label="전체 지도와 도로 활동"><button data-camera-player aria-label="지금 층의 전체 맵을 기본 크기로 보기">${icon('map')}<small>전체 보기</small></button><button data-road-walk aria-label="계단를 내려가 도로 걷기">${icon('move')}<small>도로 걷기</small></button><button data-open="roadside" aria-label="도로 채집 장소 보기">${icon('map')}<small>채집 장소</small></button><button data-road-return aria-label="실제 계단으로 트럭에 돌아오기">${icon('truck')}<small>트럭으로</small></button><button data-open="pet-passage" aria-label="동물 통로 문 조작">${icon('paw')}<small>동물 문</small></button></div>
+    <div class="road-controls" id="road-controls" aria-label="전체 지도와 도로 활동"><button data-camera-player aria-label="지금 층의 전체 맵을 기본 크기로 보기">${icon('map')}<small>전체 보기</small></button><button data-road-walk aria-label="계단를 내려가 도로 걷기">${icon('move')}<small>도로 걷기</small></button><button class="travel-extra" data-open="roadside" aria-label="도로 채집 장소 보기">${icon('map')}<small>채집 장소</small></button><button class="travel-extra" data-road-return aria-label="실제 계단으로 트럭에 돌아오기">${icon('truck')}<small>트럭으로</small></button><button class="travel-extra" data-open="pet-passage" aria-label="동물 통로 문 조작">${icon('paw')}<small>동물 문</small></button><button class="travel-more" data-travel-toggle aria-label="도로 도구 더 보기" aria-expanded="false" aria-controls="road-controls">${icon('chevron')}<small>더 보기</small></button></div>
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
     <div class="chore-status" hidden role="status" aria-live="polite"></div>
@@ -1405,6 +1406,8 @@ document.addEventListener('click',e=>{
  if((t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')||t.hasAttribute('data-farm-toggle'))&&!requireOnFoot())return;
  if(t.hasAttribute('data-gather-toggle')){setGatheringTray(!gatheringTrayOpen);renderGatheringDock();return;}
  if(t.dataset.gatherResource){const resource=gatheringShortcuts.find(([id])=>id===t.dataset.gatherResource)?.[0];if(resource)gatherFromShortcut(resource);return;}
+ if(t.hasAttribute('data-travel-toggle')){const card=document.querySelector('.scene-card')!;const open=card.classList.toggle('travel-open');t.setAttribute('aria-expanded',String(open));t.setAttribute('aria-label',open?'도로 도구 접기':'도로 도구 더 보기');t.querySelector('small')!.textContent=open?'접기':'더 보기';return;}
+ if(t.closest('.road-controls')){const card=document.querySelector('.scene-card')!;card.classList.remove('travel-open');const more=card.querySelector<HTMLButtonElement>('[data-travel-toggle]')!;more.setAttribute('aria-expanded','false');more.setAttribute('aria-label','도로 도구 더 보기');more.querySelector('small')!.textContent='더 보기';}
  if(t.hasAttribute('data-camera-player')){resumePlayerView();return;}
  if(t.dataset.petPassageToggle){void operatePetPassage(t.dataset.petPassageToggle==='open');return;}
  if(t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')){if(prepareRoadWalk()){if(t.hasAttribute('data-road-return'))scene.walkToTruck();else scene.walkOntoRoad();}return;}

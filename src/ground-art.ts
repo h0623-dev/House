@@ -1,7 +1,7 @@
-import landscapeUrl from './assets/ground-landscape.png';
-import propsUrl from './assets/ground-props.png';
+import landscapeUrl from './assets/haven-ground-landscape.png';
+import propsUrl from './assets/haven-ground-props.png';
 import { GROUND_BACKGROUND_BOUNDS, GROUND_LANDSCAPE_BOUNDS, getGroundBackgroundViewport,
-  getGroundContactShadow, getGroundSpriteBounds, getGroundSpriteFrame, type GroundSprite } from './ground-visuals';
+  getGroundContactShadow, type GroundSprite } from './ground-visuals';
 import { GROUND_ART_PALETTE, GROUND_LANDSCAPE_EDGE_FADE, GROUND_SOIL_BASE, GROUND_SOIL_TEXTURE_SIZE,
   GROUND_SOIL_TEXTURE_WORLD_SCALE, createGroundSoilPixels, harmonizeGroundPixels, type GroundPalette } from './ground-palette';
 import { paintGatheringGround } from './ground-material';
@@ -12,58 +12,89 @@ let propsImage: HTMLImageElement | undefined;
 const displayPaintings = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
 let soilTexture: HTMLCanvasElement | undefined;
 const soilPatterns = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
-const resourcePaintings = new WeakMap<HTMLImageElement, Map<string, HTMLCanvasElement>>();
+interface ResourcePainting {
+  readonly canvas: HTMLCanvasElement;
+  readonly anchorX: number;
+  readonly anchorY: number;
+}
+interface HavenFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly anchor: readonly [number, number];
+  readonly contour?: readonly (readonly [number, number])[];
+}
+const resourcePaintings = new WeakMap<HTMLImageElement, Map<string, ResourcePainting>>();
+
+/** Frames belong only to the new artwork. The authored world-space trunk,
+ * work stop, node identity and navigation footprints are left untouched.
+ * Contacts are measured at roots / the centre of the water surface. */
+const HAVEN_FRAMES = {
+  oak: { x: 0, y: 40, width: 432, height: 514, anchor: [230, 522] },
+  birch: { x: 423, y: 30, width: 293, height: 521, anchor: [554, 526] },
+  spread: { x: 702, y: 68, width: 568, height: 490, anchor: [1005, 530], contour: [
+    [1026,68],[863,104],[759,169],[711,277],[705,351],[767,429],[891,493],
+    [900,550],[1098,552],[1110,468],[1259,384],[1268,315],[1238,218],[1157,133],
+  ] },
+  stump: { x: 1226, y: 276, width: 309, height: 282, anchor: [1377, 520], contour: [
+    [1305,285],[1405,287],[1455,326],[1468,400],[1533,490],[1499,536],
+    [1370,555],[1230,510],[1230,468],[1284,430],[1296,358],
+  ] },
+  scrap: { x: 15, y: 621, width: 409, height: 331, anchor: [216, 920] },
+  seed: { x: 428, y: 621, width: 369, height: 341, anchor: [610, 931] },
+  water: { x: 801, y: 682, width: 408, height: 284, anchor: [1008, 863] },
+  underbrush: { x: 1221, y: 643, width: 314, height: 326, anchor: [1385, 935] },
+} as const satisfies Record<string, HavenFrame>;
+const TREE_FRAMES = ['oak', 'birch', 'spread'] as const;
+function havenFrame(sprite: GroundSprite, variant: number): HavenFrame {
+  const index = Number.isFinite(variant) ? ((Math.floor(variant) % 3) + 3) % 3 : 0;
+  return sprite === 'tree' ? HAVEN_FRAMES[TREE_FRAMES[index]] : HAVEN_FRAMES[sprite];
+}
 
 const smooth = (from: number, to: number, value: number) => {
   const t = Math.max(0, Math.min(1, (value - from) / (to - from)));
   return t * t * (3 - 2 * t);
 };
 
-/** Resolve the illustration at the world's brush scale, once per silhouette.
- * The old full-resolution atlas had miniature sharp leaves and a flower-bed
- * rim on every tree, while the terrain uses broad, matte painted marks. */
-function resourcePainting(image: HTMLImageElement, sprite: GroundSprite, variant: number): CanvasImageSource {
+/** Preserve the sculpted foliage, bark and stones at useful zoom resolution.
+ * Alpha cleanup removes the generator's faint matte, without a coloured
+ * rectangle or a separate grassy island underneath each collectible. */
+function resourcePainting(image: HTMLImageElement, sprite: GroundSprite, variant: number): ResourcePainting | undefined {
   let paintings = resourcePaintings.get(image);
   if (!paintings) { paintings = new Map(); resourcePaintings.set(image, paintings); }
   const key = `${sprite}:${variant}`, cached = paintings.get(key);
   if (cached) return cached;
-  const frame = getGroundSpriteFrame(sprite, variant),
-    brushWidth = sprite === 'tree' ? 132 : sprite === 'stump' ? 58 : sprite === 'underbrush' ? 48 : 100,
+  const frame = havenFrame(sprite, variant),
+    brushWidth = sprite === 'tree' ? 384 : sprite === 'stump' ? 192 : 256,
     canvas = document.createElement('canvas');
   canvas.width = brushWidth; canvas.height = Math.round(brushWidth * frame.height / frame.width);
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return image;
+  if (!context) return undefined;
   context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
-  context.save(); context.beginPath();
-  frame.contour.forEach(([x, y], index) => {
-    const px = (x - frame.x) * canvas.width / frame.width, py = (y - frame.y) * canvas.height / frame.height;
-    if (index) context.lineTo(px, py); else context.moveTo(px, py);
-  });
-  context.closePath(); context.clip();
+  context.save();
+  if (frame.contour) {
+    context.beginPath();
+    frame.contour.forEach(([x, y], index) => {
+      const px = (x - frame.x) * canvas.width / frame.width, py = (y - frame.y) * canvas.height / frame.height;
+      if (index) context.lineTo(px, py); else context.moveTo(px, py);
+    });
+    context.closePath(); context.clip();
+  }
   context.drawImage(image, frame.x, frame.y, frame.width, frame.height, 0, 0, canvas.width, canvas.height);
   context.restore();
   const painting = context.getImageData(0, 0, canvas.width, canvas.height);
   harmonizeGroundPixels(painting.data, GROUND_ART_PALETTE.props);
-  const ax = (frame.anchor[0] - frame.x) * canvas.width / frame.width,
-    ay = (frame.anchor[1] - frame.y) * canvas.height / frame.height;
   for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
     const offset = (y * canvas.width + x) * 4, alpha = painting.data[offset + 3];
-    // Remove the faint coloured matte beyond actual leaves and stones.
-    let opacity = smooth(16, 235, alpha);
-    if (sprite === 'tree') {
-      const base = smooth(ay - canvas.height * .13, ay + canvas.height * .055, y),
-        outsideTrunk = smooth(canvas.width * .065, canvas.width * .22, Math.abs(x - ax));
-      opacity *= 1 - base * outsideTrunk * .96;
-      opacity *= 1 - smooth(ay + canvas.height * .015, canvas.height, y);
-    } else {
-      // Banks and grassy edges merge into the terrain while the resource's
-      // recognisable body, pool and cut wood remain fully legible.
-      opacity *= 1 - smooth(ay + canvas.height * .015, canvas.height, y) * .92;
-    }
+    const opacity = smooth(18, 218, alpha);
     painting.data[offset + 3] = Math.round(opacity * 255);
   }
-  context.putImageData(painting, 0, 0); paintings.set(key, canvas);
-  return canvas;
+  context.putImageData(painting, 0, 0);
+  const result = { canvas, anchorX: (frame.anchor[0] - frame.x) / frame.width,
+    anchorY: (frame.anchor[1] - frame.y) / frame.height };
+  paintings.set(key, result);
+  return result;
 }
 
 function softenPaintingEdges(context: CanvasRenderingContext2D, width: number, height: number): void {
@@ -166,14 +197,15 @@ export function drawGroundLandscape(c: CanvasRenderingContext2D): boolean {
   return true;
 }
 
-/** Draw the harmonized transparent atlas at its unchanged measured contact.
- * Cropping and contour clipping happen only on the game's display canvas. */
+/** Each new model is rooted at the existing interactive world contact.
+ * The renderer, not the saved resource geometry, owns its source crop. */
 export function drawGroundSprite(c: CanvasRenderingContext2D, sprite: GroundSprite, x: number, y: number,
   width: number, height: number, alpha: number = 1, variant: number = 0): boolean {
   const image = groundImages.props;
   if (!ready(image)) return false;
-  const frame = getGroundSpriteFrame(sprite, variant), [left, top] = getGroundSpriteBounds(sprite, x, y, width, height, variant),
-    painting = resourcePainting(image, sprite, variant), shadow = getGroundContactShadow(sprite, width, height);
+  const painting = resourcePainting(image, sprite, variant), shadow = getGroundContactShadow(sprite, width, height);
+  if (!painting) return false;
+  const left = x - painting.anchorX * width, top = y - painting.anchorY * height;
   c.save();
   c.globalAlpha *= Math.max(0, Math.min(1, alpha));
   c.imageSmoothingEnabled = true;
@@ -181,21 +213,12 @@ export function drawGroundSprite(c: CanvasRenderingContext2D, sprite: GroundSpri
   c.translate(x + shadow.offsetX, y + shadow.offsetY);
   c.scale(shadow.radiusX, shadow.radiusY);
   const shade = c.createRadialGradient(0, 0, .08, 0, 0, 1);
-  shade.addColorStop(0, `rgba(54, 66, 43, ${shadow.opacity})`);
-  shade.addColorStop(.55, `rgba(54, 66, 43, ${shadow.opacity * .48})`);
-  shade.addColorStop(1, 'rgba(54, 66, 43, 0)');
+  shade.addColorStop(0, `rgba(65, 71, 39, ${shadow.opacity * .8})`);
+  shade.addColorStop(.55, `rgba(65, 71, 39, ${shadow.opacity * .33})`);
+  shade.addColorStop(1, 'rgba(65, 71, 39, 0)');
   c.fillStyle = shade; c.fillRect(-1, -1, 2, 2);
   c.restore();
-  c.beginPath();
-  frame.contour.forEach(([sourceX, sourceY], index) => {
-    const px = x + (sourceX - frame.anchor[0]) * width / frame.width,
-      py = y + (sourceY - frame.anchor[1]) * height / frame.height;
-    if (index) c.lineTo(px, py); else c.moveTo(px, py);
-  });
-  c.closePath();
-  c.clip();
-  if (painting === image) c.drawImage(image, frame.x, frame.y, frame.width, frame.height, left, top, width, height);
-  else c.drawImage(painting, left, top, width, height);
+  c.drawImage(painting.canvas, left, top, width, height);
   c.restore();
   return true;
 }

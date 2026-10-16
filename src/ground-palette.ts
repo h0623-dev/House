@@ -1,6 +1,5 @@
-/** One display palette for the ground painting and its interactive props.
- * The original PNGs remain untouched; their alpha and measured silhouettes
- * also remain the source of touch and collision geometry. */
+/** The new miniature assets are authored in the same upper-left sunlight.
+ * Keep that material separation instead of applying the former grey wash. */
 export interface GroundPalette {
   readonly saturation: number;
   readonly contrast: number;
@@ -9,18 +8,16 @@ export interface GroundPalette {
 }
 
 export const GROUND_ART_PALETTE = {
-  // Lift the shared midtones instead of washing out the painting with a pale
-  // screen overlay. Warm greens and earth retain their painted separation.
-  landscape: { saturation: .88, contrast: .91, midpoint: 140, tint: [3, 4, 0] },
-  props: { saturation: .74, contrast: .89, midpoint: 138, tint: [4, 5, 1] },
+  landscape: { saturation: .98, contrast: .98, midpoint: 129, tint: [1, 1, 0] },
+  props: { saturation: .97, contrast: .99, midpoint: 129, tint: [1, 1, 0] },
 } as const satisfies Record<string, GroundPalette>;
 
 export const GROUND_SOIL_TEXTURE_SIZE = 256;
 export const GROUND_SOIL_TEXTURE_WORLD_SCALE = 4;
-export const GROUND_SOIL_BASE = '#bec19e';
+export const GROUND_SOIL_BASE = '#b4ba84';
 /** Source pixels; a short soft edge merges the single authored painting into
  * the quiet terrain beyond it, without reflecting roads or stream banks. */
-export const GROUND_LANDSCAPE_EDGE_FADE = 90;
+export const GROUND_LANDSCAPE_EDGE_FADE = 66;
 
 /** A small, deterministic, nearly flat moss/soil texture has no roads, trees
  * or other recognisable features which could repeat beyond the playable map.
@@ -34,9 +31,9 @@ export function createGroundSoilPixels(): Uint8ClampedArray {
       field = Math.sin(phaseX) * Math.cos(phaseY) * 1.5 + Math.sin(phaseX + phaseY) * .7,
       grain = ((seed >>> 24) / 255 - .5) * 3, light = field + grain,
       offset = (y * size + x) * 4;
-    pixels[offset] = Math.round(190 + light);
-    pixels[offset + 1] = Math.round(193 + light);
-    pixels[offset + 2] = Math.round(158 + light);
+    pixels[offset] = Math.round(180 + light);
+    pixels[offset + 1] = Math.round(186 + light);
+    pixels[offset + 2] = Math.round(132 + light);
     pixels[offset + 3] = 255;
   }
   return pixels;

@@ -1,4 +1,4 @@
-import atlasUrl from './assets/companions-safari-anime.png';
+import atlasUrl from './assets/haven-companions-safari.png';
 import type { CompanionOptions } from './companion-art';
 import type { CompanionGaitSample, CompanionPaw } from './companion-locomotion';
 import { UNITS, type UnitId } from './units';

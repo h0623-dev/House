@@ -27,7 +27,7 @@ import { frameHomeOverview, getHomeOverviewBounds } from './player-camera';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
   sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, blocksStaticNavigationStep, circleOverlapsPolygon, navigationObstaclePolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS, unprojectDeckPoint,
   type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld, type NavigationLink } from './scene-navigation';
-import itemAtlasUrl from './assets/items-anime.png';
+import itemAtlasUrl from './assets/haven-items-miniature.png';
 import { layoutProductionBubbles } from './production-bubble-layout';
 import { type OutdoorSiteId } from './outdoor-sites';
 import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId, type GroundResourceNode } from './ground-resources';
@@ -1210,18 +1210,17 @@ export class Scene {
   private resourceIllustration(resource: string, x: number, y: number, size: number) {
     const decoded=this.itemAtlas.complete&&this.itemAtlas.naturalWidth>0;
     const cell = ({ wood: 0, scrap: 1, food: 2, water: 3, seeds: 4 } as Record<string, number>)[resource];
-    if(!decoded||cell===undefined)return{asset:'items-anime',cell,decoded,drawn:false};
+    if(!decoded||cell===undefined)return{asset:'haven-items-miniature',cell,decoded,drawn:false};
     const source = this.itemAtlas.naturalWidth / 4;
     this.ctx.drawImage(this.itemAtlas, (cell % 4) * source, Math.floor(cell / 4) * source, source, source, x - size / 2, y - size / 2, size, size);
-    return{asset:'items-anime',cell,decoded,drawn:true};
+    return{asset:'haven-items-miniature',cell,decoded,drawn:true};
   }
-  private box(u: number, v: number, z: number, w: number, d: number, h: number, top: string, front: string, side: string, outline = '#68705b') {
+  private box(u: number, v: number, z: number, w: number, d: number, h: number, top: string, front: string, side: string, outline = '#68705b', material: 'wood' | 'metal' = 'wood') {
     const faces: [Point, Point, Point, Point][] = [
       [this.p(u, v + d, z), this.p(u + w, v + d, z), this.p(u + w, v + d, z + h), this.p(u, v + d, z + h)],
       [this.p(u + w, v, z), this.p(u + w, v + d, z), this.p(u + w, v + d, z + h), this.p(u + w, v, z + h)],
       [this.p(u, v, z + h), this.p(u + w, v, z + h), this.p(u + w, v + d, z + h), this.p(u, v + d, z + h)],
     ];
-    const material = ['#557770', '#7ca493', '#799181'].includes(top) ? 'metal' : 'wood';
     for (let i = 0; i < faces.length; i++) {
       this.poly(faces[i], [front, side, top][i], '', 0);
       paintWorldQuad(this.ctx, material, faces[i], [.22, .1, -.04][i]);
@@ -1815,12 +1814,13 @@ export class Scene {
     if(this.activeFloor===1){
     this.renderFloor=1;
     this.poly([this.p(left - 8, back - 6, -45), this.p(end + 118, back - 6, -45), this.p(end + 118, deckFront + 25, -45), this.p(left - 8, deckFront + 25, -45)], '#26372742', '');
-    this.box(left + 12, back + 10, -6, end - left + 34, deckFront - back - 19, 63, '#557770', '#3c6660', '#38625b', '#3e3328');
-    this.box(left + 15, back + 8, 31, end - left - 28, deckFront - back - 8, 47, '#7ca493', '#77a996', '#5e8c7f', '#3e3328');
+    this.box(left + 12, back + 10, -6, end - left + 34, deckFront - back - 19, 63, '#667454', '#505d42', '#43523c', '#354333', 'metal');
+    this.box(left + 15, back + 8, 31, end - left - 28, deckFront - back - 8, 47, '#869372', '#72845f', '#60714e', '#465039', 'metal');
     for (let u = left + 25; u < end - 65; u += 90) {
       const face: [Point, Point, Point, Point] = [this.p(u, deckFront + 1, 37), this.p(u + 71, deckFront + 1, 37), this.p(u + 71, deckFront + 1, 69), this.p(u, deckFront + 1, 69)];
-      paintWorldQuad(this.ctx, 'metal', face, .08); this.poly(face, '', '#403524', .8);
-      this.line([this.p(u + 29, deckFront + 2, 60), this.p(u + 43, deckFront + 2, 60)], '#e2ba65', 2.4);
+      paintWorldQuad(this.ctx, 'metal', face, .025); this.poly(face, '', '#405139', .65);
+      this.line([this.p(u, deckFront + 1, 69), this.p(u + 71, deckFront + 1, 69)], '#c3bf8a80', 1.1);
+      this.line([this.p(u + 29, deckFront + 2, 60), this.p(u + 43, deckFront + 2, 60)], '#d9b977', 2.1);
     }
     this.line([this.p(left + 15, deckFront + 2, 77), this.p(end, deckFront + 2, 77)], '#d1a24f', 3);
     for (let u = left + 62; u < end + 30; u += 136) this.wheel(u, deckFront + 9);
@@ -1828,14 +1828,12 @@ export class Scene {
     this.renderFloor=this.activeFloor;
     this.box(left, back, 78, end - left, deckFront - back, 15, '#e4c28c', '#bc9669', '#caab78', '#655037');
     const deck: [Point, Point, Point, Point] = [this.p(left + 1, back + 1, 94), this.p(end, back + 1, 94), this.p(end, deckFront, 94), this.p(left + 1, deckFront, 94)];
-    this.poly(deck, '#d8ab64', '', 0); paintWorldQuad(this.ctx, 'wood', deck, -.025);
-    // Keep the original painted material, with softer grain under small buildings.
-    this.poly(deck, '#edd3a547', '', 0); this.poly(deck, '', '#715135', 1.6);
+    this.poly(deck, '#dfb97e', '', 0); paintWorldQuad(this.ctx, 'wood', deck, -.025);
+    this.poly(deck, '', '#95734c', 1.1);
     for (let v = back + 24; v < deckFront; v += 24) {
-      this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#72533138', .8);
-      this.line([this.p(left + 1, v + 1, 94), this.p(end, v + 1, 94)], '#ffe1a32e', .6);
+      this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#795d3c32', .65);
+      this.line([this.p(left + 1, v + 1, 94), this.p(end, v + 1, 94)], '#fff0cc50', .6);
     }
-    for (let v = 141; v < deckFront; v += 36) this.line([this.p(left + 1, v, 94), this.p(end, v, 94)], '#80613c72', 1);
     drawTruckFloor(this.ctx,{...floorArt,pass:'back'});
     this.expansionDeck();
     this.bunting(); this.settlement();if(this.activeFloor===1)this.farm();
@@ -1882,7 +1880,8 @@ export class Scene {
 
   private wheel(u: number, v: number) {
     const [x, y] = this.p(u, v, -4);
-    drawWorldSprite(this.ctx, 'wheel', x + 1, y + 30, 55, 72);
+    this.ellipse(x + 3, y + 29, 26, 7, '#23322228');
+    drawWorldSprite(this.ctx, 'wheel', x + 1, y + 30, 64, 74);
   }
 
   private cabin() {
@@ -1963,7 +1962,7 @@ export class Scene {
       this.line([[bubble[0],bubble[1]+boxHeight/2*pixel],[point[0],point[1]-height*.72]],'#9b966b96',1.1*pixel);
       this.ellipse(point[0],point[1]-height*.72,1.8*pixel,1.8*pixel,'#b5ac7b');
     }
-    const shortNames: Record<BuildingType, string> = { workshop: '공방', kitchen: '부엌', waterworks: '정수소', greenhouse: '온실', watchtower: '감시소', petHouse: '보리 집' };
+    const shortNames: Record<BuildingType, string> = { workshop: '공방', kitchen: '부엌', waterworks: '정수소', greenhouse: '온실', watchtower: '감시소', petHouse: '동료 쉼터' };
     for (const building of ordered) {
       const point = this.facilityPoint(building), [, height] = FACILITY_SIZE[building.type];
       const pixel = 1 / this.scale, caption = `${shortNames[building.type]} ${building.level}`;
@@ -2056,10 +2055,10 @@ export class Scene {
       if (plot.plantedAt !== null) for (let k = 0; k < cropPositions.length; k++) {
         const [first,second]=cropPositions[k],[plantU,plantV]=direction===0?[first,second]:[second,first], [x, y] = this.p(u + plantU, v + plantV, 107);
         const mature = progress >= 1, medium = progress > .35;
-        const growthScale = mature ? 1 : medium ? .7 + progress * .24 : .38 + progress * .8;
+        const growthScale = .62 + Math.min(1, progress) * .38;
         const width = CROP_PLANT_SIZE[cropId][0] * growthScale, height = CROP_PLANT_SIZE[cropId][1] * growthScale;
         this.ctx.save(); this.ctx.translate(x, y); this.ctx.rotate(Math.sin(this.time * 1.1 + k + i) * .018);
-        if (!drawCropSprite(this.ctx, cropId, 'plant', 0, 3, width, height)) drawWorldSprite(this.ctx, mature ? 'carrot' : medium ? 'carrotYoung' : 'sprout', 0, 3, width, height);
+        if (!drawCropSprite(this.ctx, cropId, 'plant', 0, 3, width, height, progress)) drawWorldSprite(this.ctx, mature ? 'carrot' : medium ? 'carrotYoung' : 'sprout', 0, 3, width, height);
         this.ctx.restore();
       }
       if(this.state&&getFarmPlotCare(this.state,plot).fertilized){
@@ -2501,7 +2500,7 @@ export class Scene {
       }
       if (progress > .7) for (let i = 0; i < 3; i++) {
         const grow = (progress - .7) / .3;
-        if (!drawCropSprite(c, action.cropId, 'plant', target[0] - 14 + i * 14, target[1], 8 + grow * 4, 8 + grow * 8)) this.sprig(target[0] - 14 + i * 14, target[1], (progress - .7) * .9);
+        if (!drawCropSprite(c, action.cropId, 'plant', target[0] - 14 + i * 14, target[1], 8 + grow * 4, 8 + grow * 8, 0)) this.sprig(target[0] - 14 + i * 14, target[1], (progress - .7) * .9);
       }
     } else if (action.kind === 'water') {
       for (let i = 0; i < 18; i++) {

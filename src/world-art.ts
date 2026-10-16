@@ -1,10 +1,11 @@
 import atlasUrl from './assets/world-atlas-anime.png';
 import partsUrl from './assets/world-parts-anime.png';
 import roadUrl from './assets/world-road-anime.png';
+import havenTruckUrl from './assets/haven-truck-miniature.png';
 
-/** Measured crops from the original, transparent painted environment atlases. */
-export const worldArtUrls = { atlas: atlasUrl, parts: partsUrl, road: roadUrl };
-type Sheet = 'atlas' | 'parts' | 'road';
+/** Measured crops from the miniature truck atlas and retained fallback atlases. */
+export const worldArtUrls = { atlas: atlasUrl, parts: partsUrl, road: roadUrl, havenTruck: havenTruckUrl };
+type Sheet = 'atlas' | 'parts' | 'road' | 'havenTruck';
 type Point = [number, number];
 type Frame = { sheet: Sheet; x: number; y: number; width: number; height: number };
 const spriteContours: Partial<Record<WorldSprite, Point[]>> = {
@@ -25,20 +26,20 @@ const frames = {
   carrotYoung: { sheet: 'atlas', x: 511, y: 673, width: 143, height: 222 },
   carrot: { sheet: 'atlas', x: 650, y: 610, width: 152, height: 297 },
   forest: { sheet: 'atlas', x: 812, y: 615, width: 393, height: 347 },
-  wood: { sheet: 'atlas', x: 1240, y: 609, width: 256, height: 82 },
-  metal: { sheet: 'atlas', x: 1240, y: 722, width: 256, height: 81 },
-  soil: { sheet: 'atlas', x: 1240, y: 846, width: 256, height: 86 },
-  cabin: { sheet: 'parts', x: 17, y: 16, width: 617, height: 559 },
-  wheel: { sheet: 'parts', x: 633, y: 127, width: 353, height: 428 },
+  wood: { sheet: 'havenTruck', x: 742, y: 705, width: 426, height: 122 },
+  metal: { sheet: 'havenTruck', x: 742, y: 870, width: 426, height: 124 },
+  soil: { sheet: 'havenTruck', x: 742, y: 1040, width: 426, height: 135 },
+  cabin: { sheet: 'havenTruck', x: 35, y: 14, width: 680, height: 641 },
+  wheel: { sheet: 'havenTruck', x: 763, y: 120, width: 449, height: 507 },
   stairs: { sheet: 'parts', x: 1048, y: 9, width: 488, height: 574 },
   stump: { sheet: 'parts', x: 28, y: 613, width: 528, height: 370 },
-  fence: { sheet: 'parts', x: 565, y: 603, width: 459, height: 369 },
+  fence: { sheet: 'havenTruck', x: 65, y: 666, width: 580, height: 545 },
   flowers: { sheet: 'parts', x: 1062, y: 584, width: 459, height: 416 },
 } satisfies Record<string, Frame>;
 export type WorldSprite = keyof typeof frames;
 
 function asset(url: string) { const image = new Image(); image.decoding = 'async'; image.src = url; return image; }
-export const worldImages = { atlas: asset(atlasUrl), parts: asset(partsUrl), road: asset(roadUrl) };
+export const worldImages = { atlas: asset(atlasUrl), parts: asset(partsUrl), road: asset(roadUrl), havenTruck: asset(havenTruckUrl) };
 export function worldArtReady() { return Object.values(worldImages).every(image => image.complete && image.naturalWidth > 0); }
 
 /** Anchored at the middle of the base; all cropping stays on the canvas. */
@@ -78,18 +79,20 @@ export function drawWorldRoad(c: CanvasRenderingContext2D) {
   return true;
 }
 
-/** Painted fence projected from its posts onto either direction of the deck. */
+/** Project the finished miniature fence onto the real, expandable deck edge.
+ * The atlas feet/up anchors are measured separately from its soft alpha padding. */
 export function drawWorldFence(c: CanvasRenderingContext2D, start: Point, end: Point, height: number) {
-  const image = worldImages.parts;
+  const image = worldImages.havenTruck;
   if (!image.complete || !image.naturalWidth) return;
-  const a: Point = [612, 776], b: Point = [979, 964], up: Point = [612, 630];
+  const a: Point = [125, 957], b: Point = [586, 1181], up: Point = [125, 790];
   const sx = b[0] - a[0], sy = b[1] - a[1], ux = up[0] - a[0], uy = up[1] - a[1];
   const det = sx * uy - sy * ux;
   const dx = end[0] - start[0], dy = end[1] - start[1];
   const m11 = dx * uy / det, m21 = (dy * uy + height * sy) / det;
   const m12 = -dx * ux / det, m22 = (-height * sx - dy * ux) / det;
   const f = frames.fence;
-  c.save(); c.transform(m11, m21, m12, m22, start[0] - m11 * a[0] - m12 * a[1], start[1] - m21 * a[0] - m22 * a[1]);
+  c.save(); c.imageSmoothingEnabled = true;
+  c.transform(m11, m21, m12, m22, start[0] - m11 * a[0] - m12 * a[1], start[1] - m21 * a[0] - m22 * a[1]);
   c.drawImage(image, f.x, f.y, f.width, f.height, f.x, f.y, f.width, f.height); c.restore();
 }
 

@@ -1,4 +1,4 @@
-import { worldArtReady } from './world-art';
+import { paintWorldQuad, worldArtReady } from './world-art';
 
 export type AccessStairPoint = [number, number];
 type Quad = [AccessStairPoint, AccessStairPoint, AccessStairPoint, AccessStairPoint];
@@ -12,22 +12,22 @@ function line(c: CanvasRenderingContext2D, a: AccessStairPoint, b: AccessStairPo
 }
 
 const FINISH = {
-  wood: ['#b79662', '#c7a46b', '#ac884f'],
-  woodEdge: '#ddbc80', riser: '#7b613d', grain: 'rgba(93,63,31,.25)',
-  green: '#395e4c', greenShade: '#244739', greenLight: '#7e9073',
-  brass: '#c5a46a', bolt: '#645638', rubber: '#30372d',
+  wood: ['#d6af77', '#dfbc86', '#cba36c'],
+  woodEdge: '#f1d39b', riser: '#ad8957', grain: 'rgba(122,86,45,.16)',
+  green: '#617454', greenShade: '#3e503c', greenLight: '#a0ac80',
+  brass: '#d7b46c', bolt: '#7f704b', rubber: '#414637',
 };
 
-/** Six horizontal treads and separate vertical risers fold out from the truck.
+/** Seven horizontal treads and separate vertical risers fold out from the truck.
  * The planar run excludes the deck height: no board spans the whole slope. */
 export function drawTruckAccessStairs(c: CanvasRenderingContext2D, top: AccessStairPoint, bottom: AccessStairPoint,
-  options: { width?: number; rise?: number } = {}) {
-  const width = Math.max(40, Math.min(56, options.width ?? 42)), half = width / 2,
+  options: { width?: number; rise?: number; treadCount?: number; cross?: AccessStairPoint } = {}) {
+  const width = Math.max(32, Math.min(128, options.width ?? 42)), half = width / 2,
     length = Math.hypot(bottom[0] - top[0], bottom[1] - top[1]);
   if (length < .001) return { drawn: false, painted: false, width, top, bottom, treadQuads: [] as Quad[] };
-  const rise = Math.max(0, options.rise ?? 95), count = 6, stepRise = rise / count,
+  const rise = Math.max(0, options.rise ?? 95), count = Math.max(5, Math.min(12, options.treadCount ?? 7)), stepRise = rise / count,
     run: AccessStairPoint = [bottom[0] - top[0], bottom[1] - top[1] - rise],
-    slope = .34 / .91, norm = Math.hypot(1, slope), across: AccessStairPoint = [half / norm, half * slope / norm];
+    cross: AccessStairPoint = options.cross ?? [1, .34 / .91], norm = Math.hypot(...cross) || 1, across: AccessStairPoint = [half * cross[0] / norm, half * cross[1] / norm];
   const point = (runAmount: number, drop: number, side = 0, lift = 0): AccessStairPoint => [
     top[0] + run[0] * runAmount + across[0] * side,
     top[1] + run[1] * runAmount + drop + across[1] * side + lift,
@@ -87,9 +87,11 @@ export function drawTruckAccessStairs(c: CanvasRenderingContext2D, top: AccessSt
     // The front face drops straight down, while the tread stays in the deck's
     // two horizontal projection axes. This makes a real stepped silhouette.
     polygon(c, [point(to, drop, -1), point(to, drop, 1),
-      point(to, drop + stepRise, 1), point(to, drop + stepRise, -1)], FINISH.riser, '#665637', .6);
-    line(c, point(to, drop + stepRise - 2, -.9), point(to, drop + stepRise - 2, .9), 'rgba(60,52,31,.18)', .7);
-    polygon(c, tread, FINISH.wood[index % FINISH.wood.length], '#8b6d43', .6);
+      point(to, drop + stepRise, 1), point(to, drop + stepRise, -1)], FINISH.riser, '#8c754f', .5);
+    line(c, point(to, drop + stepRise - 2, -.9), point(to, drop + stepRise - 2, .9), 'rgba(97,76,42,.14)', .7);
+    polygon(c, tread, FINISH.wood[index % FINISH.wood.length], '#a18457', .5);
+    paintWorldQuad(c, 'wood', tread, index % 2 ? -.025 : .015);
+    polygon(c, tread, 'rgba(255,232,186,.12)');
     for (const amount of [.25, .65]) {
       const at = from + (to - from) * amount;
       const a = point(at, drop, -.83), b = point(at, drop, .76);

@@ -1,0 +1,206 @@
+/* The miniature world remains visible beneath a small, floating game HUD. */
+.game-shell.village-shell {
+  --haven-cream: #fff7e5;
+  --haven-ink: #35513b;
+  --haven-brass: #bca16c;
+  color: var(--haven-ink);
+  background: #e6e6cc;
+}
+.village-shell .game-topbar,
+.village-shell .resource-bar {
+  background: linear-gradient(180deg, #fffbed, #f5e8ca);
+  border-color: #c7ae7a;
+  box-shadow: inset 0 1px #ffffffc9, 0 2px 7px #30432914;
+}
+.village-shell .profile-button {
+  border-color: #c0a26b;
+  background: #f9edcf;
+  box-shadow: inset 0 0 0 2px #fff7df, 0 2px 4px #5b503326;
+  border-radius: 50%;
+}
+.village-shell .survivor-name > strong { color: #35533c; font-weight: 800; }
+.village-shell .resource strong { color: #594c32; font-variant-numeric: tabular-nums; }
+.village-shell .resource-icon { background: transparent; box-shadow: none; }
+.village-shell .village-menu { color: #466349; background: transparent; border: 0; box-shadow: none; }
+.village-shell .scene-card { background: #dfe4c6; }
+.village-shell .scene-card :is(.truck-floor-controls, .road-controls, .settlement-objective) {
+  border: 1px solid #c1a66f;
+  background: linear-gradient(160deg, #fffbedf7, #f3e6c8f5);
+  box-shadow: inset 0 0 0 2px #fffbed80, 0 3px 9px #34452e24;
+}
+.village-shell .scene-card .truck-floor-controls { border-radius: 13px; }
+.village-shell .scene-card .truck-floor-controls > button {
+  border-radius: 11px;
+  color: #7b7758;
+}
+.village-shell .scene-card .truck-floor-controls > button[aria-pressed="true"] {
+  background: linear-gradient(150deg, #63865b, #3f6a48);
+  box-shadow: inset 0 1px #c6daa77a;
+  color: #fff9e8;
+}
+.village-shell .scene-card .road-controls {
+  padding: 3px;
+  gap: 2px;
+  border-radius: 12px;
+  background: #fff7e3e8;
+}
+.village-shell .scene-card .road-controls > button {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: #5e7151;
+}
+.village-shell .scene-card .road-controls > button[aria-pressed="true"] {
+  background: #e3eacb;
+  border-color: #b4c196;
+  box-shadow: inset 0 1px #fff8e6;
+}
+.village-shell .scene-card .road-controls > .travel-more { display: none; }
+.village-shell .scene-card.animal-interacting .animal-ride-hud { display: none; }
+.village-shell .scene-card .settlement-objective { border-radius: 12px; }
+.village-shell .scene-card .settlement-objective strong { color: #35583c; }
+.village-shell .scene-card .objective-progress { background: #e2dcc0; }
+.village-shell .scene-card .objective-progress i { background: #829d63; }
+.village-shell .scene-card .objective-cta {
+  background: linear-gradient(#749561, #547849);
+  border-color: #547346;
+  color: #fff9e9;
+}
+.village-shell .game-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(7px, 1.8vw, 20px);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.village-shell .game-nav .nav-button {
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid #bda16c;
+  border-radius: 14px;
+  background: linear-gradient(150deg, #fffbed, #f2e2b9);
+  color: #4b5a3c;
+  box-shadow: inset 0 0 0 2px #fff8e1b3, 0 3px 0 #9f855e5c, 0 5px 12px #38432b24;
+  min-height: 54px;
+}
+.village-shell .game-nav .nav-button > .icon { width: 35px; height: 33px; }
+.village-shell .game-nav .nav-button > span { font-size: 11px; font-weight: 800; line-height: 1.3; }
+.village-shell .game-nav .nav-button.active {
+  color: #365c3a;
+  border-color: #87a16b;
+  background: linear-gradient(#f7f7df, #dce6bd);
+  box-shadow: inset 0 0 0 2px #fffce9, 0 3px 0 #687d4559, 0 5px 12px #38432b24;
+}
+.village-shell .game-nav .nav-button:active { transform: translateY(2px); }
+.village-shell :is(.gathering-toggle, .gathering-tray, .gathering-tray > button, .village-hub-dock) {
+  border-color: #c3ae7d;
+  background: linear-gradient(155deg, #fffbedf5, #f1e5c8f2);
+  box-shadow: inset 0 1px #fffef2, 0 3px 8px #35442f1c;
+}
+.village-shell .chore-status {
+  border: 1px solid #bea674;
+  border-radius: 12px;
+  background: #fff9e8ed;
+  box-shadow: inset 0 1px #fffef5, 0 3px 12px #35442f24;
+}
+.village-shell .chore-track { background: #e4ddc1; }
+.village-shell .chore-track i { background: linear-gradient(90deg, #8aa66b, #5c8458); }
+.village-shell .scene-card :is(.facility-sheet, .construction-bar, .game-controls, .animal-sheet) {
+  border-color: #bda16d;
+  background: linear-gradient(145deg, #fffbedf7, #f3e8d1f7);
+  box-shadow: inset 0 0 0 2px #fff9e6bd, 0 6px 22px #2f412a30;
+}
+.modal-backdrop { background: #263c3257; backdrop-filter: blur(5px); }
+.modal {
+  background: linear-gradient(155deg, #fffbed, #f3e7cc);
+  border-color: #bca16c;
+  border-radius: 20px;
+  box-shadow: inset 0 0 0 3px #fff9e7, 0 15px 60px #263a325e;
+}
+.modal::before { display: none; }
+.game-dialog-heading { background: #f2e6c9; border-color: #d2bd8e; }
+.modal :is(h2, h3) { color: #3c5b40; }
+.toast { background: #3d634be8; border: 1px solid #cfbe8a; color: #fff9e7; border-radius: 12px; }
+
+@media (orientation: landscape) {
+  .game-shell.village-shell { --landscape-header: 48px; --landscape-nav: 72px; }
+  .village-shell .game-main { grid-row: 2 / -1; }
+  .village-shell .game-nav {
+    z-index: 8;
+    width: min(520px, max(220px, calc(100vw - 448px)));
+    justify-self: center;
+    padding: 3px 5px calc(9px + env(safe-area-inset-bottom));
+    pointer-events: none;
+  }
+  .village-shell .game-nav > button { pointer-events: auto; }
+  .village-shell .game-nav .nav-button { height: 58px; min-height: 54px; }
+  .village-shell .scene-card,
+  .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)),
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-repeat-ready, .construction-mode, .planning-catalog, .planning-expansion) {
+    --world-safe-top: 60px;
+    --world-safe-bottom: 78px;
+  }
+  .village-shell .scene-card .road-controls { top: 7px; left: 50%; transform: translateX(-50%); }
+  .village-shell .scene-card .road-controls > button { flex-basis: 44px; width: 44px; }
+  .village-shell .scene-card .road-controls > button > .icon { width: 22px; height: 22px; }
+  .village-shell .scene-card .road-controls > button > small { font-size: 9px; }
+  .village-shell .scene-card .truck-floor-controls { top: 8px; bottom: auto; left: 8px; }
+  .village-shell .scene-card.camera-open .truck-floor-controls,
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .construction-mode, .planning-catalog, .planning-expansion) .truck-floor-controls { top: 8px; bottom: auto; }
+  .village-shell .scene-card .settlement-objective { min-height: 46px; height: 46px; }
+  .village-shell .scene-card .village-hub { bottom: 10px; }
+  .village-shell .scene-card .gathering-dock { left: 130px; bottom: 10px; }
+  .village-shell .scene-card .camera-tool { bottom: 12px; }
+  .village-shell .scene-card :is(.game-controls, .facility-sheet, .animal-sheet, .construction-bar) { bottom: 80px; max-height: calc(100% - 144px); }
+  .village-shell .scene-card.construction-mode .construction-bar { bottom: auto; }
+  .village-shell .scene-card .chore-status { bottom: 82px; }
+  .village-shell .scene-card .animal-ride-hud { bottom: 80px; }
+}
+@media (orientation: landscape) and (min-width: 1000px) {
+  .game-shell.village-shell { --landscape-header: 54px; }
+  .village-shell .game-nav { width: 520px; }
+  .village-shell .game-nav .nav-button { height: 62px; }
+}
+@media (orientation: landscape) and (max-width: 719px) {
+  .village-shell .scene-card .road-controls { width: 144px; max-width: 144px; flex-wrap: wrap; }
+  .village-shell .scene-card .road-controls > .travel-extra { display: none; }
+  .village-shell .scene-card .road-controls > .travel-more { display: flex; }
+  .village-shell .scene-card .road-controls > .travel-more > .icon { width: 15px; transform: rotate(90deg); }
+  .village-shell .scene-card.travel-open .road-controls > .travel-extra { display: flex; }
+  .village-shell .scene-card.travel-open .road-controls > .travel-more { order: 1; }
+  .village-shell .scene-card.travel-open .road-controls > .travel-more > .icon { transform: rotate(-90deg); }
+  .village-shell .scene-card .truck-floor-controls { max-width: 176px; }
+  .village-shell .scene-card .truck-floor-controls > button { min-width: 44px; padding-inline: 4px; }
+  .village-shell .scene-card .truck-floor-controls > button small { font-size: 9px; }
+  .village-shell .scene-card .truck-floor-controls > button.locked small { font-size: 8px; }
+  .village-shell .scene-card .gathering-dock { left: 8px; bottom: 10px; }
+  .village-shell .scene-card .gathering-tray { left: 0; }
+  .village-shell .scene-card .village-hub { bottom: 66px; }
+  .village-shell .scene-card .chore-status,
+  .village-shell .scene-card:is(.farm-tray-open, .work-view, .facility-selected) .chore-status { bottom: 120px; }
+}
+@media (orientation: landscape) and (max-height: 400px) {
+  .game-shell.village-shell { --landscape-header: 46px; --landscape-nav: 61px; }
+  .village-shell .game-nav { width: min(470px, max(220px, calc(100vw - 448px))); padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+  .village-shell .game-nav .nav-button { height: 50px; min-height: 50px; border-radius: 12px; }
+  .village-shell .game-nav .nav-button > .icon { width: 30px; height: 28px; }
+  .village-shell .game-nav .nav-button > span { font-size: 10px; }
+  .village-shell .scene-card,
+  .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)),
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-repeat-ready, .construction-mode, .planning-catalog, .planning-expansion) {
+    --world-safe-top: 59px;
+    --world-safe-bottom: 66px;
+  }
+  .village-shell .scene-card .gathering-toggle { min-width: 70px; padding-inline: 6px; }
+  .village-shell .scene-card .gathering-dock { left: 118px; }
+  .village-shell .scene-card .village-hub-heading > button,
+  .village-shell .scene-card .village-hub-dock[data-village-activity-count="0"] .village-hub-heading > button { min-width: 100px; padding-inline: 6px; }
+}
+@media (orientation: landscape) and (max-height: 400px) and (max-width: 719px) {
+  .village-shell .scene-card .gathering-dock { left: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .village-shell .nav-button { transition: none; }
+}

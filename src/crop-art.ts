@@ -1,61 +1,88 @@
-import cropAtlasUrl from './assets/crops-anime.png';
+import inventoryAtlasUrl from './assets/haven-crops-inventory-v047.png';
+import growthAtlasUrl from './assets/haven-crops-growth-v047.png';
 import { CROPS, type CropId } from './crops';
 
 export type CropArtKind = 'seed' | 'produce' | 'plant';
-export const cropArtUrl = cropAtlasUrl;
+export type CropGrowthStage = 'sprout' | 'young' | 'mature';
+export const cropArtUrl = inventoryAtlasUrl;
+export const cropGrowthArtUrl = growthAtlasUrl;
 
 type Frame = { x: number; y: number; width: number; height: number };
-const atlasWidth = 1774;
-const atlasHeight = 887;
+const inventorySize = { width: 2172, height: 724 };
+const growthSize = { width: 1774, height: 887 };
 
-// Original transparent artwork: columns are carrot, potato, tomato, corn,
-// strawberry and pumpkin; rows are seed packets, produce and mature plants.
-// Measure each painted silhouette, with eight pixels of transparent padding,
-// rather than cutting the tallest corn leaves at a nominal grid boundary.
-export const cropArtFrames: Record<CropArtKind, Record<CropId, Frame>> = {
-  seed: {
-    carrot: { x: 54, y: 62, width: 216, height: 230 },
-    potato: { x: 349, y: 64, width: 217, height: 230 },
-    tomato: { x: 642, y: 66, width: 214, height: 225 },
-    corn: { x: 930, y: 64, width: 216, height: 230 },
-    strawberry: { x: 1224, y: 63, width: 214, height: 229 },
-    pumpkin: { x: 1507, y: 62, width: 216, height: 229 },
+/** Each plant has a distinct seedling, leafy young stage and ripe silhouette. */
+export const cropGrowthArtFrames: Record<CropGrowthStage, Record<CropId, Frame>> = {
+  sprout: {
+    carrot: { x: 60, y: 56, width: 172, height: 186 },
+    potato: { x: 360, y: 68, width: 175, height: 174 },
+    tomato: { x: 655, y: 57, width: 176, height: 185 },
+    corn: { x: 951, y: 78, width: 183, height: 164 },
+    strawberry: { x: 1246, y: 92, width: 173, height: 150 },
+    pumpkin: { x: 1527, y: 81, width: 191, height: 161 },
   },
-  produce: {
-    carrot: { x: 41, y: 339, width: 242, height: 220 },
-    potato: { x: 338, y: 365, width: 230, height: 184 },
-    tomato: { x: 635, y: 357, width: 222, height: 184 },
-    corn: { x: 917, y: 350, width: 237, height: 203 },
-    strawberry: { x: 1213, y: 357, width: 237, height: 188 },
-    pumpkin: { x: 1508, y: 351, width: 230, height: 196 },
+  young: {
+    carrot: { x: 23, y: 287, width: 245, height: 243 },
+    potato: { x: 327, y: 281, width: 240, height: 246 },
+    tomato: { x: 628, y: 272, width: 226, height: 258 },
+    corn: { x: 914, y: 279, width: 243, height: 249 },
+    strawberry: { x: 1221, y: 348, width: 228, height: 181 },
+    pumpkin: { x: 1494, y: 340, width: 260, height: 190 },
   },
-  plant: {
-    carrot: { x: 43, y: 588, width: 238, height: 236 },
-    potato: { x: 331, y: 594, width: 244, height: 236 },
-    tomato: { x: 624, y: 578, width: 236, height: 254 },
-    corn: { x: 918, y: 582, width: 234, height: 251 },
-    strawberry: { x: 1204, y: 613, width: 244, height: 214 },
-    pumpkin: { x: 1488, y: 600, width: 247, height: 231 },
+  mature: {
+    carrot: { x: 13, y: 549, width: 275, height: 293 },
+    potato: { x: 308, y: 555, width: 284, height: 291 },
+    tomato: { x: 603, y: 540, width: 282, height: 306 },
+    corn: { x: 905, y: 543, width: 257, height: 303 },
+    strawberry: { x: 1184, y: 630, width: 272, height: 217 },
+    pumpkin: { x: 1469, y: 594, width: 295, height: 254 },
   },
 };
 
-const cropImage = new Image();
-cropImage.decoding = 'async';
-cropImage.src = cropAtlasUrl;
+/** Inventory and world frames share species, while retaining their own atlas. */
+export const cropArtFrames: Record<CropArtKind, Record<CropId, Frame>> = {
+  seed: {
+    carrot: { x: 52, y: 34, width: 286, height: 311 },
+    potato: { x: 410, y: 34, width: 283, height: 315 },
+    tomato: { x: 757, y: 35, width: 290, height: 318 },
+    corn: { x: 1119, y: 34, width: 290, height: 321 },
+    strawberry: { x: 1480, y: 31, width: 291, height: 321 },
+    pumpkin: { x: 1838, y: 35, width: 290, height: 317 },
+  },
+  produce: {
+    carrot: { x: 12, y: 360, width: 339, height: 329 },
+    potato: { x: 381, y: 397, width: 324, height: 276 },
+    tomato: { x: 727, y: 370, width: 351, height: 309 },
+    corn: { x: 1105, y: 359, width: 355, height: 339 },
+    strawberry: { x: 1490, y: 382, width: 316, height: 298 },
+    pumpkin: { x: 1815, y: 375, width: 333, height: 309 },
+  },
+  plant: cropGrowthArtFrames.mature,
+};
+
+const inventoryImage = new Image();
+inventoryImage.decoding = 'async';
+inventoryImage.src = inventoryAtlasUrl;
+const growthImage = new Image();
+growthImage.decoding = 'async';
+growthImage.src = growthAtlasUrl;
 
 export function cropArtReady(): boolean {
-  return cropImage.complete && cropImage.naturalWidth > 0;
+  return inventoryImage.complete && inventoryImage.naturalWidth > 0
+    && growthImage.complete && growthImage.naturalWidth > 0;
 }
 
-/** Accessible illustrated icon, cropped from the bundled atlas without raster edits. */
+/** Accessible inventory art is the same produce used by the growing plant. */
 export function cropIcon(cropId: CropId, kind: CropArtKind = 'seed'): string {
   const frame = cropArtFrames[kind][cropId];
   const crop = CROPS[cropId];
   const label = kind === 'seed' ? crop.seedName : kind === 'plant' ? `${crop.name} 작물` : crop.name;
-  return `<svg class="icon illustrated-icon crop-icon" viewBox="${frame.x} ${frame.y} ${frame.width} ${frame.height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${label}" focusable="false" style="overflow:hidden"><image href="${cropAtlasUrl}" x="0" y="0" width="${atlasWidth}" height="${atlasHeight}"/></svg>`;
+  const source = kind === 'plant' ? growthAtlasUrl : inventoryAtlasUrl;
+  const size = kind === 'plant' ? growthSize : inventorySize;
+  return `<svg class="icon illustrated-icon crop-icon" viewBox="${frame.x} ${frame.y} ${frame.width} ${frame.height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${label}" focusable="false" style="overflow:hidden"><image href="${source}" x="0" y="0" width="${size.width}" height="${size.height}"/></svg>`;
 }
 
-/** The middle of the sprite's base is grounded at (x, y), like world-art sprites. */
+/** Keep the soil mound on the same world footpoint at every growth stage. */
 export function drawCropSprite(
   ctx: CanvasRenderingContext2D,
   cropId: CropId,
@@ -64,12 +91,15 @@ export function drawCropSprite(
   y: number,
   width: number,
   height: number,
+  growthProgress = 1,
 ): boolean {
-  if (!cropArtReady()) return false;
-  const frame = cropArtFrames[kind][cropId];
+  const image = kind === 'plant' ? growthImage : inventoryImage;
+  if (!image.complete || image.naturalWidth === 0) return false;
+  const stage: CropGrowthStage = growthProgress < .28 ? 'sprout' : growthProgress < .78 ? 'young' : 'mature';
+  const frame = kind === 'plant' ? cropGrowthArtFrames[stage][cropId] : cropArtFrames[kind][cropId];
   ctx.save();
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(cropImage, frame.x, frame.y, frame.width, frame.height, x - width / 2, y - height, width, height);
+  ctx.drawImage(image, frame.x, frame.y, frame.width, frame.height, x - width / 2, y - height, width, height);
   ctx.restore();
   return true;
 }

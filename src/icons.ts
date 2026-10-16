@@ -1,6 +1,6 @@
 import { survivorOutfitPortrait } from './outfit-art';
 import type { EquippedOutfitId } from './shop';
-import itemAtlasUrl from './assets/items-anime.png';
+import itemAtlasUrl from './assets/haven-items-miniature.png';
 import skillsFarmAtlasUrl from './assets/skills-farm-anime.png';
 
 // Original painted equipment shares the survivors' ink, leather and gold
@@ -9,7 +9,7 @@ import skillsFarmAtlasUrl from './assets/skills-farm-anime.png';
 const itemCells: Record<string, number> = {
  wood:0, scrap:1, food:2, water:3,
  seeds:4, leaf:4, home:5, axe:6, hunt:7, sword:7,
- bag:8, map:9, bed:10, truck:11,
+ bag:8, map:9, bed:10, truck:5, shop:11,
  flag:12, book:13, paw:14, hammer:15, expand:15,
 };
 const atlasSize = 1254;
