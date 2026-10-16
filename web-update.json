@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "buildId": "a459283882539623cb159ee643303dedcaca8b3232334e8b032df9b758b09ecb",
-  "version": "0.50.0",
-  "contentVersion": 50,
+  "buildId": "69189550a7891c4af49292cd40ba79b81a7c8d5592e089bf8fcacc606ffcee81",
+  "version": "0.51.0",
+  "contentVersion": 51,
   "base": "/House/",
   "files": [
     {
@@ -121,14 +121,14 @@
       "sha256": "639db3e773a00df8e81a86636197465d212e715bf7ce419cb9f703a6dc89e207"
     },
     {
-      "path": "assets/index-BIAKRpal.css",
-      "bytes": 281319,
-      "sha256": "7eb647a657fc36e9e74b4f1bea2174f6b21fff9a82d0b1b799aebf4c1b4d5ed7"
+      "path": "assets/index-DNPvt_Au.css",
+      "bytes": 295622,
+      "sha256": "efc9dfbb6480b67cd71f7116d4ead0d6df8926c7efe22588685056d66e2d45ce"
     },
     {
-      "path": "assets/index-CVcMtbJk.js",
-      "bytes": 660247,
-      "sha256": "4314976f6cae2f95b44d46617fcc08cf83386b7603eb738999756e309c77d9e5"
+      "path": "assets/index-hSiaZN8Q.js",
+      "bytes": 725895,
+      "sha256": "4807b32903a3ac3e13f0fe93729a2541879e8147dfb695a1335267fad16b0aec"
     },
     {
       "path": "assets/pwa/road-haven-icon.png",
@@ -173,7 +173,7 @@
     {
       "path": "index.html",
       "bytes": 1280,
-      "sha256": "afbfe6984da790d5b943d9e07ab516cfc739b813d6d0a158142a8d2a88d29134"
+      "sha256": "aa9eae3ffd1113294e9ecca65529506d88160d3da9700693fc8dff02807fbcc0"
     },
     {
       "path": "manifest.webmanifest",
