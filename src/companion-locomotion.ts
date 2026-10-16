@@ -7,7 +7,7 @@ export interface CompanionGaitInput {
   heading: number;
   /** Scene smooths starts/stops; omitted values derive strength from speed. */
   blend?: number;
-  /** Signed, eased old→new facing during a stopped turn; steady values ±1. */
+  /** Legacy turn state; art keeps its full silhouette and uses the explicit facing. */
   facingBlend?: number;
   reducedMotion?: boolean;
 }
@@ -55,19 +55,20 @@ const lateralWalk = { frontNear: 0, hindFar: .75, frontFar: .5, hindNear: .25 };
 const species: Readonly<Record<UnitId, SpeciesGait>> = {
   dog: { duty: .7, lift: 3.7, offsets: lateralWalk, body: .35, roll: .009, head: .018, tail: .085 },
   cat: { duty: .72, lift: 3.3, offsets: { frontNear: 0, hindFar: .78, frontFar: .5, hindNear: .28 }, body: .2, roll: .006, head: .009, tail: .045 },
-  // Rabbits land on the forefeet, fold the hocks, then push with both hindfeet.
-  rabbit: { duty: .5, lift: 4, offsets: { frontNear: .44, frontFar: .47, hindNear: 0, hindFar: .035 }, body: 2.9, roll: .032, head: .035, tail: .02 },
+  // Both hindfeet push together. Forefeet land first after the short bound;
+  // the hindfeet gather underneath before the next push.
+  rabbit: { duty: .52, lift: 4.6, offsets: { frontNear: .25, frontFar: .275, hindNear: 0, hindFar: .025 }, body: 3.2, roll: .019, head: .028, tail: .02 },
   fox: { duty: .71, lift: 3.2, offsets: { frontNear: 0, hindFar: .73, frontFar: .5, hindNear: .23 }, body: .22, roll: .008, head: .013, tail: .075 },
   boar: { duty: .78, lift: 1.9, offsets: lateralWalk, body: .18, roll: .012, head: .025, tail: .035 },
   // Owls make short two-footed ground hops, with folded wings for balance.
-  owl: { duty: .62, lift: 2.1, offsets: { frontNear: 0, frontFar: 0, hindNear: 0, hindFar: .015 }, body: 2.3, roll: .01, head: .017, tail: .018 },
+  owl: { duty: .69, lift: 2.1, offsets: { frontNear: 0, frontFar: 0, hindNear: 0, hindFar: .012 }, body: 2.3, roll: .006, head: .017, tail: .018 },
   // The near arm and near leg oppose one another; each contact is staggered.
   monkey: { duty: .69, lift: 3.1, offsets: { frontNear: 0, hindFar: .08, frontFar: .5, hindNear: .58 }, body: .45, roll: .016, head: .018, tail: .11 },
   elephant: { duty: .79, lift: 2.5, offsets: lateralWalk, body: .16, roll: .005, head: .012, tail: .035 },
   // A giraffe's lateral-sequence walk approaches a pace, never a dog trot.
   giraffe: { duty: .73, lift: 4.3, offsets: { frontNear: 0, hindNear: .14, frontFar: .5, hindFar: .64 }, body: .35, roll: .008, head: .009, tail: .055 },
   panda: { duty: .78, lift: 2.5, offsets: { frontNear: 0, hindFar: .7, frontFar: .5, hindNear: .2 }, body: .28, roll: .017, head: .02, tail: .018 },
-  deer: { duty: .67, lift: 4.9, offsets: { frontNear: 0, hindFar: .07, frontFar: .5, hindNear: .57 }, body: .42, roll: .008, head: .014, tail: .075 },
+  deer: { duty: .7, lift: 3.6, offsets: lateralWalk, body: .28, roll: .006, head: .014, tail: .075 },
 };
 const finite = (n: number, fallback = 0): number => Number.isFinite(n) ? n : fallback;
 const clamp = (n: number): number => Math.max(0, Math.min(1, n));
@@ -101,7 +102,10 @@ export function sampleCompanionGait(id: UnitId, input: CompanionGaitInput, scale
   const phase = fraction(Math.max(0, finite(input.distance)) / (stride * safeScale));
   const swing = Math.sin(phase * TAU), weight = Math.sin(phase * TAU * 2);
   const airborne = Math.sin(Math.PI * clamp((phase - style.duty) / (1 - style.duty)));
-  const bound = id === 'rabbit' ? Math.max(0, Math.sin((phase - .3) * TAU)) : airborne;
+  // Body lift follows the interval when *both* hind and fore supports leave
+  // the ground, rather than bouncing while the forefeet are still planted.
+  const bound = id === 'rabbit'
+    ? Math.sin(Math.PI * clamp((phase - style.duty) / (.725 - style.duty))) : airborne;
   const hopping = id === 'rabbit' || id === 'owl';
   return {
     phase, stride, strength, heading,

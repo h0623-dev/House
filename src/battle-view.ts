@@ -418,12 +418,16 @@ export class BattleView {
     const charging = melee && !down && !s.result && (attacking || offensiveSkill);
     const leap = charging && !this.reducedMotion ? Math.sin(activeProgress * Math.PI) : 0;
     const baseX = this.width * ally.x / 100;
-    const distance = target ? Math.max(0, this.width * target.x / 100 - baseX - 26 * scale) : 15;
+    const reach = target ? Math.max(0, this.width * target.x / 100 - baseX - 26 * scale) : 15;
+    // A strike shifts the animal's weight; it must not skate across the whole
+    // arena and then reverse the same distance without turning its body.
+    const ordinaryLunge = ally.id === 'elephant' ? 10 : ally.id === 'panda' ? 14 : ally.id === 'boar' ? 18 : 24;
+    const distance = Math.min(reach, (offensiveSkill && latestSkill?.kind === 'dash' ? 48 : ordinaryLunge) * scale);
     const x = baseX + distance * leap;
     const ground = this.allyFloor(ally.id, floor);
     const y = ground - leap * (ally.id === 'cat' ? 17 : 9);
     const pose: CompanionPose = down ? 'down' : s.result ? (s.result.outcome === 'victory' ? 'celebrate' : 'idle')
-      : hurt ? 'hurt' : skill ? 'skill' : attacking ? 'attack' : s.transition > 0 ? 'walk' : 'idle';
+      : hurt ? 'hurt' : skill ? 'skill' : attacking ? 'attack' : 'idle';
     if (ally.guardUntil > time && !down && !s.result) {
       c.save(); c.strokeStyle = '#f8d486'; c.fillStyle = '#f5cf7728'; c.lineWidth = 1.5;
       c.beginPath(); c.ellipse(x, ground - 31 * scale, 33 * scale, 42 * scale, 0, 0, Math.PI * 2); c.fill(); c.stroke(); c.restore();

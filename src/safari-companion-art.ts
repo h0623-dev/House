@@ -140,10 +140,9 @@ export function safariCompanionArtReady(): boolean {
 }
 
 const TAU = Math.PI * 2;
-const projectionOf = (o: CompanionOptions): number => {
-  const value = o.gait?.facingBlend;
-  return value === undefined || !Number.isFinite(value) ? o.facing : Math.max(-1, Math.min(1, value));
-};
+// A stopped navigation turn selects a complete left/right three-quarter pose;
+// never collapse the animal's torso, trunk or legs into a flat turning card.
+const projectionOf = (o: CompanionOptions): number => o.facing;
 const localPoint = (art: SafariArt, point: Point, projection = 1): Point =>
   [(point[0] - art.frames.idle.footX) * art.unit * projection,
     (point[1] - art.frames.idle.footY) * art.unit];
@@ -179,24 +178,15 @@ function pivot(c: CanvasRenderingContext2D, art: SafariArt, point: Point,
   c.save(); c.translate(x, y); c.rotate(angle); c.translate(-x, -y); draw(); c.restore();
 }
 
-function solidPart(c: CanvasRenderingContext2D, art: SafariArt,
-  contour: readonly Point[], projection: number, minimum: number): void {
-  const center = (Math.min(...contour.map(point => point[0])) + Math.max(...contour.map(point => point[0]))) / 2;
-  const x = (center - art.frames.idle.footX) * art.unit;
-  const width = (projection < 0 ? -1 : 1) * Math.max(minimum, Math.abs(projection));
-  c.save(); c.translate(x * projection, 0); c.scale(width, 1); c.translate(-x, 0);
-  part(c, art, contour); c.restore();
-}
-
 function leg(c: CanvasRenderingContext2D, art: SafariArt, name: CompanionPaw,
   gait: CompanionGaitSample, projection: number): void {
   const limb = art.limbs[name], paw = gait.paws[name];
-  const width = (projection < 0 ? -1 : 1) * Math.max(.58, Math.abs(projection));
+  const width = projection;
   const originalHip = localPoint(art, limb.hip, width);
   const originalKnee = localPoint(art, limb.knee, width);
   const originalFoot = localPoint(art, limb.foot, width);
   const hipX = (limb.hip[0] - art.frames.idle.footX) * art.unit * projection;
-  const cos = Math.cos(gait.bodyRoll), sin = Math.sin(gait.bodyRoll);
+  const cos = Math.cos(gait.bodyRoll * projection), sin = Math.sin(gait.bodyRoll * projection);
   const hip: Point = [hipX * cos - originalHip[1] * sin, hipX * sin + originalHip[1] * cos + gait.bodyY];
   const foot: Point = [(limb.foot[0] - art.frames.idle.footX) * art.unit * projection + Math.cos(gait.heading) * paw.along,
     originalFoot[1] + Math.sin(gait.heading) * paw.along - paw.lift];
@@ -224,7 +214,7 @@ function leg(c: CanvasRenderingContext2D, art: SafariArt, name: CompanionPaw,
   c.save(); c.translate(knee[0], knee[1]); c.rotate((angle - originalUpper + lowerAngle) / 2);
   c.beginPath(); c.arc(0, 0, 1.8, 0, TAU); c.clip(); c.translate(-originalKnee[0], -originalKnee[1]);
   part(c, art, limb.contour, width); c.restore();
-  c.save(); c.translate(foot[0], foot[1]); c.rotate(paw.planted ? 0 : -paw.lift * .02);
+  c.save(); c.translate(foot[0], foot[1]); c.rotate(paw.planted ? 0 : -paw.lift * .02 * projection);
   c.translate(-originalFoot[0], -originalFoot[1]);
   part(c, art, limb.contour, width, { y: limb.knee[1], upper: false, pawTop, pawOnly: true }); c.restore();
 }
@@ -267,17 +257,17 @@ export function drawSafariCompanion(c: CanvasRenderingContext2D, o: CompanionOpt
     const idleTail = Math.sin(o.time * (o.id === 'monkey' ? 1.2 : .75))
       * (o.id === 'monkey' ? .045 : o.id === 'panda' ? .009 : .02) * still;
     for (const name of ['hindFar', 'frontFar', 'hindNear', 'frontNear'] as const) leg(c, art, name, gait, projection);
-    c.save(); c.translate(0, gait.bodyY); c.rotate(gait.bodyRoll);
-    pivot(c, art, art.tailRoot, gait.tailTilt + idleTail + petStroke * (o.id === 'monkey' ? .09 : .025), projection,
+    c.save(); c.translate(0, gait.bodyY); c.rotate(gait.bodyRoll * projection);
+    pivot(c, art, art.tailRoot, (gait.tailTilt + idleTail + petStroke * (o.id === 'monkey' ? .09 : .025)) * projection, projection,
       () => part(c, art, art.tail, projection));
-    solidPart(c, art, art.body, projection, .56);
+    part(c, art, art.body, projection);
     const headReaction = pet * (o.id === 'giraffe' ? .035 : o.id === 'elephant' ? .025 : -.065);
-    pivot(c, art, art.neck, gait.headTilt + headReaction, projection, () => {
+    pivot(c, art, art.neck, (gait.headTilt + headReaction) * projection, projection, () => {
       for (const ear of art.ears ?? []) pivot(c, art, ear.root,
-        gait.earTilt + Math.sin(o.time * .8) * .012 * still + petStroke * .026, projection,
+        (gait.earTilt + Math.sin(o.time * .8) * .012 * still + petStroke * .026) * projection, projection,
         () => part(c, art, ear.contour, projection));
-      solidPart(c, art, art.head, projection, .8);
-      trunk(c, art, projection, gait.trunkTilt + Math.sin(o.time * .85) * .021 * still - pet * .075);
+      part(c, art, art.head, projection);
+      trunk(c, art, projection, (gait.trunkTilt + Math.sin(o.time * .85) * .021 * still - pet * .075) * projection);
     });
     c.restore();
     return;

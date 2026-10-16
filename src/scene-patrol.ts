@@ -1,11 +1,12 @@
 import {GAME_SPEED_MULTIPLIER} from './game-speed';
-import {WALK_SPEED} from './scene-motion';
-import {blocksActorStep,getPatrolTargets,planNavigation,planYieldNavigation,sampleNavigation,isNavigationLinkSurface,
+import {blocksActorStep,getPatrolTargets,planNavigation,planYieldNavigation,isNavigationLinkSurface,
   circleOverlapsPolygon,navigationObstaclePolygon,sweptCircleOverlapsPolygon,
   type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationWorld,type NavigationLink} from './scene-navigation';
 import type {TruckFloor} from './truck-layout';
 import type {UnitId} from './units';
 import {PET_PASSAGE_LINK_ID} from './pet-passage';
+import {animalHeadingDelta,getAnimalLocomotion,orientAnimalForTravel} from './animal-locomotion';
+import {getAnimalRouteLeg,getAnimalRouteTravel} from './animal-navigation';
 
 export interface PetPatrolState {
   id:UnitId;location:NavigationLocation;route:NavigationPath|null;
@@ -13,6 +14,7 @@ export interface PetPatrolState {
   facingBlend:number;blend:number;turnRemaining:number;blockedReason:string|null;radius:number;
   pauseRemaining:number;retryRemaining:number;targetSequence:number;
   turnFrom:1|-1;nextFacing:1|-1;turnHeading:number;worldKey:string;desiredFloor:TruckFloor;desiredSurface?:'deck'|'road';
+  turnDuration?:number;turnStartHeading?:number;locomotionSpeed?:number;
   passageLease?:NavigationLink;
   waitingForPassage?:string;
   /** Each roadside resident keeps a quiet part of the clearing instead of crowding the hero. */
@@ -23,9 +25,9 @@ export type PetRoutine='following'|'sunbathing'|'foraging'|'wandering'|'resting'
 export interface PetRoutineContext { minutes:number;friendship?:number;garden?:NavigationLocation;sunnySpot?:NavigationLocation }
 /** A species has a daily rhythm; paths still use the same clear physical surfaces. */
 export function setPetPatrolRoutine(state:PetPatrolState,context:PetRoutineContext):void {
-  const minute=((context.minutes%1440)+1440)%1440,night=minute<390||minute>=1140;
+  const minute=((context.minutes%1440)+1440)%1440,night=minute<390||minute>=1140,profile=getAnimalLocomotion(state.id);
   state.friendship=Math.max(0,context.friendship??0);
-  state.routinePace=1;state.routineRest=3;
+  state.routinePace=1;state.routineRest=profile.restSeconds;
   delete state.routineFocus;
   if(state.id==='dog'){state.routine=night?'resting':'following';state.routineRest=night?12:3;state.routinePace=.9;}
   else if(state.id==='cat'){
@@ -46,9 +48,6 @@ const finite=(n:number,fallback=0)=>Number.isFinite(n)?n:fallback;
 const distance=(a:readonly number[],b:readonly number[])=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 const copy=(location:NavigationLocation):NavigationLocation=>({...location,point:[...location.point]});
 const floorOf=(location:NavigationLocation):TruckFloor=>location.floor??1;
-const smooth=(n:number)=>n*n*(3-2*n);
-const angleDelta=(from:number,to:number)=>Math.atan2(Math.sin(to-from),Math.cos(to-from));
-const headingToward=(from:number,to:number,delta:number)=>from+Math.max(-delta*8,Math.min(delta*8,angleDelta(from,to)));
 
 /** Includes stance reach and visible paw contours, not merely the body center. */
 export function getPetGroundRadius(id:UnitId,scale:number):number{
@@ -87,7 +86,7 @@ export function createPetPatrol(id:UnitId,world:NavigationWorld,hero:NavigationL
   candidates.sort((a,b)=>distance(a.point,anchor)-distance(b.point,anchor));
   const location=candidates[desiredSurface==='road'?0:Math.min(candidates.length-1,Math.max(0,index)*3)];if(!location)return;
   const facing:1|-1=hero.point[0]>=location.point[0]?1:-1,heading=facing===1?0:Math.PI;
-  return{id,location:copy(location),home:copy(location),habitatIndex:index,visits:0,route:null,elapsed:0,distance:0,speed:0,heading,facing,facingBlend:facing,
+  return{id,location:copy(location),home:copy(location),habitatIndex:index,visits:0,route:null,elapsed:0,distance:0,speed:0,locomotionSpeed:0,heading,facing,facingBlend:facing,
     blend:0,turnRemaining:0,blockedReason:null,radius,pauseRemaining:1.8+Math.max(0,index)*.47,retryRemaining:0,
     targetSequence:Math.max(0,index)*11,turnFrom:facing,nextFacing:facing,turnHeading:heading,worldKey:geometryKey(world),
     desiredFloor:floor,desiredSurface};
@@ -112,19 +111,23 @@ export function getPetPatrolDestination(state:PetPatrolState,world:NavigationWor
 function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationLocation,
   actors:NavigationActor[]):NavigationPath|undefined{
   const destination=getPetPatrolDestination(state,world,hero),destinationFloor=floorOf(destination),destinationSurface=destination.surface==='road'?'road':'deck',
-    sameFloor=state.location.surface===destinationSurface&&(destinationSurface==='road'||floorOf(state.location)===destinationFloor);
+    sameFloor=state.location.surface===destinationSurface&&(destinationSurface==='road'||floorOf(state.location)===destinationFloor),profile=getAnimalLocomotion(state.id);
   const attempt=(floor:TruckFloor|0,following:boolean)=>{
   let candidates=getPatrolTargets({...world,actors},floor)
     .filter(location=>clearOfActors(location,state.radius,actors,7))
-    .filter(location=>following&&!sameFloor||distance(location.point,state.location.point)>55);
+    .filter(location=>following&&!sameFloor||distance(location.point,state.location.point)>profile.minLegDistance);
   candidates.sort((a,b)=>{
     const score=(location:NavigationLocation)=>{
-      if(!following)return Math.abs(distance(location.point,state.location.point)-90);
-      if(!sameFloor)return distance(location.point,destination.point);
+      const targetHeading=Math.atan2(location.point[1]-state.location.point[1],location.point[0]-state.location.point[0]),
+        // Heavy residents favour a longer forward stroll instead of repeatedly
+        // choosing a new goal directly behind their own hindquarters.
+        turnCost=Math.abs(animalHeadingDelta(state.heading,targetHeading))*(profile.cruiseSpeed/profile.turnRate)*1.5;
+      if(!following)return Math.abs(distance(location.point,state.location.point)-Math.max(65,profile.minLegDistance*1.4))+turnCost;
+      if(!sameFloor)return distance(location.point,destination.point)+turnCost;
       const followDog=state.id==='dog'&&state.routine==='following',
         radius=followDog?Math.max(60,96-(state.friendship??0)*.3):state.routine==='sunbathing'?40:state.routine==='resting'?58:state.id==='monkey'?90:state.id==='rabbit'?120:170;
       return Math.abs(distance(location.point,destination.point)-radius)
-        +Math.abs(distance(location.point,state.location.point)-(followDog?110:75))*.22;
+        +Math.abs(distance(location.point,state.location.point)-(followDog?110:Math.max(60,profile.minLegDistance)))*.22+turnCost;
     };
     return score(a)-score(b);
   });
@@ -166,7 +169,7 @@ function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationL
   }
 }
 function stop(state:PetPatrolState,delta:number):void{
-  state.speed=0;state.blend=Math.max(0,state.blend*(1-Math.min(1,delta*10)));
+  state.speed=0;state.locomotionSpeed=0;state.blend=Math.max(0,state.blend*(1-Math.min(1,delta*10)));
 }
 
 function repairCoveredRampExit(state:PetPatrolState,world:NavigationWorld,actors:NavigationActor[]):NavigationPath|undefined {
@@ -190,14 +193,7 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
     // The scene supplies this animal's immutable physical link lease until exit.
     const crossing=state.location.surface==='ramp'&&state.route?.segments.some(segment=>segment.link===state.location.link);
     state.worldKey=key;state.desiredFloor=desiredFloor;state.desiredSurface=desiredSurface;
-    if(!crossing){state.route=null;state.elapsed=0;state.retryRemaining=0;state.pauseRemaining=0;}
-  }
-  if(state.turnRemaining>0){
-    stop(state,dt);state.heading=headingToward(state.heading,state.turnHeading,dt);
-    state.turnRemaining=Math.max(0,state.turnRemaining-dt);
-    state.facingBlend=state.turnFrom+(state.nextFacing-state.turnFrom)*smooth(1-state.turnRemaining/.3);
-    if(state.turnRemaining===0){state.facing=state.nextFacing;state.facingBlend=state.facing;}
-    return;
+    if(!crossing){state.route=null;state.elapsed=0;state.retryRemaining=0;state.pauseRemaining=0;state.locomotionSpeed=0;}
   }
   if(state.pauseRemaining>0||state.retryRemaining>0){
     state.pauseRemaining=Math.max(0,state.pauseRemaining-dt);state.retryRemaining=Math.max(0,state.retryRemaining-dt);stop(state,dt);return;
@@ -219,9 +215,17 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
       state.route=repaired;state.elapsed=0;state.blockedReason=null;
     }
   }
-  const pace=state.id==='elephant'?15:state.id==='giraffe'?17:state.id==='panda'?16:state.id==='deer'?21:22;
-  const nextElapsed=Math.min(state.route.motion.duration,state.elapsed+dt*(pace*(state.routinePace??1)*GAME_SPEED_MULTIPLIER/WALK_SPEED));
-  const sample=sampleNavigation(state.route,nextElapsed),from=state.location,to=sample.location,travel=distance(from.point,to.point);
+  const profile=getAnimalLocomotion(state.id),leg=getAnimalRouteLeg(state.route,state.elapsed,state.id),
+    // Small residents slow down on real steps; large boarders already have a
+    // deliberately measured gait. No species accelerates through a sharp bend.
+    linkPace=isNavigationLinkSurface(leg.surface)? .65:1,
+    cruise=profile.cruiseSpeed*(state.routinePace??1)*GAME_SPEED_MULTIPLIER*linkPace,
+    acceleration=profile.acceleration*GAME_SPEED_MULTIPLIER,braking=profile.braking*GAME_SPEED_MULTIPLIER,
+    targetSpeed=Math.min(cruise,Math.sqrt(2*braking*leg.stopDistance)),motor=Math.max(0,state.locomotionSpeed??0),
+    nextMotor=motor<targetSpeed?Math.min(targetSpeed,motor+acceleration*dt):Math.max(targetSpeed,motor-braking*dt),
+    budget=leg.stopDistance<.015?leg.legDistance:(motor+nextMotor)*dt/2,
+    proposal=getAnimalRouteTravel(state.route,state.elapsed,budget),nextElapsed=proposal.elapsed,sample=proposal.sample,
+    from=state.location,to=sample.location,travel=distance(from.point,to.point);
   const locked=isNavigationLinkSurface(to.surface)
     ? actors.find(actor=>isNavigationLinkSurface(actor.location.surface)&&actor.location.link===to.link) : undefined;
   const blocked=locked??blocksActorStep(from,to,state.radius,actors);
@@ -230,22 +234,17 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
     // An admitted animal owns its original exit direction until its feet leave
     // the bridge. A hero returning to shut the gate cannot reverse this lease.
     if(state.location.surface!=='ramp'||!state.passageLease){state.route=null;state.elapsed=0;}
-    state.retryRemaining=.45;stop(state,dt);return;
+    state.retryRemaining=.45;state.turnRemaining=0;stop(state,dt);return;
   }
   if(travel>1e-7){
-    const heading=Math.atan2(to.point[1]-from.point[1],to.point[0]-from.point[0]),direction=Math.cos(heading);
-    const facing:1|-1=direction>.18?1:direction<-.18?-1:state.facing;
-    if(facing!==state.facing){
-      state.turnRemaining=.3;state.turnFrom=state.facing;state.nextFacing=facing;state.turnHeading=heading;
-      state.facingBlend=state.facing;stop(state,dt);return;
-    }
-    state.heading=headingToward(state.heading,heading,dt);
+    const heading=Math.atan2(to.point[1]-from.point[1],to.point[0]-from.point[0]);
+    if(!orientAnimalForTravel(state,heading,dt))return;
   }
   if(to.surface==='ramp'&&from.surface!=='ramp'){
     const link=world.links.find(link=>link.id===to.link);
     if(link)state.passageLease={...link,points:link.points.map(point=>[...point])};
   }else if(to.surface!=='ramp')delete state.passageLease;
-  state.location=copy(to);state.elapsed=nextElapsed;state.distance+=travel;state.speed=travel/dt;
+  state.location=copy(to);state.elapsed=nextElapsed;state.distance+=travel;state.speed=travel/dt;state.locomotionSpeed=nextMotor;
   state.blend+=((state.speed>.05?1:0)-state.blend)*Math.min(1,dt*10);state.blockedReason=null;
-  if(nextElapsed>=state.route.motion.duration){state.route=null;state.elapsed=0;state.visits=(state.visits??0)+1;state.pauseRemaining=(state.routineRest??2.2)+(state.targetSequence%5)*.7;}
+  if(nextElapsed>=state.route.motion.duration){state.route=null;state.elapsed=0;state.locomotionSpeed=0;state.visits=(state.visits??0)+1;state.pauseRemaining=(state.routineRest??profile.restSeconds)+(state.targetSequence%5)*.7;}
 }

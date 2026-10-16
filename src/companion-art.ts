@@ -303,10 +303,10 @@ function puppetPivot(c: CanvasRenderingContext2D, art: QuadrupedArt,
 function puppetLeg(c: CanvasRenderingContext2D, image: HTMLImageElement, art: QuadrupedArt,
   name: CompanionPaw, gait: CompanionGaitSample, projection: number): void {
   const leg=art.limbs[name], {frame,unit}=art;
-  const limbProjection=(projection<0?-1:1)*Math.max(.56,Math.abs(projection));
+  const limbProjection=projection;
   const point=([x,y]:ArtPoint):ArtPoint=>[(x-frame.footX)*unit*limbProjection,(y-frame.footY)*unit];
   const originalHip=point(leg.hip), originalKnee=point(leg.knee), originalFoot=point(leg.foot);
-  const cos=Math.cos(gait.bodyRoll),sin=Math.sin(gait.bodyRoll);
+  const cos=Math.cos(gait.bodyRoll*projection),sin=Math.sin(gait.bodyRoll*projection);
   const hipX=(leg.hip[0]-frame.footX)*unit*projection;
   const hip:ArtPoint=[hipX*cos-originalHip[1]*sin,
     hipX*sin+originalHip[1]*cos+gait.bodyY];
@@ -342,24 +342,16 @@ function puppetLeg(c: CanvasRenderingContext2D, image: HTMLImageElement, art: Qu
   c.save();c.translate(foot[0],foot[1]);
   // Contact paws keep their orientation on the deck; the shin can bend above
   // them. Lifted toes tilt only during the swing, never rock a planted foot.
-  c.rotate(paw.planted?0:-paw.lift*.025);
+  c.rotate(paw.planted?0:-paw.lift*.025*projection);
   c.translate(-originalFoot[0],-originalFoot[1]);
   puppetPart(c,image,art,leg.contour,{kneeY:leg.knee[1],upper:false,pawTop,pawOnly:true},limbProjection);c.restore();
 }
 
 function facingProjection(o:CompanionOptions):number{
-  const value=o.gait?.facingBlend;
-  return value===undefined||!Number.isFinite(value)?o.facing:Math.max(-1,Math.min(1,value));
-}
-
-/** Each part approaches its own turn center; the animal stays solid/readable. */
-function projectedPart(c:CanvasRenderingContext2D,image:HTMLImageElement,art:QuadrupedArt,
-  contour:readonly ArtPoint[],projection:number,minimumWidth:number):void{
-  const center=(Math.min(...contour.map(p=>p[0]))+Math.max(...contour.map(p=>p[0])))/2;
-  const x=(center-art.frame.footX)*art.unit;
-  const width=(projection<0?-1:1)*Math.max(minimumWidth,Math.abs(projection));
-  c.save();c.translate(x*projection,0);c.scale(width,1);c.translate(-x,0);
-  puppetPart(c,image,art,contour);c.restore();
+  // These are authored three-quarter silhouettes, not rotatable flat cards.
+  // Navigation plants the feet while changing direction. Switch the intact
+  // pose at that stop instead of squeezing each limb through a zero width.
+  return o.facing;
 }
 
 function drawWalkingCompanion(c: CanvasRenderingContext2D, o: CompanionOptions,
@@ -374,21 +366,21 @@ function drawWalkingCompanion(c: CanvasRenderingContext2D, o: CompanionOptions,
   const projection=facingProjection(o), reaction=interactionReaction(o);
   const feet=o.id==='owl'?['hindFar','hindNear'] as const:['hindFar','frontFar','hindNear','frontNear'] as const;
   for(const paw of feet)puppetLeg(c,image,art,paw,gait,projection);
-  c.save();c.translate(0,gait.bodyY);c.rotate(gait.bodyRoll);
+  c.save();c.translate(0,gait.bodyY);c.rotate(gait.bodyRoll*projection);
   const resting=1-gait.strength;
   // Dogs gently wag; a cat/fox balances with a slower, small tail-tip sway.
   const tailFrequency=o.id==='dog'?1.8:o.id==='cat'? .75:o.id==='fox'? .85:1.1;
   const tailAmplitude=o.id==='dog'? .04:o.id==='cat'? .015:.018;
   const idleTail=o.gait?.reducedMotion?0:Math.sin(o.time*tailFrequency)*tailAmplitude*resting;
-  puppetPivot(c,art,art.tailRoot,gait.tailTilt+idleTail+reaction.tail,()=>puppetPart(c,image,art,art.tail,undefined,projection),projection);
-  projectedPart(c,image,art,art.body,projection,.5);
-  puppetPivot(c,art,art.neck,gait.headTilt+reaction.head+Math.sin(gait.heading)*.012*gait.strength,()=>{
-    for(const ear of art.ears??[])puppetPivot(c,art,ear.root,gait.earTilt+reaction.ears,
+  puppetPivot(c,art,art.tailRoot,(gait.tailTilt+idleTail+reaction.tail)*projection,()=>puppetPart(c,image,art,art.tail,undefined,projection),projection);
+  puppetPart(c,image,art,art.body,undefined,projection);
+  puppetPivot(c,art,art.neck,(gait.headTilt+reaction.head+Math.sin(gait.heading)*.012*gait.strength)*projection,()=>{
+    for(const ear of art.ears??[])puppetPivot(c,art,ear.root,(gait.earTilt+reaction.ears)*projection,
       ()=>puppetPart(c,image,art,ear.contour,undefined,projection),projection);
-    projectedPart(c,image,art,art.head,projection,.75);
+    puppetPart(c,image,art,art.head,undefined,projection);
   },projection);
   for(const [index,wing] of (art.wings??[]).entries())puppetPivot(c,art,wing.root,
-    (index?-1:1)*(gait.wingTilt+reaction.ears),
+    (index?-1:1)*(gait.wingTilt+reaction.ears)*projection,
     ()=>puppetPart(c,image,art,wing.contour,undefined,projection),projection);
   c.restore();
 }

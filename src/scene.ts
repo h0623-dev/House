@@ -13,6 +13,8 @@ import { drawTruckBody } from './truck-body-art';
 import { drawTruckAccessStairs } from './truck-stair-art';
 import { drawSkyBirds, skyNightAmount } from './sky-birds';
 import { createPetPatrol, stepPetPatrol, getPetGroundRadius, getPetPatrolDestination, setPetPatrolRoutine, type PetPatrolState } from './scene-patrol';
+import { animalFacingForHeading, getAnimalLocomotion, orientAnimalForTravel } from './animal-locomotion';
+import { getAnimalRouteLeg, getAnimalRouteTravel } from './animal-navigation';
 import { planPlacementPetRelocations } from './scene-placement';
 import { getFloorBounds, getFloorSlots, getFloorStairs,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
@@ -184,10 +186,13 @@ export class Scene {
     for (let step = 0; step < steps; step++) {
       this.time += delta * GAME_SPEED_MULTIPLIER;
       if (this.freeWalk) {
-        const walking = this.freeWalk,nextElapsed=Math.min(walking.navigation.motion.duration,walking.elapsed+delta*(walking.rate??1)),sample=sampleNavigation(walking.navigation,nextElapsed);
+        const walking = this.freeWalk,mountedStep=this.mountedAnimal?this.sampleMountedWalk(walking.navigation,walking.elapsed,delta):null,
+          nextElapsed=mountedStep?.elapsed??Math.min(walking.navigation.motion.duration,walking.elapsed+delta*(walking.rate??1)),
+          sample=mountedStep?.sample??sampleNavigation(walking.navigation,nextElapsed);
         const blocker=this.stepBlocker(this.heroLocation,sample.location),solid=blocksStaticNavigationStep(this.walkNavigationWorld(),this.heroLocation,sample.location);
         this.blockedReason=blocker?`actor:${blocker.id}`:solid?`static:${solid.kind??'obstacle'}`:null;
         if(blocker||solid){
+          this.pauseMountedAnimal(delta);
           walking.blockedFor+=delta;walking.retryFor+=delta;
           if(walking.blockedFor>=REROUTE_WAIT&&walking.retryFor>=(walking.retryDelay??REROUTE_WAIT)){
             walking.retryFor=0;
@@ -196,7 +201,7 @@ export class Scene {
             const detour=planNavigation(this.walkNavigationWorld(),this.heroLocation,walking.navigation.target);
             if(detour&&detour.motion.distance>.05){walking.navigation=detour;walking.elapsed=0;walking.gaitOffset=this.gaitDistance;walking.reroutes++;}
           }
-        }else{
+        }else if(mountedStep?.ready!==false){
           const moved=Math.hypot(sample.location.point[0]-this.heroLocation.point[0],sample.location.point[1]-this.heroLocation.point[1]);
           if(moved>.001){walking.blockedFor=0;walking.retryFor=0;walking.retryDelay=REROUTE_WAIT;}
           walking.elapsed=nextElapsed;const previous=this.heroLocation.point;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);this.advanceMountedAnimal(previous,sample.location,delta);
@@ -540,6 +545,7 @@ export class Scene {
   /** Menu, battle and tool boundaries retain the current feet, never reset home. */
   stopWalking() {
     if (!this.freeWalk) return;
+    this.pauseMountedAnimal(0);
     const sample = sampleNavigation(this.freeWalk.navigation, this.freeWalk.elapsed);
     this.heroLocation = sample.location; this.heroFacing = sample.facing;
     this.gaitDistance = this.freeWalk.gaitOffset + sample.distance; this.freeWalk = null;
@@ -611,7 +617,7 @@ export class Scene {
       }
       const id=relocation.id as UnitId,motion=this.petMotion.get(id)!;
       motion.location={...relocation.to,point:[...relocation.to.point]};
-      motion.route=null;motion.elapsed=0;motion.speed=0;motion.blend=0;motion.turnRemaining=0;
+      motion.route=null;motion.elapsed=0;motion.speed=0;motion.locomotionSpeed=0;motion.blend=0;motion.turnRemaining=0;
       motion.blockedReason=null;motion.retryRemaining=0;motion.pauseRemaining=.35;
       motion.facingBlend=motion.facing;motion.turnFrom=motion.facing;motion.nextFacing=motion.facing;motion.turnHeading=motion.heading;
       const world=worldFor(motion.radius,[]);
@@ -821,14 +827,14 @@ export class Scene {
       ??planWorkNavigation(this.navigationWorld(HERO_BODY_RADIUS,this.physicalActors().filter(actor=>actor.id===id||actor.id!=='hero'&&(this.reducedMotion||getUnitRoster(this.state??{})[actor.id as UnitId].health<=0))),this.heroLocation,approaches);
     if(!navigation)return Promise.reject(new Error('친구 옆으로 가는 길이 막혔어요. 빈 길로 이동한 뒤 다시 인사해 주세요.'));
     // The selected friend plants its feet while the hero approaches and touches it.
-    animal.route=null;animal.elapsed=0;animal.speed=0;animal.blend=0;animal.turnRemaining=0;animal.waitingForPassage=undefined;this.petYields.delete(id);
+    animal.route=null;animal.elapsed=0;animal.speed=0;animal.blend=0;animal.turnRemaining=0;animal.locomotionSpeed=0;animal.facingBlend=animal.facing;animal.waitingForPassage=undefined;this.petYields.delete(id);
     const walk=navigation.motion.duration,work=kind==='petting'?2.6:1.35;this.lastFrame=performance.now();this.zone='home';
     return new Promise((resolve,reject)=>{this.action={kind,animalId:id,elapsed:0,duration:walk+work,walk,work,path:navigation.points,route:navigation.motion,navigation,
       plotIndex:0,cropId:'carrot',stayAtTarget:true,approaches,gaitOffset:this.gaitDistance,stalled:0,yieldAt:0,resolve,reject:reason=>{this.releaseAnimalHold(id);reject(reason);}};this.publishAnimalInteraction();this.render();});
   }
   private releaseAnimalHold(id:UnitId) {
     const animal=this.petMotion.get(id);if(!animal)return;
-    animal.route=null;animal.elapsed=0;animal.speed=0;animal.blend=0;animal.pauseRemaining=1.3;animal.retryRemaining=0;animal.blockedReason=null;animal.waitingForPassage=undefined;
+    animal.route=null;animal.elapsed=0;animal.speed=0;animal.blend=0;animal.locomotionSpeed=0;animal.turnRemaining=0;animal.facingBlend=animal.facing;animal.pauseRemaining=1.3;animal.retryRemaining=0;animal.blockedReason=null;animal.waitingForPassage=undefined;
   }
   private mountedWorld():NavigationWorld {
     const id=this.mountedAnimal,animal=id?this.petMotion.get(id):undefined;
@@ -847,8 +853,26 @@ export class Scene {
     const id=this.mountedAnimal,animal=id?this.petMotion.get(id):undefined;if(!animal)return;
     const dx=location.point[0]-previous[0],dy=location.point[1]-previous[1],distance=Math.hypot(dx,dy);
     animal.location={...location,point:[...location.point]};animal.distance+=distance;animal.speed=delta?distance/delta:0;
-    if(distance>.0001){animal.heading=Math.atan2(dy,dx);if(Math.abs(dx)>distance*.18)animal.facing=dx>=0?1:-1;}
-    animal.facingBlend+=(animal.facing-animal.facingBlend)*Math.min(1,delta*7);animal.blend+=((animal.speed>.05?1:0)-animal.blend)*Math.min(1,delta*8);animal.turnRemaining=0;
+    if(distance>.0001){animal.heading=Math.atan2(dy,dx);animal.facing=animalFacingForHeading(animal.heading,animal.facing);}
+    animal.facingBlend=animal.facing;animal.blend+=((animal.speed>.05?1:0)-animal.blend)*Math.min(1,delta*8);
+  }
+  private pauseMountedAnimal(delta:number) {
+    const animal=this.mountedAnimal?this.petMotion.get(this.mountedAnimal):undefined;if(!animal)return;
+    animal.speed=0;animal.locomotionSpeed=0;animal.blend=Math.max(0,animal.blend*(1-Math.min(1,delta*10)));
+  }
+  private sampleMountedWalk(navigation:NavigationPath,elapsed:number,delta:number) {
+    const animal=this.mountedAnimal?this.petMotion.get(this.mountedAnimal):undefined;
+    if(!animal)return{elapsed,sample:sampleNavigation(navigation,elapsed),ready:false};
+    const profile=getAnimalLocomotion(animal.id),leg=getAnimalRouteLeg(navigation,elapsed,animal.id);
+    if(!orientAnimalForTravel(animal,leg.heading,delta,{reducedMotion:this.reducedMotion}))
+      return{elapsed,sample:sampleNavigation(navigation,elapsed),ready:false};
+    const braking=profile.braking*GAME_SPEED_MULTIPLIER,
+      targetSpeed=Math.min(profile.cruiseSpeed*GAME_SPEED_MULTIPLIER,Math.sqrt(2*braking*Math.max(0,leg.stopDistance))),
+      previousSpeed=animal.locomotionSpeed??0,
+      motor=previousSpeed+Math.max(-braking*delta,Math.min(profile.acceleration*GAME_SPEED_MULTIPLIER*delta,targetSpeed-previousSpeed));
+    animal.locomotionSpeed=Math.max(0,motor);
+    const travel=Math.min(leg.legDistance,animal.locomotionSpeed*delta);
+    return{...getAnimalRouteTravel(navigation,elapsed,travel),ready:true};
   }
   private clearAnimalActivity(message:string,unmount=true) {
     if(this.action?.animalId){const action=this.action,id=this.action.animalId,retained=this.currentHeroLocation();this.action=null;
@@ -1382,8 +1406,8 @@ export class Scene {
     this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[];
     for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
       this.updatePetDailyRoutine(motion);
-      if(this.mountedAnimal===id||this.action?.animalId===id){motion.facingBlend+=(motion.facing-motion.facingBlend)*Math.min(1,delta*9);if(this.mountedAnimal!==id||!this.freeWalk){motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));}continue;}
-      if(roster[id].health<=0){motion.speed=0;motion.blend=0;continue;}
+      if(this.mountedAnimal===id||this.action?.animalId===id){motion.facingBlend=motion.facing;if(this.mountedAnimal!==id||!this.freeWalk){motion.speed=0;motion.locomotionSpeed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));}continue;}
+      if(roster[id].health<=0){motion.speed=0;motion.locomotionSpeed=0;motion.blend=0;continue;}
       this.requestPetPassageEntryClearance(motion);
       this.requestPetPassageClearance(motion);
       const actors=this.physicalActors().filter(actor=>actor.id!==id),hero=this.currentHeroLocation(),yielding=this.petYields.get(id);
@@ -1395,7 +1419,7 @@ export class Scene {
           if(yielding.passage&&passageOwner&&this.holdsPetPassageIntent(passageOwner,yielding.passage)){
             // Wait naturally outside the whole reserved corridor. Releasing a
             // yield here would send eager followers back to the occupied entry.
-            motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));motion.pauseRemaining=.35;
+            motion.speed=0;motion.locomotionSpeed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));motion.pauseRemaining=.35;
             continue;
           }
           this.petYields.delete(id);
@@ -1409,9 +1433,9 @@ export class Scene {
           if(motion.route!==yielding.route||key!==motion.worldKey){
             const blocker=actors.find(actor=>motion.blockedReason===`actor:${actor.id}`);
             if(blocker)this.tryPetYield(blocker,[...yielding.reserved,motion.location,target],Math.max(motion.radius,yielding.reservedRadius));
-            if(motion.retryRemaining>0){motion.retryRemaining=Math.max(0,motion.retryRemaining-delta);motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));continue;}
+            if(motion.retryRemaining>0){motion.retryRemaining=Math.max(0,motion.retryRemaining-delta);motion.speed=0;motion.locomotionSpeed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));continue;}
             const route=planNavigation(world,motion.location,target)??planYieldNavigation(world,motion.location,yielding.reserved,yielding.reservedRadius);
-            if(!route){motion.retryRemaining=.35;motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));continue;}
+            if(!route){motion.retryRemaining=.35;motion.speed=0;motion.locomotionSpeed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));continue;}
             yielding.route=route;motion.route=route;motion.elapsed=0;motion.retryRemaining=0;motion.pauseRemaining=0;motion.blockedReason=null;motion.worldKey=key;
           }
         }
@@ -1497,7 +1521,7 @@ export class Scene {
     // Tapping a destination moves feet while retaining the complete map or the
     // deliberate camera position chosen by a pinch/drag.
     this.villageOverview=true;this.zone='home';
-    this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0,...(this.mountedAnimal?{rate:this.mountedAnimal==='elephant'?.16:.19}:{})};
+    this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0};
     this.lastFrame=performance.now();this.publishWalking();this.render();
   }
   private publishWalking() {
@@ -1557,7 +1581,7 @@ export class Scene {
     const action = this.action;
     const animalId=action?.animalId??this.mountedAnimal,animal=animalId?this.petMotion.get(animalId):undefined;
     if(animal&&animalId){
-      const animalScale=this.petScale(animalId),anchor=companionInteractionAnchor(animalId,animalScale,1),gait=sampleCompanionGait(animalId,{distance:animal.distance,speed:animal.speed,heading:animal.heading,blend:animal.blend,facingBlend:animal.facingBlend,reducedMotion:this.reducedMotion},animalScale),cos=Math.cos(gait.bodyRoll),sin=Math.sin(gait.bodyRoll),seatX=anchor.saddle[0]*animal.facingBlend,seat:Point=[animal.location.point[0]+seatX*cos-anchor.saddle[1]*sin,animal.location.point[1]+seatX*sin+anchor.saddle[1]*cos+gait.bodyY*animalScale],progress=this.actionProgress();
+      const animalScale=this.petScale(animalId),anchor=companionInteractionAnchor(animalId,animalScale,1),gait=sampleCompanionGait(animalId,{distance:animal.distance,speed:animal.speed,heading:animal.heading,blend:animal.blend,facingBlend:animal.facingBlend,reducedMotion:this.reducedMotion},animalScale),cos=Math.cos(gait.bodyRoll*animal.facing),sin=Math.sin(gait.bodyRoll*animal.facing),seatX=anchor.saddle[0]*animal.facing,seat:Point=[animal.location.point[0]+seatX*cos-anchor.saddle[1]*sin,animal.location.point[1]+seatX*sin+anchor.saddle[1]*cos+gait.bodyY*animalScale],progress=this.actionProgress();
       if(!action&&this.mountedAnimal)return{point:seat,pose:'ride',facing:animal.facing,progress:0,time:animal.distance/75};
       // The interaction rig uses a hip anchor while seated. Preserve the torso
       // height when changing from grounded feet, then lift/lower that same hip.
