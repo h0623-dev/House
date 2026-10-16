@@ -373,7 +373,7 @@ export class BattleView {
       c.beginPath(); c.ellipse(x, feet - 1, 22 * k, 7 * k, 0, 0, Math.PI * 2); c.fill(); c.stroke(); c.restore();
     }
     drawZombie(c, { x, y: feet, scale: k, time, kind: e.kind === 'moss' ? 'walker' : e.kind,
-      facing: -1, pose: e.health <= 0 ? 'defeat' : hurt ? 'hurt' : attacking ? 'attack' : moving ? 'walk' : 'idle',
+      facing: -1, reducedMotion: this.reducedMotion, pose: e.health <= 0 ? 'defeat' : hurt ? 'hurt' : attacking ? 'attack' : moving ? 'walk' : 'idle',
       ...(e.health <= 0 ? { progress: deadFor / .6 } : attacking ? { progress: attackPhase } : {}) });
     if (e.health <= 0) return;
     const hpY = feet - (boss ? 169 : 145) * k;

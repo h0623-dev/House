@@ -1841,8 +1841,8 @@ export class Scene {
       skyBottom=skyTop+Math.min(96,this.height*.18)/this.scale;
     this.canvas.dataset.skyBirds=JSON.stringify(drawSkyBirds(this.ctx,{timeSeconds:this.time/GAME_SPEED_MULTIPLIER,viewport:{left,top,right,bottom},skyTop,skyBottom,night,reducedMotion:this.reducedMotion}));
     this.roadSign(788, 202);
-    this.zombie(88 + Math.sin(this.time * .14) * 6, 423, .75, .2);
-    this.zombie(970, 507 + Math.sin(this.time * .16) * 5, .55, 1.2);
+    this.zombie(88, 423, .75, .2);
+    this.zombie(970, 507, .55, 1.2);
   }
 
   private grass(x: number, y: number, s: number) {
@@ -1867,7 +1867,9 @@ export class Scene {
   }
 
   private zombie(x: number, y: number, s: number, phase: number) {
-    drawZombie(this.ctx, { x, y, scale: s * .49, time: this.reducedMotion ? phase : this.time + phase, kind: 'walker', pose: 'walk', facing: phase > 1 ? -1 : 1, alpha: .76 });
+    // These distant cameos stand quietly; a walking pose without real travel
+    // slid their feet across the road. Battle movement uses the gait poses.
+    drawZombie(this.ctx, { x, y, scale: s * .49, time: this.reducedMotion ? phase : this.time + phase, kind: 'walker', pose: 'idle', facing: phase > 1 ? -1 : 1 });
   }
 
   private truck() {

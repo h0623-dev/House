@@ -1,4 +1,5 @@
 import creaturesAtlasUrl from './assets/creatures-anime.png';
+import { drawMiniatureInfected } from './infected-art';
 
 /** The same illustrated companion and infected roam the deck and battlefields. */
 export type PetPose = 'idle' | 'walk' | 'run' | 'pounce' | 'celebrate';
@@ -11,7 +12,7 @@ export interface PetOptions {
 export interface ZombieOptions {
   x: number; y: number; scale: number; time: number;
   kind: ZombieKind; facing?: 1 | -1;
-  pose: ZombiePose; progress?: number; alpha?: number;
+  pose: ZombiePose; progress?: number; alpha?: number; reducedMotion?: boolean;
 }
 
 interface CreatureFrame {
@@ -28,24 +29,6 @@ const dogFrames: Record<'idle' | 'walk' | 'run' | 'pounce', CreatureFrame> = {
   walk: { x: 405, y: 99, width: 318, height: 342, footX: 566, footY: 437 },
   run: { x: 764, y: 121, width: 395, height: 339, footX: 968, footY: 455 },
   pounce: { x: 1175, y: 90, width: 352, height: 310, footX: 1338, footY: 395 },
-};
-const infectedFrames: Record<ZombieKind | 'strike', CreatureFrame> = {
-  walker: {
-    x: 17, y: 492, width: 363, height: 492, footX: 184, footY: 979,
-    contour: [[17, 492], [380, 492], [380, 805], [346, 805], [346, 984], [17, 984]],
-  },
-  runner: {
-    x: 356, y: 505, width: 388, height: 463, footX: 551, footY: 962,
-    contour: [[385, 505], [744, 505], [744, 968], [356, 968], [356, 805], [385, 805]],
-  },
-  boss: {
-    x: 753, y: 479, width: 418, height: 514, footX: 961, footY: 987,
-    contour: [[753, 479], [1171, 479], [1171, 835], [1151, 835], [1151, 993], [753, 993]],
-  },
-  strike: {
-    x: 1155, y: 513, width: 368, height: 475, footX: 1337, footY: 982,
-    contour: [[1180, 513], [1523, 513], [1523, 988], [1155, 988], [1155, 834], [1180, 834]],
-  },
 };
 
 export const creatureImage = new Image();
@@ -130,32 +113,7 @@ export function drawPet(c: CanvasRenderingContext2D, o: PetOptions): void {
 
 /** x/y are the soles; normal infected are 128px tall, the guard is 152px. */
 export function drawZombie(c: CanvasRenderingContext2D, o: ZombieOptions): void {
-  const t = o.time, h = o.kind === 'boss' ? 152 : 128;
-  const phase = o.progress === undefined ? (t * 1.35) % 1 : clamp(o.progress);
-  const impulse = Math.sin(phase * Math.PI);
-  const moving = o.pose === 'walk';
-  const stride = Math.sin(t * (o.kind === 'runner' ? 9.5 : 5.5));
-  const frame = o.kind === 'walker' && o.pose === 'attack' ? infectedFrames.strike
-    : infectedFrames[o.kind];
-  const defeat = o.pose === 'defeat' ? phase : 0;
-  c.save(); c.translate(o.x, o.y); c.scale(o.scale * (o.facing ?? 1), o.scale);
-  c.globalAlpha *= clamp(o.alpha ?? 1) * (1 - defeat);
-  shadow(c, o.kind === 'boss' ? 34 : 26, .19);
-  c.translate(o.pose === 'attack' ? impulse * 5 : o.pose === 'hurt' ? -impulse * 5 : 0,
-    moving ? -Math.abs(stride) * 1.7 : Math.sin(t * 2.1) * .65);
-  c.rotate(o.pose === 'hurt' ? -.085 * impulse
-    : o.pose === 'attack' ? .038 + impulse * .05
-    : o.pose === 'defeat' ? defeat * .23
-    : moving ? stride * .025 : Math.sin(t * 1.8) * .008);
-  if (o.pose === 'hurt') c.globalAlpha *= .67 + Math.abs(Math.sin(t * 19)) * .33;
-  if (creatureImage.complete && creatureImage.naturalWidth) drawFrame(c, frame, h);
-  else loadingSilhouette(c, false, h);
-  if (o.pose === 'attack' && impulse > .35) {
-    c.save(); c.globalAlpha *= impulse * .5; c.strokeStyle = '#ead49b';
-    c.lineWidth = 1.6; c.lineCap = 'round'; c.beginPath();
-    c.ellipse(27, -h * .54, 22, 15, -.25, -.5, 1.1); c.stroke(); c.restore();
-  }
-  c.restore();
+  drawMiniatureInfected(c, o);
 }
 
 /** Bori's exact atlas face, used by companion dialogs and party skill badges. */
