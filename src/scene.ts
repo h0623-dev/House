@@ -612,6 +612,9 @@ export class Scene {
   resetMapView() {
     this.resetOverview(false);
   }
+  getResidentPosition(): readonly [number,number] {
+    return [...this.currentHeroLocation().point];
+  }
   /** Return to the readable truck and its nearby road without moving residents. */
   showHomeView() {
     this.resetOverview(false);
@@ -2192,24 +2195,23 @@ export class Scene {
 
   private groundMarkers() {
     if(this.activeFloor!==1||this.constructionMode||this.planningMode||this.farmFocus||this.farmMode)return;
+    // General gathering controls belong to the screen edge. Keep the world
+    // clear of category pills; only the explicitly selected or working node
+    // receives a label. Resource sprites retain their own polygon hit targets.
+    const targetId=this.action?.groundResourceId??this.resourceFocus?.nodeId;
+    if(!targetId)return;
     const now=Date.now(),hero=this.currentHeroLocation().point;
-    const candidates=GROUND_RESOURCE_NODES.map<GroundMarkerInput>((node,index)=>{
+    const candidates=GROUND_RESOURCE_NODES.flatMap<GroundMarkerInput>((node,index)=>{
+      if(node.id!==targetId)return[];
       const stock=this.state?getGatheringNode(this.state,node.id,now):undefined;
       const sprite=this.groundSpriteBounds(node),screen=sprite.map((v,i)=>(i%2?this.dy:this.dx)+v*this.scale)as[number,number,number,number];
-      return{id:node.id,index,kind:node.kind,resource:node.resource,ready:stock?.ready??true,
+      return[{id:node.id,index,kind:node.kind,resource:node.resource,ready:stock?.ready??true,
         active:this.action?.groundResourceId===node.id,affordable:!this.state||this.state.energy>=(stock?.energyCost??0),remainingSeconds:stock?.remainingSeconds??0,
         anchor:[this.dx+node.point[0]*this.scale,this.dy+node.point[1]*this.scale],spriteBounds:screen,
-        distance:Math.hypot(node.point[0]-hero[0],node.point[1]-hero[1])};
-    }).filter(node=>!this.resourceFocus?.regionId||GROUND_RESOURCE_NODES[node.index].regionId===this.resourceFocus.regionId);
+        distance:Math.hypot(node.point[0]-hero[0],node.point[1]-hero[1])}];
+    });
     const viewport={left:this.safeViewport.left,top:this.safeViewport.top,right:this.width-this.safeViewport.right,bottom:this.height-this.safeViewport.bottom};
     const placementViewport={...viewport};
-    if(this.overviewBounds&&this.scale<.1){
-      const mapLeft=this.dx+this.overviewBounds.left*this.scale,mapRight=this.dx+this.overviewBounds.right*this.scale;
-      // An extremely short landscape overview fits the world into a small
-      // center. Put its four readable controls beside it, keeping the truck clear.
-      if(viewport.right-mapRight>304)placementViewport.left=mapRight+12;
-      else if(mapLeft-viewport.left>304)placementViewport.right=mapLeft-12;
-    }
     const canvasBounds=this.canvas.getBoundingClientRect();
     const hud=[...document.querySelectorAll<HTMLElement>('.scene-top,.truck-floor-controls,.settlement-objective,.road-controls')]
       .map(element=>({element,bounds:element.getBoundingClientRect()}))
@@ -2230,7 +2232,12 @@ export class Scene {
     const activeHero=this.action?.groundResourceId&&this.currentHeroLocation().surface==='road'?
       [{left:this.dx+hero[0]*this.scale-40*WORLD_HERO_SCALE*this.scale-6,top:this.dy+(hero[1]-132*WORLD_HERO_SCALE)*this.scale-6,
         right:this.dx+hero[0]*this.scale+40*WORLD_HERO_SCALE*this.scale+6,bottom:this.dy+hero[1]*this.scale+8}]:[];
-    const markers=layoutGroundMarkers(candidates,this.scale,viewport,placementViewport,activeHero),c=this.ctx,dpr=Math.min(window.devicePixelRatio||1,2);
+    const gatheringControls=[...document.querySelectorAll<HTMLElement>('.gathering-dock,.gathering-tray')]
+      .map(element=>element.getBoundingClientRect())
+      .filter(bounds=>bounds.width>0&&bounds.height>0&&bounds.bottom>canvasBounds.top&&bounds.top<canvasBounds.bottom)
+      .map(bounds=>({left:bounds.left-canvasBounds.left,top:bounds.top-canvasBounds.top,
+        right:bounds.right-canvasBounds.left,bottom:bounds.bottom-canvasBounds.top}));
+    const markers=layoutGroundMarkers(candidates,this.scale,viewport,placementViewport,[...activeHero,...gatheringControls]),c=this.ctx,dpr=Math.min(window.devicePixelRatio||1,2);
     c.save();c.setTransform(dpr,0,0,dpr,0,0);
     for(const marker of markers){
       const[left,top,right,bottom]=marker.screenBounds,cx=(left+right)/2,cy=(top+bottom)/2,

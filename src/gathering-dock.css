@@ -1,0 +1,75 @@
+/* Gathering shortcuts belong to the HUD, rather than the truck's world space. */
+.village-shell .gathering-dock {
+  position: absolute;
+  z-index: 7;
+  left: max(10px, env(safe-area-inset-left));
+  bottom: 126px;
+}
+.village-shell .gathering-dock[hidden],
+.village-shell .gathering-tray[hidden] { display: none; }
+.gathering-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 80px;
+  min-height: 46px;
+  padding: 5px 8px;
+  border: 1px solid #b49b68;
+  border-radius: 12px;
+  background: linear-gradient(#fff8e3, #ead8ab);
+  color: #3b6043;
+  box-shadow: inset 0 1px #fffef1, 0 2px 5px #263d2929;
+  font: inherit;
+}
+.gathering-toggle > .icon:first-child { width: 25px; height: 27px; }
+.gathering-toggle > .icon:last-child { width: 10px; height: 12px; transform: rotate(-90deg); }
+.gathering-toggle strong { font-size: 12px; white-space: nowrap; }
+.expanded .gathering-toggle { background: linear-gradient(#e3edcf, #c9dab5); border-color: #829b6b; }
+.expanded .gathering-toggle > .icon:last-child { transform: rotate(90deg); }
+.gathering-tray {
+  position: absolute;
+  left: 0;
+  bottom: 54px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 228px;
+  max-width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #b9a06b;
+  border-radius: 14px;
+  background: #fff6dff7;
+  box-shadow: inset 0 1px #fffdf0, 0 4px 12px #233d3030;
+}
+.gathering-tray > button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 44px;
+  min-height: 48px;
+  padding: 5px;
+  border: 1px solid #d0c29b;
+  border-radius: 9px;
+  background: linear-gradient(#fffdf0, #f2e9cb);
+  color: #355e42;
+  text-align: left;
+  font: inherit;
+}
+.gathering-tray > button > .icon { width: 27px; height: 29px; flex: 0 0 27px; }
+.gathering-tray > button > span { display: flex; flex-direction: column; gap: 2px; }
+.gathering-tray strong { font-size: 12px; line-height: 1.3; }
+.gathering-tray small { font-size: 10px; line-height: 1.3; color: #68774f; white-space: nowrap; }
+.gathering-tray > button:disabled { opacity: .62; }
+.gathering-toggle:focus-visible,
+.gathering-tray > button:focus-visible { outline: 3px solid #557a44; outline-offset: 2px; }
+@media (orientation: landscape) {
+  .village-shell .gathering-dock { left: calc(130px + env(safe-area-inset-left)); bottom: 8px; }
+  .village-shell .gathering-tray { left: -122px; }
+}
+@media (orientation: landscape) and (max-height: 340px) {
+  .village-shell .gathering-tray { width: 260px; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 4px; padding: 6px; }
+  .gathering-tray > button { flex-direction: column; justify-content: center; gap: 2px; padding: 4px 2px; }
+  .gathering-tray > button > span { align-items: center; }
+  .gathering-tray small { font-size: 9px; }
+}

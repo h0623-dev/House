@@ -55,6 +55,7 @@ import './game-dialog.css';
 import './deck-placement.css';
 import { initializeGameOrientation, type GameOrientationController, type GameOrientationState } from './game-orientation';
 import './landscape.css';
+import './gathering-dock.css';
 
 const stored = loadGame();
 let state = stored ?? createGame('female', '하루');
@@ -82,6 +83,7 @@ let selectedZone: 'home'|'grove' = 'home';
 let selectedPlotId: number | null = state.plots[0]?.id ?? null;
 let farmFocused = false;
 let farmTrayOpen=false;
+let gatheringTrayOpen=false;
 let selectedFacilityId:number|null=null;
 let placement:{type:BuildingType;point:FacilityPlacement|null;movingId?:number}|null=null;
 let modalBackdropPointer:number|null=null;
@@ -121,6 +123,8 @@ contentApplyingNotice.innerHTML='<strong>게임 업데이트 적용 중</strong>
 const escape=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const navItems=[['truck','트럭','home'],['hammer','건설','build'],['seeds','농사','farm'],['map','탐험','hunt'],['bag','창고','bag'],['bag','상점','shop']];
 const quickItems=[['harvest','food','수확'],['water','water','물 주기'],['plant','seeds','씨앗 심기'],['fertilize','seeds','영양 주기'],['chop','axe','벌목'],['gather','scrap','고철']] as const;
+const gatheringShortcuts=[['wood','나무'],['scrap','고철'],['seeds','씨앗'],['water','샘물']] as const;
+type GatheringShortcutResource=typeof gatheringShortcuts[number][0];
 app.innerHTML=`
  <div class="shell game-shell village-shell">
   <header class="topbar game-topbar">
@@ -147,6 +151,10 @@ app.innerHTML=`
     <div class="map-controls" role="group" aria-label="지도 확대와 축소"><button data-map-zoom="1" aria-label="지도 확대"><span>+</span><small>확대</small></button><button data-map-reset aria-label="지도 기본 크기로 보기"><strong data-map-percent>100%</strong><small>기본 보기</small></button><button data-map-zoom="-1" aria-label="지도 축소"><span>−</span><small>축소</small></button><button data-map-overview aria-label="트럭 마을 전체 보기"><span>${icon('map')}</span><small>전체 보기</small></button><button data-farm-toggle aria-label="농사 도구 펼치기"><span>${icon('seeds')}</span><small>농사 도구</small></button></div>
     <button class="settlement-objective" id="settlement-objective" data-next-goal aria-label="현재 성장 목표 진행"><span>${icon('flag')}</span><div><small id="objective-chapter">도로 위 우리 마을</small><strong id="objective-title">첫 목표를 확인해 보세요</strong><p id="objective-detail">작은 목표를 따라 우리 마을을 키워요</p><div class="objective-progress" aria-hidden="true"><i></i></div></div><b class="objective-cta" data-objective-cta>하러 가기</b></button>
     <div class="village-hub" id="village-hub">${renderVillageHub(getVillageHub(state))}</div>
+    <div class="gathering-dock" aria-label="채집 도구">
+     <div class="gathering-tray" id="gathering-tray" role="group" aria-label="전체 채집지의 준비된 자원 · 선택하면 가까운 곳에서 채집" hidden>${gatheringShortcuts.map(([resource,label])=>`<button data-gather-resource="${resource}">${icon(resource)}<span><strong>${label}</strong><small data-gather-ready="${resource}">채집 준비</small></span></button>`).join('')}</div>
+     <button class="gathering-toggle" data-gather-toggle aria-controls="gathering-tray" aria-expanded="false" aria-label="채집 도구 펼치기">${icon('axe')}<strong data-gather-toggle-label>채집</strong>${icon('chevron')}</button>
+    </div>
     <div class="road-controls" aria-label="전체 지도와 도로 활동"><button data-camera-player aria-label="지금 층의 전체 맵을 기본 크기로 보기">${icon('map')}<small>전체 보기</small></button><button data-road-walk aria-label="계단를 내려가 도로 걷기">${icon('move')}<small>도로 걷기</small></button><button data-open="roadside" aria-label="도로 채집 장소 보기">${icon('map')}<small>채집 장소</small></button><button data-road-return aria-label="실제 계단으로 트럭에 돌아오기">${icon('truck')}<small>트럭으로</small></button><button data-open="pet-passage" aria-label="동물 통로 문 조작">${icon('paw')}<small>동물 문</small></button></div>
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
@@ -214,6 +222,7 @@ function resumePlayerView(){
 }
 function updateWalkingAvailability(){
  scene.setWalkingEnabled(playerConfirmed&&!startupPending&&!orientationBlocked&&!contentActivationPending&&!battleView&&!currentModal&&!placement&&selectedFacilityId===null&&!actionBusy);
+ renderGatheringDock();
 }
 document.querySelector('#world')!.addEventListener('scenewalkchange',()=>{
  // A menu or a new chore may stop a walk synchronously; assess patch safety
@@ -221,7 +230,7 @@ document.querySelector('#world')!.addEventListener('scenewalkchange',()=>{
  if(!scene.isWalking())queueMicrotask(finishDeferredUpdate);
 });
 document.querySelector('#world')!.addEventListener('scenemovemodechange',updateMapMoveControl);
-document.querySelector('#world')!.addEventListener('scenefloorchange',()=>{renderFloorControls();});
+document.querySelector('#world')!.addEventListener('scenefloorchange',()=>{renderFloorControls();renderGatheringDock();});
 updateMapMoveControl();
 function updateZoomControls(){
  const zoom=scene.getMapZoom();
@@ -950,6 +959,43 @@ function deliverFarmOrder(id:string){
 function groundArea(id:OutdoorSiteId){
  return getGatheringArea(state,id)!;
 }
+function setGatheringTray(open:boolean){
+ gatheringTrayOpen=open;
+ const dock=document.querySelector<HTMLElement>('.gathering-dock')!,button=dock.querySelector<HTMLButtonElement>('[data-gather-toggle]')!;
+ dock.classList.toggle('expanded',open);
+ dock.querySelector<HTMLElement>('.gathering-tray')!.hidden=!open;
+ button.setAttribute('aria-expanded',String(open));
+ button.setAttribute('aria-label',open?'채집 도구 접기':'채집 도구 펼치기');
+ button.querySelector('[data-gather-toggle-label]')!.textContent=open?'접기':'채집';
+}
+function renderGatheringDock(){
+ const dock=document.querySelector<HTMLElement>('.gathering-dock')!;
+ dock.hidden=!playerConfirmed||startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||selectedFacilityId!==null||farmTrayOpen||actionBusy||scene.getActiveFloor()!==1;
+ if(dock.hidden){if(gatheringTrayOpen)setGatheringTray(false);return;}
+ if(!gatheringTrayOpen)return;
+ const now=Date.now();
+ for(const [resource,label]of gatheringShortcuts){
+  const views=GROUND_RESOURCE_NODES.filter(node=>node.resource===resource).map(node=>getGatheringNode(state,node.id,now)!);
+  const ready=views.filter(view=>view.ready),remaining=Math.min(...views.map(view=>view.remainingSeconds));
+  const button=dock.querySelector<HTMLButtonElement>(`[data-gather-resource="${resource}"]`)!;
+  const status=ready.length?`${ready.length}곳 준비`:`${remaining}초 후`;
+  button.disabled=ready.length===0;
+  button.setAttribute('aria-label',`${label} · 전체 채집지 ${ready.length}/${views.length}곳 준비 · ${ready.length?'가까운 곳에서 바로 채집':`${remaining}초 뒤 재생`}`);
+  const text=button.querySelector('small')!;if(text.textContent!==status)text.textContent=status;
+ }
+}
+function gatherFromShortcut(resource:GatheringShortcutResource){
+ if(actionBusy||battleView||startupPending||contentActivationPending)return;
+ state=recoverEnergy(state);
+ const feet=scene.getResidentPosition(),now=Date.now();
+ const ready=GROUND_RESOURCE_NODES.filter(node=>node.resource===resource)
+  .map(node=>getGatheringNode(state,node.id,now)!).filter(view=>view.ready)
+  .sort((a,b)=>Math.hypot(a.node.point[0]-feet[0],a.node.point[1]-feet[1])-Math.hypot(b.node.point[0]-feet[0],b.node.point[1]-feet[1]));
+ const target=ready.find(view=>state.energy>=view.energyCost)??ready[0];
+ if(!target){renderGatheringDock();return;}
+ setGatheringTray(false);
+ void gatherGroundResource(target.node.id,true);
+}
 function areaStatus(id:OutdoorSiteId){const area=groundArea(id);return `${area.ready.length} / ${area.views.length}개 채집 가능${area.ready.length?'':` · ${area.next.remainingSeconds}초 뒤 재생`}`;}
 function gatheringReward(view:NonNullable<ReturnType<typeof getGatheringNode>>){
  return view.cropId?`${CROPS[view.cropId].seedName} ${view.yieldAmount}개`:`${resourceLabels[view.node.resource]} ${view.yieldAmount}${view.node.resource==='water'?' L':'개'}`;
@@ -1252,6 +1298,7 @@ function navigateButton(t:HTMLElement){
 }
 const pressedVillageTargets=new WeakMap<HTMLElement,{key:string;target:VillageTarget}>();
 document.addEventListener('pointerdown',event=>{
+ if(gatheringTrayOpen&&!(event.target as Element).closest('.gathering-dock'))setGatheringTray(false);
  const button=(event.target as Element).closest<HTMLElement>('[data-village-advice],[data-next-goal]');
  if(!button||!button.closest('#app'))return;
  const key=button.dataset.villageAdvice??'primary',advice=villageAdvice(key);
@@ -1262,6 +1309,8 @@ document.addEventListener('pointercancel',event=>{
 },{capture:true});
 document.addEventListener('click',e=>{
  const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||orientationBlocked||battleView||contentActivationPending)return;
+ if(t.hasAttribute('data-gather-toggle')){setGatheringTray(!gatheringTrayOpen);renderGatheringDock();return;}
+ if(t.dataset.gatherResource){const resource=gatheringShortcuts.find(([id])=>id===t.dataset.gatherResource)?.[0];if(resource)gatherFromShortcut(resource);return;}
  if(t.hasAttribute('data-camera-player')){resumePlayerView();return;}
  if(t.dataset.petPassageToggle){void operatePetPassage(t.dataset.petPassageToggle==='open');return;}
  if(t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')){if(prepareRoadWalk()){if(t.hasAttribute('data-road-return'))scene.walkToTruck();else scene.walkOntoRoad();}return;}
@@ -1382,7 +1431,7 @@ modalRoot.addEventListener('pointerdown',e=>{modalBackdropPointer=e.target===mod
 modalRoot.addEventListener('pointerup',e=>{modalBackdropClickPointer=modalBackdropPointer===e.pointerId&&e.target===modalRoot?e.pointerId:null;modalBackdropPointer=null;});
 modalRoot.addEventListener('pointercancel',()=>{modalBackdropPointer=null;modalBackdropClickPointer=null;});
 modalRoot.addEventListener('click',e=>{const backdropGesture=modalBackdropClickPointer!==null&&(!(e instanceof PointerEvent)||e.pointerId===modalBackdropClickPointer);modalBackdropClickPointer=null;if(!startupPending&&e.target===modalRoot&&backdropGesture)closeModal();});
-document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
+document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(gatheringTrayOpen){setGatheringTray(false);document.querySelector<HTMLButtonElement>('[data-gather-toggle]')!.focus();return;}if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
 let saveCounter=0;
 setInterval(()=>{
  if(!startupPending&&!contentActivationPending&&playerConfirmed){
