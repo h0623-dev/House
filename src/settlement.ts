@@ -7,6 +7,8 @@ import { cloneShopFields } from './shop';
 import { cloneFarmEconomyFields, reconcileFarmEconomyFood, validateFarmEconomy } from './farm-economy';
 import { cloneRoadsideFields } from './roadside';
 import { clonePetPassageFields } from './pet-passage';
+import { cloneCozyLifeFields } from './cozy-life';
+import { cloneCozyDecorFields, validateCozyDecorProgress } from './cozy-decor';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
 import { checkFacilityPlacement, cloneDeckPlacementFields, getFacilityPlacement, snapFacilityPlacement,
   validateDeckPlacements, type FacilityPlacement } from './deck-placement';
@@ -228,6 +230,8 @@ function copy(state: GameState): GameState {
     ...cloneFarmEconomyFields(state),
     ...cloneRoadsideFields(state),
     ...clonePetPassageFields(state),
+    ...cloneCozyLifeFields(state),
+    ...cloneCozyDecorFields(state),
     ...cloneEnergyRecoveryFields(state),
     expedition: state.expedition ? { ...state.expedition, ...(state.expedition.participantIds ? { participantIds: [...state.expedition.participantIds] } : {}) } : null,
     settlement: getLegacySettlement(state),
@@ -280,6 +284,7 @@ export function buildTruckFloor(state: GameState): SettlementResult {
   if (state.resources.wood < cost.wood || state.resources.scrap < cost.scrap) return fail(state, `${cost.floor}층에 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
   const next = copy(state); next.truckLayout = getTruckLayout(next); next.truckLayout.floors = cost.floor;
   if (next.deckPlacements && !validateDeckPlacements(next.deckPlacements, next)) return fail(state, '새 층의 계단 자리에 시설이 있어요. 계단 주변 시설을 옮긴 뒤 층을 올려 주세요.');
+  if (next.cozyDecor && !validateCozyDecorProgress(next.cozyDecor, next)) return fail(state, '새 층의 계단 자리에 장식이 있어요. 장식을 옮기거나 보관한 뒤 층을 올려 주세요.');
   next.resources.wood -= cost.wood; next.resources.scrap -= cost.scrap;
   return success(next, `${cost.floor}층 플랫폼과 연결 계단을 지었어요. 새 층에도 생활 시설을 놓을 수 있어요.`);
 }

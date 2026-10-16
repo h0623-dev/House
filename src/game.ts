@@ -11,6 +11,8 @@ import { cloneFarmEconomyFields, FARM_FERTILIZER_COST, getFarmPlotCare, markFarm
 import { cloneRoadsideFields, validateRoadsideProgress, type RoadsideProgress } from './roadside';
 import { cloneGatheringFields, validateGatheringProgress, type GatheringProgress } from './gathering';
 import { clonePetPassageFields, validatePetPassage, type PetPassageProgress } from './pet-passage';
+import { cloneCozyLifeFields, validateCozyLifeProgress, type CozyLifeProgress } from './cozy-life';
+import { cloneCozyDecorFields, validateCozyDecorProgress, type CozyDecorProgress } from './cozy-decor';
 import { validateGrowthQuests, type GrowthQuestProgress } from './growth-quests';
 import { validateVillageOrders, type VillageOrderProgress } from './village-orders';
 import { COMPANION_IDS, MAX_COMPANION_XP, getCompanions, isCompanionId, validateCompanionHealth, validateCompanions, type CompanionHealth, type CompanionId, type CompanionRoster } from './companions';
@@ -77,6 +79,10 @@ export interface GameState {
   gathering?: GatheringProgress;
   /** Player-operated animal passage; absent older saves keep the gate closed. */
   petPassage?: PetPassageProgress;
+  /** Local friendship and explicitly claimed daily life rewards. */
+  cozyLife?: CozyLifeProgress;
+  /** Crafted furniture inventory and the player's actual deck placements. */
+  cozyDecor?: CozyDecorProgress;
   /** Lifetime construction records stay separate from legacy settlement schemas. */
   facilityHistory?: FacilityHistory;
   /** Explicitly claimed sequential growth rewards; absent older saves receive no rewards. */
@@ -176,6 +182,8 @@ function copy(state: GameState): GameState {
     ...cloneRoadsideFields(state),
     ...cloneGatheringFields(state),
     ...clonePetPassageFields(state),
+    ...cloneCozyLifeFields(state),
+    ...cloneCozyDecorFields(state),
     ...cloneEnergyRecoveryFields(state),
     ...(state.facilityHistory ? { facilityHistory: { ...state.facilityHistory, builtTypes: [...state.facilityHistory.builtTypes], upgradedFacilityIds: [...state.facilityHistory.upgradedFacilityIds] } } : {}),
     ...(state.growthQuests ? { growthQuests: { claimed: [...state.growthQuests.claimed] } } : {}),
@@ -592,13 +600,14 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       if (next.deckLevel >= MAX_DECK_LEVEL) return fail('현재 만들 수 있는 가장 넓은 트럭이에요!');
       const cost = expansionCost(next);
       if (next.resources.wood < cost.wood || next.resources.scrap < cost.scrap) return fail(`확장하려면 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
-      if (!isNextFarmPlotClear(next)) return fail('새 밭이 생길 곳에 시설이 있어요. 시설을 옮긴 뒤 데크를 확장해 주세요.');
+      if (!isNextFarmPlotClear(next)) return fail('새 밭이 생길 곳에 시설이나 장식이 있어요. 옮긴 뒤 데크를 확장해 주세요.');
       next.resources.wood -= cost.wood;
       next.resources.scrap -= cost.scrap;
       next.deckLevel += 1;
       next.stats.expansions += 1;
       addEmptyPlot(next);
       if (next.deckPlacements && !validateDeckPlacements(next.deckPlacements, next)) return fail('확장 후 계단나 동물 문 앞에 걸리는 시설이 있어요. 통로 주변 시설을 옮겨 주세요.');
+      if (next.cozyDecor && !validateCozyDecorProgress(next.cozyDecor, next)) return fail('확장 후 새 밭이나 계단에 장식이 걸려요. 장식을 옮기거나 보관한 뒤 확장해 주세요.');
       next.morale = clamp(next.morale + 10);
       message = '우리 집이 더 넓어졌어요! 생활 공간과 새 텃밭 +1';
       duration = 60;
@@ -610,7 +619,7 @@ export function performAction(state: GameState, action: Action, plotId?: number,
       if (next.plots.length >= capacity) return fail(next.deckLevel < MAX_DECK_LEVEL
         ? '지금 데크의 밭을 모두 만들었어요. 트럭을 확장하면 밭을 더 늘릴 수 있어요.'
         : `밭 ${capacity}칸을 모두 만들었어요!`);
-      if (!isNextFarmPlotClear(next)) return fail('새 밭이 생길 곳에 시설이 있어요. 시설을 옮긴 뒤 밭을 늘려 주세요.');
+      if (!isNextFarmPlotClear(next)) return fail('새 밭이 생길 곳에 시설이나 장식이 있어요. 옮긴 뒤 밭을 늘려 주세요.');
       const cost = farmExpansionCost(next);
       if (next.resources.wood < cost.wood || next.resources.scrap < cost.scrap) return fail(`밭을 늘리려면 목재 ${cost.wood} · 고철 ${cost.scrap}이 필요해요.`);
       next.resources.wood -= cost.wood;
@@ -730,6 +739,8 @@ function validateSave(value: unknown): value is GameState {
   if (!value.quests.every(id => ['first-harvest', 'road-scout', 'bigger-home'].includes(id))) return false;
   if (!Array.isArray(value.log) || value.log.length > 30 || !value.log.every(entry => isText(entry, 400))) return false;
   const candidate = value as unknown as GameState;
+  if (Object.hasOwn(value, 'cozyLife') && !validateCozyLifeProgress(value.cozyLife)) return false;
+  if (Object.hasOwn(value, 'cozyDecor') && !validateCozyDecorProgress(value.cozyDecor, candidate)) return false;
   if (Object.hasOwn(value, 'deckPlacements') && !validateDeckPlacements(value.deckPlacements, candidate)) return false;
   if (Object.hasOwn(value, 'layoutDirections') && !validateLayoutDirections(value.layoutDirections, candidate)) return false;
   if (Object.hasOwn(value, 'facilityHistory') && !validateFacilityHistory(value.facilityHistory, candidate)) return false;

@@ -6,7 +6,12 @@ import './growth-quests.css';
 import './map-controls.css';
 import './farm-expansion.css';
 import './village.css';
-import { createGame, performAction, tick, applyOfflineProgress, saveGame, loadGame, expansionCost, farmExpansionCost, getFarmCapacity, questList, getCropProgress, resourceLabels, MAX_DECK_LEVEL, beginHunt, finishHunt, cancelHunt, setCompanionTeam, type Action, type Gender, type Resource, type CropId, CROPS, CROP_IDS, getSeedInventory, getSeedCount, getPlotCropId } from './game';
+import { createGame, performAction, tick, applyOfflineProgress, saveGame, loadGame, expansionCost, farmExpansionCost, getFarmCapacity, questList, getCropProgress, resourceLabels, MAX_DECK_LEVEL, beginHunt, finishHunt, cancelHunt, setCompanionTeam, type Action, type ActionResult, type Gender, type Resource, type CropId, CROPS, CROP_IDS, getSeedInventory, getSeedCount, getPlotCropId } from './game';
+import { initializeCozyDay, getCozyDateKey, getCozyDayPeriod, getCozyDayGoals, petAnimalLife, giftAnimalLife, completeAnimalRequest, claimCozyDayReward, recordCozyDecoration } from './cozy-life';
+import { COZY_DECOR_ITEMS, isCozyDecorId, getDecorPlacements, getDecorInventoryCount, getDecorFootprint, snapDecorPlacement, findFreeDecorPlacement, checkDecorPlacement, craftCozyDecoration, placeCozyDecoration, moveCozyDecoration, storeCozyDecoration, type CozyDecorId } from './cozy-decor';
+import { cozyDecorIcon } from './cozy-decor-art';
+import { renderCozyLife, renderAnimalLifeDetails, type CozyLifeTab } from './cozy-ui';
+import { createCozyAmbience } from './cozy-ambience';
 import { getVillageOrder, fulfillVillageOrder } from './village-orders';
 import { Scene } from './scene';
 import { getLayoutDirection, rotateLayoutTarget, type LayoutTarget } from './layout-direction';
@@ -64,6 +69,7 @@ let state = stored ?? createGame('female', '하루');
 // Anchor old site cooldowns to the original saved time before normal offline
 // progress consumes that absence. Loading alone never grants materials.
 state = { ...state, ...migrateLegacyGatheringFields(state) };
+state = initializeCozyDay(state);
 let playerConfirmed = Boolean(stored);
 const recoveredExpedition = Boolean(state.expedition);
 if (recoveredExpedition) state = { ...cancelHunt(state).state, lastSaved: Date.now() };
@@ -92,6 +98,11 @@ let animalRideKey='';
 let animalActionKind:'pet'|'mount'|'dismount'|null=null;
 let selectedFacilityId:number|null=null;
 let placement:{type:BuildingType;point:FacilityPlacement|null;movingId?:number}|null=null;
+let decorPlacement:{type:CozyDecorId;point:FacilityPlacement;movingId?:number}|null=null;
+let selectedDecorationId:number|null=null;
+let renderedDecorationKey='';
+let cozyTab:CozyLifeTab='today';
+let renderedCozyKey='';
 let modalBackdropPointer:number|null=null;
 let modalBackdropClickPointer:number|null=null;
 let selectedGrowthChapter:number|undefined;
@@ -122,6 +133,7 @@ let orientationBlocked=false;
 let gameOrientation:GameOrientationController|null=null;
 let toastTimer:ReturnType<typeof setTimeout>;
 let audioContext:AudioContext|undefined;
+const cozyAmbience=createCozyAmbience(()=>audioContext??=new AudioContext());
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const contentApplyingNotice=document.createElement('div');
 contentApplyingNotice.className='content-applying-notice';contentApplyingNotice.hidden=true;contentApplyingNotice.setAttribute('role','status');contentApplyingNotice.setAttribute('aria-live','polite');
@@ -166,6 +178,8 @@ app.innerHTML=`
     <div class="road-controls" id="road-controls" aria-label="전체 지도와 도로 활동"><button data-camera-player aria-label="지금 층의 전체 맵을 기본 크기로 보기">${icon('map')}<small>전체 보기</small></button><button data-road-walk aria-label="계단를 내려가 도로 걷기">${icon('move')}<small>도로 걷기</small></button><button class="travel-extra" data-open="roadside" aria-label="도로 채집 장소 보기">${icon('map')}<small>채집 장소</small></button><button class="travel-extra" data-road-return aria-label="실제 계단으로 트럭에 돌아오기">${icon('truck')}<small>트럭으로</small></button><button class="travel-extra" data-open="pet-passage" aria-label="동물 통로 문 조작">${icon('paw')}<small>동물 문</small></button><button class="travel-more" data-travel-toggle aria-label="도로 도구 펼치기" aria-expanded="false" aria-controls="road-controls">${icon('chevron')}<small>이동</small></button></div>
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
+    <section class="facility-sheet" id="decor-sheet" hidden aria-label="선택한 장식"></section>
+    <button class="cozy-life-tool" data-open="cozy-life" aria-label="우리 트럭의 일상">${icon('heart')}<small>일상</small><b data-cozy-ready hidden>!</b></button>
     <div class="chore-status" hidden role="status" aria-live="polite"></div>
     <div class="game-controls" id="farm-tray" hidden role="region" aria-label="농사 도구">
      <header class="farm-tray-heading"><strong>농사 도구</strong><button class="panel-dismiss" data-farm-dismiss aria-label="농사 도구 닫기">${icon('close')}<small>닫기</small></button></header>
@@ -193,6 +207,8 @@ app.innerHTML=`
 const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number,point?:FacilityPlacement)=>{
  if(startupPending||orientationBlocked||battleView||contentActivationPending)return;
  if(currentModal){if(currentModal==='build'||currentModal==='expand'||currentModal==='floors')closeModal();return;}
+ if(kind==='decoration-placement'){if(point&&decorPlacement){decorPlacement.point=point;scene.setDecorationMode(decorPlacement.type,point,decorPlacement.movingId);renderConstructionBar();}return;}
+ if(kind==='decoration'){if(plotId!==undefined&&!actionBusy)selectDecoration(plotId);return;}
  if(kind==='build-placement'){if(point)previewConstruction(point);return;}
  if(kind==='build-slot'){if(!placement&&!actionBusy)openModal('build');return;}
  if(kind==='facility-collect'||kind==='facility-start'){if(plotId!==undefined)operateFacility(kind==='facility-collect'?'collect':'start',plotId);return;}
@@ -230,9 +246,10 @@ function resumePlayerView(){
  setZone('home',false,true);setFarmTray(false);scene.setFarmFocus(false);scene.setMapMoveMode(false);scene.showVillageOverview();updateWalkingAvailability();
 }
 function updateWalkingAvailability(){
- scene.setWalkingEnabled(playerConfirmed&&!startupPending&&!orientationBlocked&&!contentActivationPending&&!battleView&&!currentModal&&!placement&&selectedFacilityId===null&&!actionBusy);
+ scene.setWalkingEnabled(playerConfirmed&&!startupPending&&!orientationBlocked&&!contentActivationPending&&!battleView&&!currentModal&&!placement&&!decorPlacement&&selectedFacilityId===null&&selectedDecorationId===null&&!actionBusy);
  renderGatheringDock();
  renderAnimalUI();
+ renderCozyTool();
 }
 document.querySelector('#world')!.addEventListener('sceneanimalinteractionchange',event=>{
  const detail=(event as CustomEvent<{phase:string}>).detail;
@@ -279,15 +296,16 @@ function dismissFarmTray(){
  document.querySelector<HTMLButtonElement>('[data-nav="farm"]')?.focus({preventScroll:true});
  finishDeferredUpdate();
 }
-function closeFacility(){document.querySelector('#toast')!.classList.remove('facility-toast');selectedFacilityId=null;scene.setSelectedFacility(null);document.querySelector<HTMLElement>('#facility-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('facility-selected','facility-repeat-ready');updateWalkingAvailability();}
+function closeDecorationContext(){selectedDecorationId=null;renderedDecorationKey='';scene.setSelectedDecoration(null);document.querySelector<HTMLElement>('#decor-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('decoration-selected');}
+function closeFacility(){closeDecorationContext();document.querySelector('#toast')!.classList.remove('facility-toast');selectedFacilityId=null;scene.setSelectedFacility(null);document.querySelector<HTMLElement>('#facility-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('facility-selected','facility-repeat-ready');updateWalkingAvailability();}
 function changeLayoutDirection(target:LayoutTarget){
- if(actionBusy||farmQueue.length||runningFarm||placement){toast('지금 작업을 마치고 방향을 바꿔 주세요.');return;}
+ if(actionBusy||farmQueue.length||runningFarm||placement||decorPlacement){toast('지금 작업을 마치고 방향을 바꿔 주세요.');return;}
  const result=rotateLayoutTarget(state,target);if(!result.ok){toast(result.message);return;}
  if(target.kind==='facility'&&!scene.relocatePetsForPlacement(result.state)){toast('주변 통로를 비운 뒤 방향을 바꿔 주세요.');return;}
  state=result.state;persist();
  render();ping();toast(result.message);
 }
-function cancelConstruction(){placement=null;scene.setConstructionMode(null);scene.setPlanningViewport(null);document.querySelector<HTMLElement>('#construction-bar')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('construction-mode');updateWalkingAvailability();}
+function cancelConstruction(){placement=null;decorPlacement=null;scene.setConstructionMode(null);scene.setDecorationMode(null);scene.setPlanningViewport(null);document.querySelector<HTMLElement>('#construction-bar')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('construction-mode','decoration-mode');updateWalkingAvailability();}
 function deckCellCount(deckLevel:number){const grid=getDeckGridBounds({deckLevel});return (grid.right-grid.left)*(grid.bottom-grid.top)/(DECK_CELL_SIZE*DECK_CELL_SIZE);}
 function facilityLocationLabel(building:Building){const point=getFacilityPlacement(state,building),size=getBuildingFootprint(building.type,point.rotation);return `${point.floor}층 · ${size.columns}×${size.rows}칸`;}
 function renderFloorControls(){
@@ -311,6 +329,9 @@ function chooseTruckFloor(floor:TruckFloor){
  closeModal();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);
  scene.setActiveFloor(floor);
  if(placement){placement.point=initialConstructionPoint(placement.type,floor);scene.setConstructionMode(placement.type,placement.point,placement.movingId);}
+ if(decorPlacement){const bounds=getFloorBounds(state.deckLevel,floor);decorPlacement.point=findFreeDecorPlacement(state,decorPlacement.type,floor,decorPlacement.movingId)
+   ??snapDecorPlacement(state,decorPlacement.type,{floor,x:(bounds.left+bounds.end)/2,y:(bounds.back+bounds.front)/2,rotation:decorPlacement.point.rotation});
+   scene.setDecorationMode(decorPlacement.type,decorPlacement.point,decorPlacement.movingId);scene.setPlanningViewport('placement');renderConstructionBar();}
  renderFloorControls();renderSettlement();
 }
 function purchaseTruckFloor(){
@@ -322,14 +343,85 @@ function purchaseTruckFloor(){
 }
 function selectFacility(id:number){
  const facility=getSettlement(state).buildings.find(b=>b.id===id);if(!facility)return;
- cancelConstruction();if(!actionBusy)stopFarmMode();closeModal();setZone('home');setFarmTray(false);selectedFacilityId=id;scene.setSelectedFacility(id);updateWalkingAvailability();renderSettlement();scene.focusFacility(id);
+ cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();closeModal();setZone('home');setFarmTray(false);selectedFacilityId=id;scene.setSelectedFacility(id);updateWalkingAvailability();renderSettlement();scene.focusFacility(id);
+}
+function cozyActionsAvailable(){
+ if(actionBusy||runningFarm||farmQueue.length||battleView||startupPending||contentActivationPending){toast('지금 작업을 마친 뒤 일상을 이어가요.');return false;}
+ state=initializeCozyDay(state);return true;
+}
+function commitCozyAction(result:ActionResult){
+ if(result.ok){state=result.state;persist();render();ping();}
+ if(result.message)toast(result.message);
+}
+function renderCozyBoard(force=false){
+ if(currentModal!=='cozy-life')return;
+ const key=JSON.stringify([cozyTab,state.cozyLife,state.cozyDecor,state.resources,state.shop?.coins,state.stats,
+   getCozyDateKey(),getCozyDayPeriod(Date.now(),state.minutes),actionBusy]);
+ if(!force&&key===renderedCozyKey)return;
+ const scroll=document.querySelector<HTMLElement>('#modal-root .modal')?.scrollTop??0;
+ renderedCozyKey=key;
+ modalShell('OUR LITTLE EVERYDAY','우리 트럭의 일상',renderCozyLife(state,cozyTab),true);
+ document.querySelector<HTMLElement>('#modal-root .modal')!.scrollTop=scroll;
+}
+function renderCozyTool(){
+ const tool=document.querySelector<HTMLButtonElement>('.cozy-life-tool')!;
+ tool.hidden=!playerConfirmed||startupPending||orientationBlocked||contentActivationPending||!!battleView||!!currentModal||!!placement||!!decorPlacement
+   ||selectedFacilityId!==null||selectedDecorationId!==null||farmTrayOpen||actionBusy||!!scene.getMountedAnimal();
+ const count=getCozyDayGoals(state).filter(goal=>goal.complete&&!goal.claimed).length;
+ const badge=tool.querySelector<HTMLElement>('[data-cozy-ready]')!;badge.hidden=count===0;badge.textContent=String(count);
+ tool.setAttribute('aria-label',count?`우리 트럭의 일상 · 받을 선물 ${count}개`:'우리 트럭의 일상');
+}
+function beginDecoration(type:CozyDecorId,movingId?:number){
+ if(!cozyActionsAvailable()||!requireOnFoot())return;
+ const moving=movingId===undefined?undefined:getDecorPlacements(state).find(item=>item.id===movingId);
+ if(movingId!==undefined&&!moving){toast('옮길 장식을 다시 선택해 주세요.');return;}
+ if(!moving&&getDecorInventoryCount(state,type)<1){toast('장식을 먼저 제작해 보관함에 준비해 주세요.');return;}
+ closeModal();cancelConstruction();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);setGatheringTray(false);
+ const floor=moving?.floor??scene.getActiveFloor(),bounds=getFloorBounds(state.deckLevel,floor);
+ const point=moving?{floor,x:moving.x,y:moving.y,rotation:moving.rotation}:findFreeDecorPlacement(state,type,floor)
+   ??snapDecorPlacement(state,type,{floor,x:(bounds.left+bounds.end)/2,y:(bounds.back+bounds.front)/2,rotation:0});
+ scene.setActiveFloor(floor);decorPlacement={type,point,...(movingId===undefined?{}:{movingId})};
+ document.querySelector('.scene-card')!.classList.add('construction-mode','decoration-mode');
+ scene.setDecorationMode(type,point,movingId);scene.setPlanningViewport('placement');
+ renderConstructionBar();renderFloorControls();updateWalkingAvailability();renderCozyTool();
+ toast('원하는 데크 칸을 누르거나 끌어 놓고 배치를 확정해요.');
+}
+function renderDecorationBar(bar:HTMLElement){
+ if(!decorPlacement)return;
+ const {type,point,movingId}=decorPlacement,definition=COZY_DECOR_ITEMS[type],size=getDecorFootprint(type,point.rotation);
+ const check=checkDecorPlacement(state,type,point,movingId);bar.hidden=false;
+ document.querySelector('.scene-card')!.classList.add('construction-mode','decoration-mode');
+ const key=JSON.stringify(['decor',type,point,movingId,check]);if(bar.dataset.preview===key)return;bar.dataset.preview=key;
+ bar.innerHTML=`<span class="construction-art">${cozyDecorIcon(type)}</span><div class="construction-info"><strong>${definition.name} <span class="construction-size">${size.columns}×${size.rows}칸</span></strong><small class="${check.ok?'construction-valid':'construction-invalid'}">${point.floor}층 · ${check.ok?'이 위치에 놓을 수 있어요':escape(check.message)}</small><span class="construction-cost">${movingId===undefined?'보관한 장식 사용 · 재료 추가 사용 없음':'무료 재배치'}</span></div><button class="placement-rotate" data-decor-rotate aria-label="장식 방향 바꾸기">${icon('refresh')}<small>회전</small></button><button class="placement-confirm" data-decor-confirm ${check.ok?'':'disabled'}>${icon('check')}<small>배치 확정</small></button><button class="placement-cancel" data-construction-cancel>${icon('close')}<small>취소</small></button>`;
+}
+function confirmDecoration(){
+ if(!decorPlacement||!cozyActionsAvailable())return;
+ const {type,point,movingId}=decorPlacement;
+ const result=movingId===undefined?placeCozyDecoration(state,type,point):moveCozyDecoration(state,movingId,point);
+ if(!result.ok){toast(result.message);return;}
+ if(!scene.relocatePetsForPlacement(result.state)){toast('안전한 통로를 확보할 수 없어요. 다른 칸에 놓아 주세요.');return;}
+ state=result.state;if(movingId===undefined){const daily=recordCozyDecoration(state);if(daily.ok)state=daily.state;}
+ cancelConstruction();persist();render();ping();toast(result.message);
+}
+function selectDecoration(id:number){
+ const decoration=getDecorPlacements(state).find(item=>item.id===id);if(!decoration||actionBusy)return;
+ cancelConstruction();closeFacility();closeModal();stopFarmMode();setZone('home');setFarmTray(false);closeAnimalContext();
+ selectedDecorationId=id;scene.setSelectedDecoration(id);document.querySelector('.scene-card')!.classList.add('facility-selected','decoration-selected');
+ updateWalkingAvailability();renderDecorationContext();renderCozyTool();
+}
+function renderDecorationContext(){
+ const panel=document.querySelector<HTMLElement>('#decor-sheet')!,placed=getDecorPlacements(state).find(item=>item.id===selectedDecorationId);
+ if(!placed){panel.hidden=true;if(selectedDecorationId!==null)closeFacility();return;}
+ panel.hidden=false;const key=JSON.stringify(placed);if(key===renderedDecorationKey)return;renderedDecorationKey=key;
+ const item=COZY_DECOR_ITEMS[placed.item];
+ panel.innerHTML=`<header class="facility-sheet-heading"><span class="facility-sheet-art">${cozyDecorIcon(placed.item)}</span><div><small>${placed.floor}층 · 우리집의 작은 취향</small><h3>${item.name}</h3></div><button class="sheet-close panel-dismiss" data-decor-dismiss aria-label="장식 메뉴 닫기">${icon('close')}<small>닫기</small></button></header><p class="decor-context-description">${item.description}</p><div class="facility-sheet-actions"><button class="facility-primary" data-decor-move="${placed.id}">${icon('move')}<span>위치 옮기기</span></button><button class="facility-primary" data-decor-store="${placed.id}">${icon('bag')}<span>보관하기</span></button></div><p class="facility-recipe">옮기기와 보관은 무료예요. 보관한 장식은 일상 → 트럭 꾸미기에서 다시 놓아요.</p>`;
 }
 function beginConstruction(type:BuildingType,movingId?:number){
  if(!requireOnFoot())return;
  if(battleView)return;if(actionBusy){toast('지금 작업을 마치면 시설을 배치할 수 있어요. 건설 목록은 둘러볼 수 있어요.');return;}
  const definition=BUILDINGS[type];
  if(state.deckLevel<definition.unlockLevel){toast(`데크 Lv.${definition.unlockLevel}부터 ${definition.name}을 지을 수 있어요.`);openModal('expand');return;}
- recenterMap();closeModal();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);
+ cancelConstruction();recenterMap();closeModal();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);
  const building=movingId===undefined?undefined:getSettlement(state).buildings.find(item=>item.id===movingId);
  const point=building?getFacilityPlacement(state,building):initialConstructionPoint(type,scene.getActiveFloor());
  scene.setActiveFloor(point.floor);
@@ -346,6 +438,7 @@ function previewConstruction(point:FacilityPlacement){
  placement.point={...point};renderConstructionBar();
 }
 function renderConstructionBar(){
+ if(decorPlacement){renderDecorationBar(document.querySelector<HTMLElement>('#construction-bar')!);return;}
  if(!placement)return;
  const bar=document.querySelector<HTMLElement>('#construction-bar')!,definition=BUILDINGS[placement.type],moving=placement.movingId!==undefined,point=placement.point;
  const size=getBuildingFootprint(placement.type,point?.rotation??0);
@@ -694,8 +787,9 @@ function render(){
  if(currentModal==='farm-delivery')renderLiveFarmDelivery();
  if(currentModal==='roadside'||currentModal==='outdoor-site'||currentModal==='ground-region')renderLiveRoadside();
  if(currentModal==='pet-passage')updatePetPassageControls();
+ if(currentModal==='cozy-life')renderCozyBoard();
  updateEnergyPanel();
- renderSettlement();renderVillageOrder();refreshUpdateUI();
+ renderSettlement();renderDecorationContext();renderCozyTool();renderVillageOrder();refreshUpdateUI();
 }
 
 function energyRecoveryText(){return state.energy>=100?'기력이 가득 찼어요':secondsUntilEnergyRecovery(state)+'초 뒤 +1';}
@@ -870,6 +964,7 @@ async function action(a:Action,plotId?:number,cropId:CropId=selectedCropId,queue
   actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');
  }
  state=recoverEnergy(state);
+ state=initializeCozyDay(state);
  const result=performAction(state,a,plotId,cropId,{advanceClock:!animatedActions.includes(a)});
  state=result.state;
  if(result.ok&&a==='expandFarm'){selectedPlotId=state.plots.at(-1)!.id;scene.setSelectedPlot(selectedPlotId);}
@@ -923,6 +1018,7 @@ function companionRosterCards(compact=false){
  }).join('')}</div><p class="unit-village-bonus">${icon('truck')} 마을 지원 · 공격 +${Math.round((bonuses.attackMultiplier-1)*100)}% · 받는 피해 −${Math.round((1-bonuses.enemyDamageMultiplier)*100)}%<small>동료의 쉼터와 도로 관측소를 개선하면 강해져요.</small></p></section>`;
 }
 const dialogThemes: Record<string, readonly [string, string]> = {
+ 'cozy-life':['heart','우리 트럭의 일상'],
  welcome:['truck','로드헤이븐'], village:['truck','우리 트럭 마을'], quests:['flag','마을의 다음 이야기'],
  farm:['leaf','농장 생활'], seeds:['seeds','씨앗 가방'], 'farm-delivery':['food','우리 마을의 수확'], 'crop-ledger':['book','작물 이야기'],
  hunt:['shield','동물 원정대'], pet:['paw','우리의 작은 동료'], 'pet-team':['paw','동물 전투 편성'], 'pet-passage':['paw','동물 통로'],
@@ -941,7 +1037,7 @@ function modalShell(_eyebrow:string,title:string,body:string,wide=false){
  root.innerHTML=`<section class="modal modal-${currentModal} ${wide?'modal-wide':''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header class="game-dialog-heading"><span class="game-dialog-emblem" aria-hidden="true">${icon(emblem)}</span><div><div class="eyebrow">${category}</div><h2 id="modal-title">${title}</h2></div>${closeButton}</header>${body}</section>`;
  requestAnimationFrame(()=>root.querySelector<HTMLButtonElement>('button')?.focus());
 }
-function closeModal(){if(currentModal==='welcome'&&!playerConfirmed)return;modalBackdropPointer=null;modalBackdropClickPointer=null;const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=true;root.classList.remove('planning-catalog','planning-expansion');document.querySelector('.scene-card')!.classList.remove('planning-catalog','planning-expansion');scene.setExpansionPreview(null);if(!placement)scene.setPlanningViewport(null);currentModal='';updateNav();updateWalkingAvailability();}
+function closeModal(){if(currentModal==='welcome'&&!playerConfirmed)return;modalBackdropPointer=null;modalBackdropClickPointer=null;const root=document.querySelector<HTMLElement>('#modal-root')!;root.hidden=true;root.classList.remove('planning-catalog','planning-expansion');document.querySelector('.scene-card')!.classList.remove('planning-catalog','planning-expansion');scene.setExpansionPreview(null);if(!placement&&!decorPlacement)scene.setPlanningViewport(null);currentModal='';updateNav();updateWalkingAvailability();}
 function renderLiveShop(force=false){
  const key=JSON.stringify([currentModal,shopTab,shopQuantity,shopPending,state.gender,state.deckLevel,state.resources,getSeedInventory(state),getShop(state),state.companions,state.animalReserve]);
  if(!force&&key===renderedShopKey)return;
@@ -1003,8 +1099,8 @@ function showAnimalContext(id:UnitId,focus=false){
  if(scene.getMountedAnimal()){if(id===scene.getMountedAnimal())scene.focusAnimal(id);else requireOnFoot();return;}
  scene.stopWalking();
  if(currentModal)closeModal();
- if(placement)cancelConstruction();
- if(selectedFacilityId!==null)closeFacility();
+ if(placement||decorPlacement)cancelConstruction();
+ if(selectedFacilityId!==null||selectedDecorationId!==null)closeFacility();
  if(farmMode)stopFarmMode();
  if(farmTrayOpen)setFarmTray(false);
  setGatheringTray(false);
@@ -1017,7 +1113,7 @@ function renderAnimalUI(){
  const card=document.querySelector('.scene-card')!;
  card.classList.toggle('animal-riding',Boolean(mounted));card.classList.toggle('animal-interacting',interacting);
  const views=scene.getAnimalInteractions(),sheet=document.querySelector<HTMLElement>('#animal-sheet')!,hud=document.querySelector<HTMLElement>('#animal-ride-hud')!;
- const blocked=startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||farmTrayOpen||selectedFacilityId!==null;
+ const blocked=startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||Boolean(decorPlacement)||farmTrayOpen||selectedFacilityId!==null||selectedDecorationId!==null;
  hud.hidden=!mounted||blocked;
  if(mounted&&!hud.hidden){
   const view=views.find(animal=>animal.id===mounted),key=JSON.stringify([mounted,actionBusy,interacting,view?.canDismount]);
@@ -1028,23 +1124,31 @@ function renderAnimalUI(){
  sheet.hidden=!animal;
  if(!animal){animalPanelKey='';return;}
  const id=animal.id,definition=UNITS[id],rideable=id==='elephant'||id==='giraffe';
- const key=JSON.stringify([animal,scene.getActiveFloor()]);if(key===animalPanelKey)return;animalPanelKey=key;
- sheet.innerHTML=`<header class="animal-sheet-heading">${companionPortrait(id)}<div><strong>${definition.name}</strong><small>${definition.speciesLabel} · ${animal.surface==='road'?'지상에서 지내는 중':'트럭에서 지내는 중'}</small></div><button class="panel-dismiss" data-animal-dismiss aria-label="동물 메뉴 닫기">${icon('close')}<small>닫기</small></button></header><div class="animal-sheet-actions"><button data-animal-pet="${id}" ${animal.available?'':'disabled'}>${icon('paw')}<small>쓰다듬기</small></button>${rideable?`<button data-animal-ride="${id}" ${animal.mountable?'':'disabled'}>${icon('move')}<small>올라타기</small></button>`:''}</div><p>${!animal.available?'동물이 편히 쉴 수 있는 곳에서 다시 만나요.':rideable&&!animal.mountable?(animal.health<=0?'동료 돌보기로 체력을 회복해 주세요.':'지상에 내려와 있을 때 등에 탈 수 있어요.'):'곁으로 다가가 함께 시간을 보내요.'}</p>`;
+ const key=JSON.stringify([animal,scene.getActiveFloor(),state.cozyLife,state.resources,getCozyDateKey(),getCozyDayPeriod(Date.now(),state.minutes)]);if(key===animalPanelKey)return;animalPanelKey=key;
+ sheet.innerHTML=`<header class="animal-sheet-heading">${companionPortrait(id)}<div><strong>${definition.name}</strong><small>${definition.speciesLabel} · ${animal.surface==='road'?'지상에서 지내는 중':'트럭에서 지내는 중'}</small></div><button class="panel-dismiss" data-animal-dismiss aria-label="동물 메뉴 닫기">${icon('close')}<small>닫기</small></button></header><div class="animal-sheet-actions"><button data-animal-pet="${id}" ${animal.available?'':'disabled'}>${icon('paw')}<small>쓰다듬기</small></button>${rideable?`<button data-animal-ride="${id}" ${animal.mountable?'':'disabled'}>${icon('move')}<small>올라타기</small></button>`:''}</div><p>${!animal.available?'동물이 편히 쉴 수 있는 곳에서 다시 만나요.':rideable&&!animal.mountable?(animal.health<=0?'동료 돌보기로 체력을 회복해 주세요.':'지상에 내려와 있을 때 등에 탈 수 있어요.'):'곁으로 다가가 함께 시간을 보내요.'}</p>${renderAnimalLifeDetails(state,id)}`;
 }
-async function interactWithAnimal(kind:'pet'|'mount'|'dismount',id:UnitId):Promise<boolean>{
+async function interactWithAnimal(kind:'pet'|'mount'|'dismount',id:UnitId,lifeAction:'pet'|'gift'|'request'='pet',requestId?:string):Promise<boolean>{
  if(actionBusy||battleView||startupPending||contentActivationPending)return false;
  if(kind!=='dismount'&&!requireOnFoot())return false;
+ state=initializeCozyDay(state);
+ if(kind==='pet'&&lifeAction!=='pet'){const ready=lifeAction==='gift'?giftAnimalLife(state,id):completeAnimalRequest(state,id,Date.now(),requestId);if(!ready.ok){toast(ready.message);return false;}}
  if(currentModal)closeModal();
  cancelConstruction();closeFacility();if(farmMode)stopFarmMode();setFarmTray(false);closeAnimalContext();setGatheringTray(false);
  animalActionKind=kind;actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
  const status=document.querySelector<HTMLElement>('.chore-status')!;
- status.innerHTML=`<span class="chore-pulse">${icon('paw')}</span><div><strong>${UNITS[id].name}와 함께<small data-animal-phase>${kind==='dismount'?'내려올 자리를 살피는 중':'곁으로 걸어가는 중'}</small></strong><span>${kind==='pet'?'손을 뻗어 다정하게 쓰다듬어요':kind==='mount'?'등에 올라 함께 지상 길을 산책해요':'주변을 살피고 안전한 땅으로 내려와요'}</span></div>`;status.hidden=false;
+ status.innerHTML=`<span class="chore-pulse">${icon('paw')}</span><div><strong>${UNITS[id].name}와 함께<small data-animal-phase>${kind==='dismount'?'내려올 자리를 살피는 중':'곁으로 걸어가는 중'}</small></strong><span>${kind==='pet'?(lifeAction==='gift'?'좋아하는 선물을 직접 전하러 가요':lifeAction==='request'?'부탁한 물품을 직접 전하러 가요':'손을 뻗어 다정하게 쓰다듬어요'):kind==='mount'?'등에 올라 함께 지상 길을 산책해요':'주변을 살피고 안전한 땅으로 내려와요'}</span></div>`;status.hidden=false;
  let ok=false;
  try{
   if(kind==='pet')await scene.playPetting(id);else if(kind==='mount')await scene.mountAnimal(id);else await scene.dismountAnimal();
-  if(kind==='pet')state={...state,morale:Math.min(100,state.morale+3),log:[`${UNITS[id].name}를 쓰다듬으며 잠깐 쉬었어요.`,...state.log].slice(0,30)};
+  let lifeMessage='';
+  if(kind==='pet'){
+   const result=lifeAction==='gift'?giftAnimalLife(state,id):lifeAction==='request'?completeAnimalRequest(state,id,Date.now(),requestId):petAnimalLife(state,id);
+   if(lifeAction!=='pet'&&!result.ok){toast(result.message);return false;}
+   if(result.ok){state=result.state;lifeMessage=result.message;}
+   state={...state,morale:Math.min(100,state.morale+3),log:[`${UNITS[id].name}와 다정한 시간을 보냈어요.`,...state.log].slice(0,30)};
+  }
   persist();ping();ok=true;
-  toast(kind==='pet'?`${UNITS[id].name}와 다정한 시간을 보냈어요. 기분 +3`:kind==='mount'?`${UNITS[id].name} 등에 탔어요. 빈 지상 길을 눌러 이동해요.`:`${UNITS[id].name} 곁의 안전한 땅에 내렸어요.`);
+  toast(kind==='pet'?(lifeMessage||`${UNITS[id].name}와 다정한 시간을 보냈어요. 기분 +3`):kind==='mount'?`${UNITS[id].name} 등에 탔어요. 빈 지상 길을 눌러 이동해요.`:`${UNITS[id].name} 곁의 안전한 땅에 내렸어요.`);
  }catch(error){toast(error instanceof Error?error.message:'동물에게 다가가지 못했어요. 주변 길을 비우고 다시 만나 주세요.');}
  finally{animalActionKind=null;actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');render();finishDeferredUpdate();}
  return ok;
@@ -1060,7 +1164,7 @@ function setGatheringTray(open:boolean){
 }
 function renderGatheringDock(){
  const dock=document.querySelector<HTMLElement>('.gathering-dock')!;
- dock.hidden=!playerConfirmed||startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||selectedFacilityId!==null||farmTrayOpen||actionBusy||Boolean(scene.getMountedAnimal())||scene.getActiveFloor()!==1;
+ dock.hidden=!playerConfirmed||startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||Boolean(decorPlacement)||selectedFacilityId!==null||selectedDecorationId!==null||farmTrayOpen||actionBusy||Boolean(scene.getMountedAnimal())||scene.getActiveFloor()!==1;
  if(dock.hidden){if(gatheringTrayOpen)setGatheringTray(false);return;}
  if(!gatheringTrayOpen)return;
  const now=Date.now();
@@ -1176,7 +1280,7 @@ async function gatherGroundResource(id:GroundResourceId,focusTarget=false):Promi
  if(!requireOnFoot())return false;
  if(actionBusy||battleView||startupPending||contentActivationPending)return false;
  if(currentModal==='outdoor-site'||currentModal==='roadside'||currentModal==='ground-region')closeModal();
- state=recoverEnergy(state);
+ state=initializeCozyDay(recoverEnergy(state));
  const before=performGatheringAction(state,id);if(!before.ok){toast(before.message);return false;}
  if(!prepareRoadWalk(true))return false;
  if(focusTarget)scene.focusGroundResource(id);
@@ -1187,6 +1291,7 @@ async function gatherGroundResource(id:GroundResourceId,focusTarget=false):Promi
  try{await scene.playGroundResourceAction(id);}catch(error){failure=error;}finally{actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');}
  if(failure){render();finishDeferredUpdate();toast(failure instanceof Error?failure.message:'통로를 확인하고 다시 채집해 주세요.');return false;}
  state=recoverEnergy(state);
+ state=initializeCozyDay(state);
  const result=performGatheringAction(state,id);if(result.ok){state=result.state;persist();ping();}render();toast(result.message);finishDeferredUpdate();return result.ok;
 }
 function farmExpansionSummary(){
@@ -1282,8 +1387,9 @@ function openModal(kind:string){
   return;
  }
  if(kind==='village'){setZone('home');setFarmTray(false);modalShell('OUR GROWING TRUCK VILLAGE','마을 생산과 다음 성장',`<div id="village-management">${renderVillageManagement(state,getVillageHub(state))}</div>`,true);showPlanningSheet('catalog','village');}
+ if(kind==='cozy-life'){state=initializeCozyDay(state);renderedCozyKey='';renderCozyBoard(true);return;}
  if(kind==='shop'){shopPending=null;renderedShopKey='';renderLiveShop(true);}
- if(kind==='menu')modalShell('OUR LITTLE VILLAGE','마을 메뉴',`<div class="village-menu-grid">${[['flag','성장 목표','settlement-goals'],['expand','트럭 확장','expand'],['plot-empty','밭 확장','farm-expand'],['axe','벌목장','grove'],['bag','마을 의뢰','orders'],['bag','트럭 상점','shop'],['settings','설정','settings'],['paw','동물 동료','pet'],['character','생존자','character'],['map','도움말','guide']].map(([i,t,id])=>`<button data-open="${id}">${icon(i)}<span>${t}</span></button>`).join('')}</div>`);
+ if(kind==='menu')modalShell('OUR LITTLE VILLAGE','마을 메뉴',`<div class="village-menu-grid">${[['heart','우리 트럭의 일상','cozy-life'],['flag','성장 목표','settlement-goals'],['expand','트럭 확장','expand'],['plot-empty','밭 확장','farm-expand'],['axe','벌목장','grove'],['bag','마을 의뢰','orders'],['bag','트럭 상점','shop'],['settings','설정','settings'],['paw','동물 동료','pet'],['character','생존자','character'],['map','도움말','guide']].map(([i,t,id])=>`<button data-open="${id}">${icon(i)}<span>${t}</span></button>`).join('')}</div>`);
  if(kind==='farm-delivery'){renderedFarmDeliveryKey='';renderLiveFarmDelivery();}
  if(kind==='roadside'||kind==='outdoor-site'||kind==='ground-region'){renderedRoadsideKey='';renderLiveRoadside();}
  if(kind==='pet-passage')modalShell('A PATH FOR OUR FRIENDS','동물 통로 문',petPassageContent());
@@ -1329,7 +1435,7 @@ function openModal(kind:string){
  if(kind==='guide'){modalShell('WELCOME TO ROAD HAVEN','천천히, 함께 살아가기',`<div class="guide-list">${[['move','원하는 곳으로 화면을 움직여요','빈 바닥을 톡 누르면 캐릭터가 걸어가요. 다시 누르면 방향을 바꾸고 건물은 피해 가요. 도로와 트럭 사이는 계단으로 오가요. 층 버튼으로 1·2·3층을 선택하고 연결 계단을 이용해요. 완성된 시설을 누르면 무료로 재배치할 수 있어요. 손가락으로 끌면 화면이 움직여요. 밭 위에서도 화면을 움직이려면 왼쪽 화면 이동 버튼을 켜 주세요. 이동 모드에서는 씨앗을 쓰거나 시설을 선택하지 않아요. 두 손가락으로 이동·확대도 가능하며, 기본 보기나 우리 트럭 메뉴로 돌아올 수 있어요.'],['seeds','심고, 돌보고, 수확해요','씨앗을 한 번 골라 두면 심기 이어하기로 다시 사용할 수 있어요. 밭을 누르거나 손가락으로 쓸면 차례로 심고 돌봐요. 아래 물 주기·수확·영양 버튼은 한 번 누르면 가능한 밭을 모두 작업해요. 자라는 작물에 식량 1개로 한 번 영양을 주면 수확량이 2개 늘어요. 실제 수확한 작물을 납품하면 코인·경험치·건설 재료를 받아요. 작업 종료는 대기를 취소하고 지금 밭만 마쳐요.'],['wood','도로 너머를 탐색해요','트럭 차체 바깥 도로를 자유롭게 걸어요. 벌목장·고철 수거장·씨앗 풀밭·샘터에서 필요한 물자를 골라 직접 모아요. 계단으로 트럭에 돌아오고, 채집 장소는 표시된 초가 지나면 다시 준비돼요. 사냥은 동물 11종 중 최대 3마리를 편성하는 전투 스테이지에서 진행돼요.'],['hammer','트럭을 우리집으로 만들어요','데크를 확장하면 기본 밭 1칸과 추가 농장 공간이 열려요. 화면 왼쪽 밭 확장에서 재료를 써 새 밭을 만들 수 있어요. 데크 단계마다 최대 밭이 3칸씩 늘어 총 24칸까지 가꿀 수 있어요. 시설은 Lv.5까지 개선할 수 있어요.'],['bolt','기력이 자연스럽게 차올라요','기력은 실제 시간 20초마다 1씩, 1분에 3씩 자동 회복돼요. 게임을 닫아도 최대 100까지 회복됩니다. 동료 화면의 돌보기는 동물 체력을 회복하고, 쓰다듬기는 행복을 채워요.'],['shield','우리의 일상은 저장돼요','진행 상황은 이 기기에 자동 저장돼요. 앱을 삭제하거나 데이터를 지우면 저장도 사라져요.']].map(([i,t,d])=>`<div><span>${icon(i)}</span><article><h3>${t}</h3><p>${d}</p></article></div>`).join('')}</div>`);}
  if(kind==='reset')modalShell('A FRESH START','새로운 여행을 시작할까요?',`<p class="modal-description">현재 기기의 모든 진행 상황이 지워집니다.<br>이 작업은 되돌릴 수 없어요.</p><button class="button button-danger full-width" data-reset>진행 상황을 지우고 새로 시작</button><button class="text-button full-width" data-close>지금의 여행 계속하기</button>`);
 }
-function renderSettings(){modalShell('MAKE YOURSELF AT HOME','우리집 설정',`<div class="settings-row"><div><strong>게임 소리</strong><p>작은 행동에 기분 좋은 소리를 더해요</p></div><button class="toggle ${sound?'on':''}" data-sound aria-label="게임 소리 ${sound?'끄기':'켜기'}" aria-pressed="${sound}"><span></span></button></div><div class="settings-row"><div><strong>시간 흐름</strong><p>현재 ${paused?'쉬어 가는 중':'흘러가는 중'}</p></div><button class="button button-light small" data-pause>${paused?'계속하기':'잠시 멈춤'}</button></div><button class="button button-light full-width" data-game-landscape>가로 전체 화면으로 플레이</button><p class="fine-print">회전이 지원되지 않으면 자동 회전을 켜고 기기를 옆으로 돌려 주세요.</p>${updateSettingsContent()}<button class="text-button full-width" data-save>${icon('check')} 지금 저장하기</button><button class="text-button danger full-width" data-open="reset">새로운 여행 시작</button><p class="fine-print">ROAD HAVEN · 로드헤이븐 v${APP_VERSION}<br>당신의 기기에 머무는 작은 세상</p>`);refreshUpdateUI();}
+function renderSettings(){modalShell('MAKE YOURSELF AT HOME','우리집 설정',`<div class="settings-row"><div><strong>게임 소리</strong><p>바람·새소리·밤벌레와 부드러운 발소리를 들어요</p></div><button class="toggle ${sound?'on':''}" data-sound aria-label="게임 소리 ${sound?'끄기':'켜기'}" aria-pressed="${sound}"><span></span></button></div><div class="settings-row"><div><strong>시간 흐름</strong><p>현재 ${paused?'쉬어 가는 중':'흘러가는 중'}</p></div><button class="button button-light small" data-pause>${paused?'계속하기':'잠시 멈춤'}</button></div><button class="button button-light full-width" data-game-landscape>가로 전체 화면으로 플레이</button><p class="fine-print">회전이 지원되지 않으면 자동 회전을 켜고 기기를 옆으로 돌려 주세요.</p>${updateSettingsContent()}<button class="text-button full-width" data-save>${icon('check')} 지금 저장하기</button><button class="text-button danger full-width" data-open="reset">새로운 여행 시작</button><p class="fine-print">ROAD HAVEN · 로드헤이븐 v${APP_VERSION}<br>당신의 기기에 머무는 작은 세상</p>`);refreshUpdateUI();}
 function updateSettingsContent(){
  const native=isNativeUpdateSupported(),supported=isLiveUpdateSupported();
  return `<div class="update-box game-content-update"><div class="update-heading">${icon('check')}<strong>게임 콘텐츠 자동 업데이트</strong><span>v${APP_VERSION}</span></div><p data-live-update-message>${escape(liveUpdate.message)}</p><div class="update-download-progress" data-live-update-progress hidden><i></i></div><p class="update-explanation">${supported?'게임을 열면 새 콘텐츠를 자동으로 준비해요. 진행을 저장한 뒤 적용하고, 이동·농사·전투 중에는 기다려요.':'이 화면은 현재 게임 파일로 실행돼요. 공개 플레이 주소에서 자동 업데이트를 이용할 수 있어요.'}</p><button class="button button-light full-width" data-live-update-check ${supported?'':'hidden'}>게임 업데이트 다시 확인</button></div>${native?`<div class="update-box native-feature-update"><div class="update-heading">${icon('download')}<strong>앱 기능 업데이트</strong><span>Android</span></div><p data-native-update-message>${escape(native?automaticUpdate.message:lastUpdate?.message??'앱을 시작할 때 새 버전을 확인해요.')}</p><div class="update-download-progress" data-native-update-progress hidden><i></i></div><div class="release-notes" data-update-release-notes>${escape(lastUpdate?.release?.notes??'')}</div><button class="button button-light full-width" data-update ${updateBusy?'disabled':''}>${updateBusy?'확인하는 중…':'앱 새 버전 확인'}</button><button class="button full-width" data-install-update hidden>받은 새 버전 설치하기</button><button class="button button-light full-width" data-retry-native-update hidden>다운로드 다시 시도</button><button class="button full-width" data-download ${!native&&lastUpdate?.status==='available'?'':'hidden'}>Android APK 다운로드</button><small>${native?'새 앱 기능이 필요할 때는 설치 확인을 한 번 진행해 주세요. 다운로드는 앱 안에서 자동으로 준비해요.':'브라우저에서는 APK를 내려받아 Android에 설치할 수 있어요.'}</small></div>`:''}${showInstallHelp()?'<button class="button button-light full-width" data-open="install">홈 화면에 추가하는 방법</button>':''}`;
@@ -1362,14 +1468,14 @@ function setContentApplying(applying:boolean){
 }
 function onLiveUpdate(next:LiveUpdateState){liveUpdate=next;if(next.status==='error'&&contentActivationPending)setContentApplying(false);refreshUpdateUI();maybeApplyContentUpdate();}
 function maybeApplyContentUpdate(){
- if(startupPending||liveUpdate.status!=='ready'||contentActivationPending||!canActivateLiveUpdate()||document.hidden||actionBusy||scene.isWalking()||scene.isAnimalInteracting()||scene.getMountedAnimal()||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return;
+ if(startupPending||liveUpdate.status!=='ready'||contentActivationPending||!canActivateLiveUpdate()||document.hidden||actionBusy||scene.isWalking()||scene.isAnimalInteracting()||scene.getMountedAnimal()||battleView||currentModal||placement||decorPlacement||selectedFacilityId!==null||selectedDecorationId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return;
  if(!persist())return;
  setContentApplying(true);refreshUpdateUI();
  void activateLiveUpdate().then(accepted=>{if(!accepted){setContentApplying(false);refreshUpdateUI();}}).catch(()=>{setContentApplying(false);refreshUpdateUI();});
 }
 setWebUpdateActivationGuard(()=>{
  // Peer tabs freeze in memory; only the initiating tab writes the shared save.
- if(startupPending||contentActivationPending||actionBusy||scene.isWalking()||scene.isAnimalInteracting()||scene.getMountedAnimal()||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return false;
+ if(startupPending||contentActivationPending||actionBusy||scene.isWalking()||scene.isAnimalInteracting()||scene.getMountedAnimal()||battleView||currentModal||placement||decorPlacement||selectedFacilityId!==null||selectedDecorationId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return false;
  return true;
 },applying=>{setContentApplying(applying);refreshUpdateUI();},()=>startupPending&&!stored?true:persist());
 async function requestAutomaticInstall(){
@@ -1410,6 +1516,23 @@ document.addEventListener('pointercancel',event=>{
 document.addEventListener('click',e=>{
  const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||orientationBlocked||battleView||contentActivationPending)return;
  if(t.hasAttribute('data-farm-dismiss')){dismissFarmTray();return;}
+ if(t.dataset.cozyTab&&['today','friends','decor'].includes(t.dataset.cozyTab)){
+  cozyTab=t.dataset.cozyTab as CozyLifeTab;renderedCozyKey='';
+  if(currentModal==='cozy-life')renderCozyBoard(true);else openModal('cozy-life');return;
+ }
+ if(t.dataset.cozyClaim){if(cozyActionsAvailable())commitCozyAction(claimCozyDayReward(state,t.dataset.cozyClaim,Date.now(),t.dataset.cozyDay));return;}
+ if(t.dataset.cozyGift&&isUnitId(t.dataset.cozyGift)){if(cozyActionsAvailable())void interactWithAnimal('pet',t.dataset.cozyGift,'gift');return;}
+ if(t.dataset.cozyRequest&&isUnitId(t.dataset.cozyRequest)){if(cozyActionsAvailable())void interactWithAnimal('pet',t.dataset.cozyRequest,'request',t.dataset.cozyRequestId);return;}
+ if(t.dataset.decorCraft&&isCozyDecorId(t.dataset.decorCraft)){if(cozyActionsAvailable())commitCozyAction(craftCozyDecoration(state,t.dataset.decorCraft));return;}
+ if(t.dataset.decorPlace&&isCozyDecorId(t.dataset.decorPlace)){beginDecoration(t.dataset.decorPlace);return;}
+ if(t.hasAttribute('data-decor-dismiss')){closeFacility();finishDeferredUpdate();return;}
+ if(t.hasAttribute('data-decor-confirm')){confirmDecoration();return;}
+ if(t.hasAttribute('data-decor-rotate')&&decorPlacement){
+  decorPlacement.point=snapDecorPlacement(state,decorPlacement.type,{...decorPlacement.point,rotation:decorPlacement.point.rotation===0?1:0});
+  scene.setDecorationMode(decorPlacement.type,decorPlacement.point,decorPlacement.movingId);renderConstructionBar();return;
+ }
+ if(t.dataset.decorMove){const item=getDecorPlacements(state).find(item=>item.id===Number(t.dataset.decorMove));if(item)beginDecoration(item.item,item.id);return;}
+ if(t.dataset.decorStore){if(cozyActionsAvailable()){const result=storeCozyDecoration(state,Number(t.dataset.decorStore));if(result.ok)closeFacility();commitCozyAction(result);}return;}
  if(t.hasAttribute('data-animal-dismiss')){closeAnimalContext();return;}
  if(t.dataset.animalFocus&&isUnitId(t.dataset.animalFocus)){showAnimalContext(t.dataset.animalFocus,true);return;}
  if(t.dataset.animalPet&&isUnitId(t.dataset.animalPet)){void interactWithAnimal('pet',t.dataset.animalPet);return;}
@@ -1529,7 +1652,7 @@ document.addEventListener('click',e=>{
  if(t.dataset.action)void action(t.dataset.action as Action,t.dataset.plot!==undefined?Number(t.dataset.plot):undefined);
  if(t.dataset.gender){selectedGender=t.dataset.gender as Gender;document.querySelectorAll('[data-gender]').forEach(el=>el.classList.toggle('selected',el===t));}
  if(t.hasAttribute('data-start')){const name=(document.querySelector<HTMLInputElement>('#player-name')?.value??'').trim();if(!name){toast('함께할 생존자의 이름을 알려 주세요.');return;}state={...state,gender:selectedGender,name:name.slice(0,16)};playerConfirmed=true;persist();closeModal();render();toast(`${state.name}, 우리집에 온 걸 환영해요!`);}
- if(t.hasAttribute('data-sound')){sound=!sound;document.querySelector('.sound-toggle')!.innerHTML=icon(sound?'volume':'mute');document.querySelector('.sound-toggle')!.setAttribute('aria-label',sound?'소리 끄기':'소리 켜기');if(sound)ping();if(currentModal==='settings')renderSettings();}
+ if(t.hasAttribute('data-sound')){sound=!sound;cozyAmbience.setEnabled(sound);document.querySelector('.sound-toggle')!.innerHTML=icon(sound?'volume':'mute');document.querySelector('.sound-toggle')!.setAttribute('aria-label',sound?'소리 끄기':'소리 켜기');if(sound)ping();if(currentModal==='settings')renderSettings();}
  if(t.hasAttribute('data-pause')){paused=!paused;document.querySelector('.time-button')!.innerHTML=icon(paused?'play':'pause');document.querySelector('.time-button')!.setAttribute('aria-label',paused?'시간 계속':'시간 일시정지');if(currentModal==='settings')renderSettings();}
  if(t.hasAttribute('data-save'))toast(persist()?'소중한 하루를 저장했어요.':'저장하지 못했어요. 기기 저장 공간을 확인해 주세요.');
  if(t.hasAttribute('data-reset')){stopFarmMode();seedChosen=false;selectedCropId='carrot';try{localStorage.removeItem(selectedSeedStorageKey);}catch{}state=createGame(state.gender,'하루');selectedPlotId=state.plots[0]?.id??null;scene.resetPosition();setZone('home');persist();render();openModal('welcome');}
@@ -1543,10 +1666,12 @@ modalRoot.addEventListener('pointerdown',e=>{modalBackdropPointer=e.target===mod
 modalRoot.addEventListener('pointerup',e=>{modalBackdropClickPointer=modalBackdropPointer===e.pointerId&&e.target===modalRoot?e.pointerId:null;modalBackdropPointer=null;});
 modalRoot.addEventListener('pointercancel',()=>{modalBackdropPointer=null;modalBackdropClickPointer=null;});
 modalRoot.addEventListener('click',e=>{const backdropGesture=modalBackdropClickPointer!==null&&(!(e instanceof PointerEvent)||e.pointerId===modalBackdropClickPointer);modalBackdropClickPointer=null;if(!startupPending&&e.target===modalRoot&&backdropGesture)closeModal();});
-document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(animalContextId){closeAnimalContext();return;}if(gatheringTrayOpen){setGatheringTray(false);document.querySelector<HTMLButtonElement>('[data-gather-toggle]')!.focus();return;}if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmTrayOpen||farmMode){dismissFarmTray();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
+document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(animalContextId){closeAnimalContext();return;}if(gatheringTrayOpen){setGatheringTray(false);document.querySelector<HTMLButtonElement>('[data-gather-toggle]')!.focus();return;}if(currentModal)closeModal();else if(placement||decorPlacement)cancelConstruction();else if(selectedFacilityId!==null||selectedDecorationId!==null)closeFacility();else if(farmTrayOpen||farmMode){dismissFarmTray();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
 let saveCounter=0;
 setInterval(()=>{
  if(!startupPending&&!contentActivationPending&&playerConfirmed){
+  const day=initializeCozyDay(state);if(day!==state){state=day;persist();render();}
+  if(currentModal==='cozy-life')renderCozyBoard();
   const before=state.energy;state=recoverEnergy(state);
   if(state.energy!==before){persist();render();}else{renderVitals();updateEnergyPanel();if(paused)renderControls();}
   if(currentModal==='roadside'||currentModal==='outdoor-site'||currentModal==='ground-region')renderLiveRoadside();
@@ -1554,9 +1679,10 @@ setInterval(()=>{
  if(startupPending||orientationBlocked||paused||document.hidden||battleView||contentActivationPending||currentModal==='welcome')return;
  state=tick(state,1);render();if(++saveCounter>=10){persist();saveCounter=0;}
 },1000);
-document.addEventListener('visibilitychange',()=>{if(contentActivationPending)return;if(document.hidden){farmQueue=[];afterFarm=null;renderControls();persist();}else if(!startupPending){state=paused?recoverEnergy({...state,lastSaved:Date.now()}):applyOfflineProgress(state).state;render();persist();void initializeUpdateSystem().then(()=>{if(isNativeUpdateSupported())return runUpdate();});}});
+document.addEventListener('visibilitychange',()=>{if(contentActivationPending)return;if(document.hidden){cozyAmbience.stop();farmQueue=[];afterFarm=null;renderControls();persist();}else if(!startupPending){state=initializeCozyDay(state);state=paused?recoverEnergy({...state,lastSaved:Date.now()}):applyOfflineProgress(state).state;render();persist();void initializeUpdateSystem().then(()=>{if(isNativeUpdateSupported())return runUpdate();});}});
+setInterval(()=>cozyAmbience.update({minutes:state.minutes,walking:scene.isResidentWalking(),visible:sound&&!document.hidden&&!paused&&!orientationBlocked&&!battleView&&!currentModal&&!startupPending&&!contentActivationPending}),250);
 setInterval(maybeApplyContentUpdate,500);
-window.addEventListener('pagehide',()=>{if(!contentActivationPending)persist();});
+window.addEventListener('pagehide',()=>{cozyAmbience.stop();if(!contentActivationPending)persist();});
 window.addEventListener('gameorientationchange',event=>{
  orientationBlocked=(event as CustomEvent<GameOrientationState>).detail.blocked;
  app.inert=orientationBlocked||startupPending||contentActivationPending||Boolean(battleView);

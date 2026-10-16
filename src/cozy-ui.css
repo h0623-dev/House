@@ -1,0 +1,180 @@
+#modal-root .modal.modal-cozy-life { width:min(780px,100%); }
+.village-shell .scene-card .cozy-life-tool { position:absolute; z-index:7; left:max(8px,env(safe-area-inset-left)); bottom:72px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:58px; min-width:44px; min-height:52px; padding:5px; border:1px solid #a2ad7a; border-radius:14px; color:#5d7b4b; background:linear-gradient(#fffbea,#e9edcf); box-shadow:inset 0 1px #fffef2,0 3px 0 #87936c36,0 3px 10px #344b2c22; font:inherit; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.village-shell .scene-card .cozy-life-tool[hidden] { display:none; }
+.cozy-life-tool > .icon { width:23px; height:23px; color:#9f8b65; fill:#cfad86; fill-opacity:.25; stroke-width:1.5; }
+.cozy-life-tool > small { font-size:10px; font-weight:800; line-height:1.2; }
+.cozy-life-tool > b { position:absolute; right:-4px; top:-5px; display:grid; place-items:center; width:19px; height:19px; border:1px solid #fff0c5; border-radius:50%; color:#fff9e5; background:#ac8347; box-shadow:0 1px 3px #6c623a26; font-size:11px; }
+.cozy-life-tool > b[hidden] { display:none; }
+.cozy-life-tool:focus-visible { outline:3px solid #6c985c; outline-offset:3px; }
+.decor-context-description { margin:9px 2px; color:#818261; font-size:11px; line-height:1.7; }
+.cozy-life { --cozy-ink:#36573e; --cozy-muted:#7c8061; --cozy-border:#d5c9a8; --cozy-green:#638551; color:var(--cozy-ink); }
+.cozy-life :is(h3,h4,p),.cozy-animal-details p { margin:0; }
+.cozy-life button,.cozy-animal-details button { font:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+.cozy-life button:focus-visible,.cozy-animal-details button:focus-visible { outline:3px solid #6c985c; outline-offset:3px; }
+.cozy-life button:disabled,.cozy-animal-details button:disabled { cursor:default; }
+.cozy-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin:0 0 16px; padding:5px; border:1px solid #d7c9a2; border-radius:16px; background:#e9e6cf; }
+.cozy-tabs > button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:48px; min-width:0; padding:7px 5px; border:1px solid transparent; border-radius:11px; color:#777c5c; background:transparent; font-size:12px; font-weight:800; }
+.cozy-tabs > button > .icon { width:27px; height:27px; flex-shrink:0; }
+.cozy-tabs > button[aria-pressed="true"] { border-color:#779363; color:#fffbe9; background:linear-gradient(#72925c,#557d4e); box-shadow:inset 0 1px #ffffff36,0 2px 3px #52634318; }
+.cozy-content { min-width:0; }
+.cozy-sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.cozy-dayboard { border:1px solid var(--cozy-border); border-radius:17px; padding:16px; background:linear-gradient(115deg,#fffdf2,#f8f2df); box-shadow:0 3px 0 #d9d0ad55; }
+.cozy-day-heading { display:flex; align-items:center; gap:12px; padding-bottom:16px; border-bottom:1px dashed #d7caa9; }
+.cozy-day-art { display:grid; place-items:center; flex:0 0 60px; width:60px; height:60px; border:1px solid #d8c9a1; border-radius:50%; background:#efedcf; transform:rotate(-8deg); }
+.cozy-day-art > .icon { width:48px; height:48px; }
+.cozy-day-heading > div { flex:1; min-width:0; }
+.cozy-day-heading small { color:#888b66; font-size:10px; }
+.cozy-day-heading h3 { margin:3px 0 4px; font-size:18px; font-weight:850; letter-spacing:-.6px; }
+.cozy-day-heading p { color:var(--cozy-muted); font-size:11px; line-height:1.6; }
+.cozy-day-stamp { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:2px; flex:0 0 65px; min-height:65px; border:2px dashed #94a378; border-radius:50%; color:#6d8856; transform:rotate(7deg); }
+.cozy-day-stamp > b { font-size:23px; line-height:1; }
+.cozy-day-stamp > b > small { font-size:13px; font-weight:600; }
+.cozy-day-stamp > span { font-size:9px; font-weight:750; }
+.cozy-day-goals { display:grid; gap:9px; margin:14px 0; }
+.cozy-day-goal { display:flex; align-items:center; gap:11px; padding:12px; border:1px solid #d9ceb0; border-radius:13px; background:#fffdf3; }
+.cozy-goal-art { display:grid; place-items:center; flex:0 0 43px; height:45px; border-radius:12px; background:#f1edce; }
+.cozy-goal-art > .icon { width:36px; height:36px; }
+.cozy-goal-copy { flex:1; min-width:0; }
+.cozy-goal-copy > div:first-child { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.cozy-goal-copy h4 { color:var(--cozy-ink); font-size:13px; font-weight:800; }
+.cozy-goal-copy > div > b { white-space:nowrap; color:#8a8c69; font-size:11px; }
+.cozy-goal-copy > p { margin:4px 0 7px; color:#858267; font-size:10px; line-height:1.5; }
+.cozy-goal-progress { height:5px; border-radius:9px; overflow:hidden; background:#e8e7d2; }
+.cozy-goal-progress > i { display:block; height:100%; border-radius:9px; background:#8fa977; }
+.cozy-goal-reward { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.cozy-goal-reward > small { margin-right:3px; color:#999171; font-size:9px; }
+.cozy-cost { display:inline-flex; align-items:center; gap:3px; color:#6b7452; font-size:10px; line-height:1.3; white-space:nowrap; }
+.cozy-cost > .icon { flex-shrink:0; width:21px; height:21px; }
+.cozy-cost b { font-weight:750; }
+.cozy-cost-short { color:#ac7854; }
+.cozy-action-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; min-width:78px; min-height:44px; padding:8px 10px; border:1px solid #6b8655; border-radius:10px; color:#fffbe8; background:linear-gradient(#76975d,#587f4e); box-shadow:inset 0 1px #ffffff27,0 2px 0 #45623d1c; font-size:11px!important; font-weight:800!important; line-height:1.4; }
+.cozy-action-button > .icon { width:21px; height:21px; flex-shrink:0; }
+.cozy-action-button:disabled { color:#8d9074; border-color:#d1d2b8; background:#ececd9; box-shadow:none; }
+.cozy-button-soft { color:#5b7550; border-color:#c7cba4; background:linear-gradient(#f5f5df,#e8ebcf); }
+.cozy-goal-ready { border-color:#a9bb8a; background:#fbffef; }
+.cozy-goal-claimed { background:#f2f1e2; border-color:#d9dcc2; }
+.cozy-goal-claimed .cozy-goal-art { background:#e9edd3; }
+.cozy-goal-claimed .cozy-action-button { color:#6f8a58; }
+.cozy-day-links { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.cozy-day-links > button { display:flex; align-items:center; gap:8px; min-height:74px; padding:10px; color:var(--cozy-ink); border:1px solid #d6c9a5; border-radius:12px; background:#f4efd9; text-align:left; }
+.cozy-day-links > button > span { display:grid; flex:0 0 34px; place-items:center; }
+.cozy-day-links > button > span > .icon { width:32px; height:32px; }
+.cozy-day-links > button > div { flex:1; min-width:0; }
+.cozy-day-links strong { display:block; font-size:11px; line-height:1.6; }
+.cozy-day-links small { display:block; margin-top:3px; color:#868568; font-size:9px; line-height:1.5; }
+.cozy-day-links > button > .icon { width:16px; height:16px; flex-shrink:0; color:#9d9a78; }
+.cozy-note { display:flex; align-items:flex-start; gap:6px; margin:13px 1px 0!important; color:#8b8c70; font-size:10px; line-height:1.75; }
+.cozy-note > .icon { flex:0 0 16px; width:16px; height:18px; margin-top:1px; }
+.cozy-section-intro { margin:2px 0 15px; }
+.cozy-section-intro h3 { font-size:16px; line-height:1.5; font-weight:800; }
+.cozy-section-intro p { margin-top:5px; color:#87856a; font-size:11px; line-height:1.7; }
+.cozy-friend-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.cozy-friend-card { min-width:0; padding:13px; border:1px solid var(--cozy-border); border-radius:16px; background:#fffcf0; box-shadow:0 3px 0 #cfc9a720; }
+.cozy-friend-card > header { display:flex; align-items:center; gap:10px; }
+.cozy-friend-portrait { display:block; flex:0 0 62px; width:62px; height:62px; padding:0; border:0; border-radius:50%; background:transparent; }
+.cozy-friend-portrait > svg { display:block; width:100%; height:100%; }
+.cozy-friend-card > header > div { min-width:0; flex:1; }
+.cozy-friend-card > header small { display:block; color:#929072; font-size:9px; line-height:1.6; }
+.cozy-friend-card > header h3 { display:flex; align-items:center; gap:4px; justify-content:space-between; margin:2px 0; font-size:17px; }
+.cozy-friend-card > header h3 > button { display:flex; align-items:center; gap:0; min-height:44px; margin:-8px -3px -8px 0; padding:5px 3px; border:0; background:none; color:#83916a; font-size:10px; font-weight:650; }
+.cozy-friend-card > header h3 > button .icon { width:15px; height:15px; }
+.cozy-friend-activity { display:block; color:#8a8b6c; font-size:9px; line-height:1.6; }
+.cozy-affinity { margin:11px 0; }
+.cozy-affinity > div:first-child { display:flex; align-items:center; justify-content:space-between; gap:5px; }
+.cozy-affinity strong { color:#8c926f; font-size:10px; font-weight:600; }
+.cozy-hearts { display:flex; gap:3px; align-items:center; }
+.cozy-hearts > span { color:#d1c9b7; }
+.cozy-hearts .icon { display:block; width:16px; height:16px; stroke-width:1.3; }
+.cozy-hearts > .cozy-heart-filled { color:#c88779; }
+.cozy-heart-filled > .icon { fill:currentColor; fill-opacity:1; }
+.cozy-affinity-track { height:4px; margin-top:6px; overflow:hidden; border-radius:9px; background:#ece7d7; }
+.cozy-affinity-track > i { display:block; height:100%; border-radius:9px; background:#cea08a; }
+.cozy-dialogue { position:relative; margin:9px 0!important; padding:9px 11px; border:1px solid #e8ddbd; border-radius:3px 12px 12px 12px; color:#6f795a; background:#f4f0df; font-size:11px; line-height:1.75; }
+.cozy-likes { display:flex; align-items:center; flex-wrap:wrap; gap:4px; color:#989071; font-size:9px; line-height:1.7; }
+.cozy-likes > .icon { width:13px; height:13px; color:#c1907c; }
+.cozy-likes > strong { color:#7b805b; font-size:10px; font-weight:650; }
+.cozy-friend-actions { display:grid; gap:8px; margin-top:11px; }
+.cozy-friend-action { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding-top:9px; border-top:1px dashed #e3d8bd; }
+.cozy-action-copy { min-width:0; }
+.cozy-action-copy > strong { display:flex; align-items:center; gap:4px; color:#64734e; font-size:11px; font-weight:750; line-height:1.5; }
+.cozy-action-copy > strong > .icon { width:13px; height:13px; color:#bf9780; }
+.cozy-action-copy > p { margin-top:3px; color:#999073; font-size:9px; line-height:1.65; }
+.cozy-action-copy > span { display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.cozy-action-copy > span > small { display:inline-flex; align-items:center; flex-wrap:wrap; gap:3px; color:#969073; font-size:8px; line-height:1.7; }
+.cozy-action-copy > span > small > .icon { width:14px; height:14px; }
+.cozy-friend-action > .cozy-action-button { max-width:90px; padding:7px; font-size:10px!important; }
+.cozy-decor-intro { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.cozy-wallet { display:grid; grid-template-columns:25px auto; column-gap:4px; align-items:center; flex-shrink:0; padding:8px 11px; border:1px solid #ddd0aa; border-radius:12px; background:#fff9e6; }
+.cozy-wallet > .icon { grid-row:1 / 3; width:25px; height:25px; }
+.cozy-wallet > b { font-size:14px; color:#96773d; }
+.cozy-wallet > small { color:#a99b74; font-size:8px; }
+.cozy-decor-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:11px; }
+.cozy-decor-card { display:flex; flex-direction:column; min-width:0; padding:10px; border:1px solid var(--cozy-border); border-radius:15px; background:#fffcef; box-shadow:0 3px 0 #cfc9a720; }
+.cozy-decor-art { position:relative; display:grid; place-items:center; height:105px; margin:-2px -2px 9px; border-radius:11px; background:radial-gradient(ellipse at 50% 74%,#d9dfb685,transparent 68%),#f5f1df; }
+.cozy-decor-art > svg { width:100%; height:94px; }
+.cozy-decor-art > span { position:absolute; right:5px; top:5px; padding:3px 5px; border:1px solid #e1d8b9; border-radius:6px; color:#93916e; background:#fffcf0e8; font-size:8px; }
+.cozy-decor-copy { flex:1; padding:0 2px; }
+.cozy-decor-copy h3 { color:var(--cozy-ink); font-size:13px; font-weight:800; line-height:1.5; }
+.cozy-decor-copy > p { min-height:32px; margin:4px 0 7px; color:#918a6c; font-size:9px; line-height:1.7; }
+.cozy-decor-costs { display:flex; flex-wrap:wrap; gap:5px 8px; min-height:24px; }
+.cozy-decor-costs .cozy-cost > .icon { width:20px; height:20px; }
+.cozy-decor-card > footer { display:flex; gap:6px; margin-top:10px; }
+.cozy-decor-card > footer > button { flex:1; min-width:0; padding:7px 4px; font-size:10px!important; }
+.cozy-decor-card > footer > button > .icon { width:20px; height:20px; }
+.cozy-decor-card > footer small { font-size:9px; font-weight:500; opacity:.8; }
+.cozy-animal-details { margin:10px 0 0; padding-top:4px; border-top:1px solid #dfd3af; }
+.cozy-animal-details .cozy-affinity { margin:7px 0; }
+.cozy-animal-details .cozy-dialogue { padding:8px; font-size:10px; }
+.cozy-animal-details .cozy-action-copy > strong { font-size:10px; }
+.cozy-animal-details .cozy-friend-action { grid-template-columns:minmax(0,1fr) 76px; gap:5px; }
+.cozy-animal-details .cozy-action-copy > span > small { font-size:8px; }
+.cozy-animal-details .cozy-cost > .icon { width:19px; height:19px; }
+.cozy-animal-details .cozy-friend-action > button { min-width:0; font-size:9px!important; padding:6px 4px; }
+.cozy-detail-link { display:flex; align-items:center; justify-content:center; gap:5px; min-height:44px; width:100%; margin-top:9px; padding:7px; border:1px solid #d4cfad; border-radius:9px; color:#6f835b; background:#f0eed8; font-size:10px!important; font-weight:750!important; }
+.cozy-detail-link > .icon { width:19px; height:19px; }
+.cozy-detail-link > .icon:last-child { width:14px; height:14px; }
+@media(max-width:620px) {
+  .cozy-tabs { gap:4px; margin-bottom:12px; padding:4px; }
+  .cozy-tabs > button { gap:4px; font-size:10px; }
+  .cozy-tabs > button > .icon { width:23px; height:23px; }
+  .cozy-dayboard { padding:11px; }
+  .cozy-day-heading { gap:8px; }
+  .cozy-day-art { flex-basis:43px; width:43px; height:43px; }
+  .cozy-day-art > .icon { width:35px; height:35px; }
+  .cozy-day-heading h3 { font-size:15px; }
+  .cozy-day-heading p { font-size:9px; }
+  .cozy-day-stamp { flex-basis:51px; min-height:51px; }
+  .cozy-day-stamp > b { font-size:19px; }
+  .cozy-day-goal { gap:7px; padding:9px; }
+  .cozy-goal-art { flex-basis:32px; height:36px; }
+  .cozy-goal-art > .icon { width:29px; height:29px; }
+  .cozy-goal-copy h4 { font-size:11px; }
+  .cozy-goal-copy > p { font-size:9px; }
+  .cozy-day-goal > .cozy-action-button { min-width:62px; padding:6px; font-size:10px!important; }
+  .cozy-day-goal > .cozy-action-button > .icon { display:none; }
+  .cozy-day-links { grid-template-columns:1fr; gap:7px; }
+  .cozy-day-links > button { min-height:61px; }
+  .cozy-friend-grid { grid-template-columns:1fr; }
+  .cozy-decor-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+  .cozy-decor-intro { align-items:flex-start; }
+  .cozy-decor-intro h3 { font-size:14px; }
+  .cozy-decor-intro p { font-size:10px; }
+  .cozy-wallet { padding:7px; }
+}
+@media(max-width:719px) {
+  .village-shell .scene-card .cozy-life-tool { bottom:126px; }
+}
+@media(orientation:landscape) and (max-height:600px) {
+  .cozy-tabs { margin-bottom:10px; }
+  .cozy-tabs > button { min-height:44px; }
+  .cozy-day-heading { padding-bottom:10px; }
+  .cozy-dayboard { padding:12px; }
+  .cozy-day-goal { padding:9px 11px; }
+  .cozy-day-goals { margin:10px 0; }
+  .cozy-decor-art { height:90px; }
+  .cozy-decor-art > svg { height:82px; }
+  .cozy-day-links > button { min-height:62px; }
+}
+@media(prefers-reduced-motion:no-preference) {
+  .cozy-life button:not(:disabled):active,.cozy-animal-details button:not(:disabled):active { transform:translateY(1px); }
+}

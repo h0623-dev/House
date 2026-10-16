@@ -1,6 +1,7 @@
 import type { GameState } from './game';
 import type { Building, BuildingType } from './settlement';
 import { getTruckAccessGeometry } from './truck-access';
+import { getDecorOverlap, getDecorPlacements, getDecorPlacementBounds } from './cozy-decor-geometry';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, type TruckFloor, type TruckRect } from './truck-layout';
 
@@ -9,7 +10,7 @@ export type PlacementRotation = 0 | 1;
 /** x/y are the facility's centre in deck UV coordinates, not screen pixels. */
 export interface FacilityPlacement { floor: TruckFloor; x: number; y: number; rotation: PlacementRotation }
 export interface DeckPlacements { version: 1; facilities: (FacilityPlacement & { id: number })[] }
-export type DeckPlacementState = Pick<GameState, 'deckLevel' | 'plots' | 'settlement' | 'truckLayout' | 'layoutDirections' | 'deckPlacements'>;
+export type DeckPlacementState = Pick<GameState, 'deckLevel' | 'plots' | 'settlement' | 'truckLayout' | 'layoutDirections' | 'deckPlacements' | 'cozyDecor'>;
 export interface BuildingFootprint { columns: number; rows: number; width: number; depth: number }
 export interface PlacementCheck { ok: boolean; message: string }
 const footprints: Record<BuildingType, readonly [number, number]> = {
@@ -91,6 +92,9 @@ function placementObstacles(state: DeckPlacementState, floor: TruckFloor, except
     if (placement.floor === floor) obstacles.push({ bounds: getPlacementBounds(building.type, placement),
       message: '다른 시설과 겹쳐요. 빈 칸에 놓아 주세요.' });
   }
+  for (const decoration of getDecorPlacements(state)) if (decoration.floor === floor) {
+    obstacles.push({ bounds: getDecorPlacementBounds(decoration), message: '장식이 있는 칸이에요. 장식을 옮기거나 보관한 뒤 설치해 주세요.' });
+  }
   return obstacles;
 }
 export function checkFacilityPlacement(state: DeckPlacementState, type: BuildingType, placement: FacilityPlacement, exceptId?: number): PlacementCheck {
@@ -110,7 +114,7 @@ export function isNextFarmPlotClear(state: DeckPlacementState): boolean {
   const position = FARM_POSITIONS[state.plots.length];
   if (!position) return false;
   const [x, y] = position, bed = { left: x, top: y, right: x + 96, bottom: y + 96 };
-  return !buildingsIn(state).some(building => getFacilityPlacement(state, building).floor === 1
+  return !getDecorOverlap(state, 1, bed) && !buildingsIn(state).some(building => getFacilityPlacement(state, building).floor === 1
     && overlaps(bed, getFacilityBounds(state, building)));
 }
 export function findFreeFacilityPlacement(state: DeckPlacementState, type: BuildingType, floor: TruckFloor = 1, exceptId?: number): FacilityPlacement | null {

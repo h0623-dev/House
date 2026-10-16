@@ -3,13 +3,16 @@ import { GAME_SPEED_MULTIPLIER, realDuration } from './game-speed';
 import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, type GameState, type Plot } from './game';
 import { drawHero, type HeroPose } from './actors';
 import { getEquippedOutfit } from './shop';
+import { getAnimalAffinity } from './cozy-life';
+import { getDecorPlacements, getDecorBounds, getDecorCollisionBounds, snapDecorPlacement, checkDecorPlacement, type DecorType, type CozyDecorPlacement } from './cozy-decor';
+import { drawCozyDecoration, getDecorArtBounds } from './cozy-decor-art';
 import { drawZombie } from './creatures';
 import { drawCompanion, companionPawContacts, companionInteractionAnchor, sampleCompanionGait, type CompanionOptions } from './companion-art';
 import { drawTruckFloor } from './truck-floor-art';
 import { drawTruckBody } from './truck-body-art';
 import { drawTruckAccessStairs } from './truck-stair-art';
 import { drawSkyBirds, skyNightAmount } from './sky-birds';
-import { createPetPatrol, stepPetPatrol, getPetGroundRadius, getPetPatrolDestination, type PetPatrolState } from './scene-patrol';
+import { createPetPatrol, stepPetPatrol, getPetGroundRadius, getPetPatrolDestination, setPetPatrolRoutine, type PetPatrolState } from './scene-patrol';
 import { planPlacementPetRelocations } from './scene-placement';
 import { getFloorBounds, getFloorSlots, getFloorStairs,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
@@ -47,7 +50,7 @@ import { drawPetPassage } from './pet-passage-art';
 import { isNavigationLinkSurface } from './scene-navigation';
 
 type Point = [number, number];
-type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'pet-gate' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'ground-resource' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot' | 'build-placement';
+type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'pet-gate' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'ground-resource' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot' | 'build-placement' | 'decoration' | 'decoration-placement';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; polygon?: Point[]; plotId?: number; siteId?:OutdoorSiteId; nodeId?:GroundResourceId; marker?:boolean };
 type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade' | 'pet-gate' | 'petting' | 'mount' | 'dismount';
 type FarmAction = 'plant' | 'water' | 'fertilize' | 'harvest';
@@ -142,6 +145,9 @@ export class Scene {
   private pendingFarmTouch: { pointerId: number; point: Point; timer: number } | null = null;
   private mapPanLimit: Point = [500, 400];
   private constructionMode: BuildingType | null = null;
+  private decorationMode: DecorType | null = null;
+  private selectedDecorationId: number | null = null;
+  private movingDecorationId: number | null = null;
   private selectedPlacement: FacilityPlacement | null = null;
   private placementPointer: number | null = null;
   private movingBuildingId: number | null = null;
@@ -262,7 +268,7 @@ export class Scene {
       event.preventDefault(); return;
     }
     if (!event.isPrimary) return;
-    if(this.constructionMode&&this.placementPointerDown(event))return;
+    if((this.constructionMode||this.decorationMode)&&this.placementPointerDown(event))return;
     this.cancelledFarmPointer = null;
     this.cancelledMapPointer = null;
     // A farming swipe belongs to a plot only when it starts on that plot. Empty
@@ -369,18 +375,19 @@ export class Scene {
     const foreground = [...candidates].reverse().find(item => item.kind === 'pet' || item.kind === 'character');
     const workTree = candidates.find(item => item.kind === 'grove-work');
     const slots = candidates.filter(item => item.kind === 'build-slot').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    const decorations = [...candidates].reverse().filter(item=>item.kind==='decoration');
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const roadEntry=candidates.find(item=>item.kind==='road-entry'),petGate=candidates.find(item=>item.kind==='pet-gate'),outdoorSite=candidates.find(item=>item.kind==='outdoor-site'),
       resource=[...candidates].reverse().find(item=>item.kind==='ground-resource'),
       resourceMarker=[...candidates].reverse().find(item=>item.kind==='ground-resource'&&item.marker),
       outdoors=this.currentHeroLocation().surface==='road',world=this.walkNavigationWorld();
-    if(petGate&&!this.constructionMode){this.focus('pet-gate');this.onSelect('pet-gate');return;}
-    if(roadEntry&&!this.constructionMode){
+    if(petGate&&!this.constructionMode&&!this.decorationMode){this.focus('pet-gate');this.onSelect('pet-gate');return;}
+    if(roadEntry&&!this.constructionMode&&!this.decorationMode){
       this.walkTo(outdoors?{surface:'deck',floor:1,point:[...world.ladder.entry]}:{surface:'road',point:[...world.ladder.bottom]});return;
     }
-    const hit = this.constructionMode ? slots[0] : resourceMarker ?? outdoorSite ?? (outdoors
+    const hit = this.constructionMode||this.decorationMode ? slots[0] : resourceMarker ?? outdoorSite ?? (outdoors
       ?foreground??resource??workTree??candidates.find(item=>item.kind==='grove')
-      :facilityAction ?? foreground ?? facilities[0] ?? resource ?? workTree ?? plots[0] ?? candidates[candidates.length - 1]);
+      :facilityAction ?? foreground ?? decorations[0] ?? facilities[0] ?? resource ?? workTree ?? plots[0] ?? candidates[candidates.length - 1]);
     const target = groundLocation(world, [x,y],this.activeFloor,outdoors?'road':undefined);
     // The truck cab remains interactive; its broad legacy hit circle must not
     // turn a real empty deck tile into the expansion menu.
@@ -423,6 +430,7 @@ export class Scene {
     if(this.activeFloor>getTruckFloorCount(state))this.activeFloor=1;
     if (this.selectedPlotId !== null && !state.plots.some(plot => plot.id === this.selectedPlotId)) this.selectedPlotId = null;
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
+    if(this.selectedDecorationId!==null&&!getDecorPlacements(state).some(item=>item.id===this.selectedDecorationId))this.selectedDecorationId=null;
     this.ensurePets();
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
@@ -443,13 +451,34 @@ export class Scene {
     if(type&&this.action?.animalId)this.clearAnimalActivity('건설을 준비하며 동물과 인사를 마쳤어요.');
     if (type !== this.constructionMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.constructionMode = type;
+    if(type){this.decorationMode=null;this.movingDecorationId=null;this.selectedDecorationId=null;}
     if(type){this.animalFocus=null;this.animalFocusViewport=null;}
     if(type)this.resourceFocus=null;
-    this.selectedPlacement = type && position !== undefined ? typeof position==='number'
+    if(type||!this.decorationMode)this.selectedPlacement = type && position !== undefined ? typeof position==='number'
       ? this.legacyPlacement(position) : {...position} : null;
-    if(!type)this.placementPointer=null;
+    if(!type&&!this.decorationMode)this.placementPointer=null;
     this.movingBuildingId = type && movingId !== undefined ? movingId : null;
     if (type && !this.action) this.zone = 'home';
+  }
+  /** Decoration placement uses the same real deck grid and actor relocation as facilities. */
+  setDecorationMode(type:DecorType|null,position?:FacilityPlacement,movingId?:number) {
+    if(type&&this.action?.animalId)this.clearAnimalActivity('꾸미기를 준비하며 동물과 인사를 마쳤어요.');
+    if(type!==this.decorationMode){this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();}
+    this.decorationMode=type;
+    if(type){this.constructionMode=null;this.movingBuildingId=null;this.selectedFacilityId=null;this.animalFocus=null;this.animalFocusViewport=null;this.resourceFocus=null;this.farmFocus=false;}
+    if(type||!this.constructionMode)this.selectedPlacement=type&&position?{...position}:null;
+    this.movingDecorationId=type&&movingId!==undefined?movingId:null;
+    if(!type&&!this.constructionMode)this.placementPointer=null;
+    if(type&&!this.action)this.zone='home';
+    this.render();
+  }
+  setSelectedDecoration(id:number|null) {
+    this.selectedDecorationId=id;
+    if(id!==null&&this.state){const item=getDecorPlacements(this.state).find(item=>item.id===id);if(item)this.setActiveFloor(item.floor);this.selectedFacilityId=null;this.wholeWorldOverview=false;}
+    this.render();
+  }
+  canPlaceDecoration(position:FacilityPlacement|undefined=this.selectedPlacement??undefined) {
+    return !!(this.state&&this.decorationMode&&position&&checkDecorPlacement(this.state,this.decorationMode,position,this.movingDecorationId??undefined).ok);
   }
   /** Fit when a planning view opens; later user drags and pinches keep their camera. */
   setPlanningViewport(mode: PlanningMode | null, nextLevel?: number) {
@@ -497,6 +526,8 @@ export class Scene {
   }
   getMapMoveMode() { return this.mapMoveMode; }
   isWalking() { return this.freeWalk !== null; }
+  /** Audible footsteps follow accepted hero walking poses, including chore trips. */
+  isResidentWalking() { return this.mountedAnimal === null && this.heroState().pose === 'walk'; }
   /** HUD buttons use the same physical routes as native ground taps. */
   walkOntoRoad() {
     if(this.activeFloor!==1)this.setActiveFloor(1);
@@ -542,7 +573,8 @@ export class Scene {
     return projectDeckPoint([placement.x,placement.y],placement.floor);
   }
   private facilityFootprints(state:GameState) {
-    return getSettlement(state).buildings.map(building=>({floor:getFacilityPlacement(state,building).floor,bounds:getFacilityBounds(state,building)}));
+    return [...getSettlement(state).buildings.map(building=>({floor:getFacilityPlacement(state,building).floor,bounds:getFacilityBounds(state,building)})),
+      ...Array.from({length:getTruckFloorCount(state)},(_,index)=>getDecorCollisionBounds(state,(index+1)as TruckFloor)).flat()];
   }
   private placementPointerDown(event:PointerEvent) {
     if(!this.state)return false;
@@ -553,12 +585,12 @@ export class Scene {
     this.movePlacementPointer(event.clientX,event.clientY);return true;
   }
   private movePlacementPointer(clientX:number,clientY:number) {
-    if(!this.state||!this.constructionMode)return;
-    const{x,y}=this.pointerHits(clientX,clientY),[u,v]=unprojectDeckPoint([x,y],this.activeFloor);
-    const placement=snapFacilityPlacement(this.state,this.constructionMode,{floor:this.activeFloor,x:u,y:v,rotation:this.selectedPlacement?.rotation??0});
+    if(!this.state||!this.constructionMode&&!this.decorationMode)return;
+    const{x,y}=this.pointerHits(clientX,clientY),[u,v]=unprojectDeckPoint([x,y],this.activeFloor),position={floor:this.activeFloor,x:u,y:v,rotation:this.selectedPlacement?.rotation??0};
+    const placement=this.decorationMode?snapDecorPlacement(this.state,this.decorationMode,position):snapFacilityPlacement(this.state,this.constructionMode!,position);
     if(this.selectedPlacement&&JSON.stringify(this.selectedPlacement)===JSON.stringify(placement))return;
     this.selectedPlacement=placement;
-    this.onSelect('build-placement',undefined,{...placement});this.render();
+    this.onSelect(this.decorationMode?'decoration-placement':'build-placement',undefined,{...placement});this.render();
   }
   /** Call after a successful domain placement and before publishing its new state. */
   relocatePetsForPlacement(nextState:GameState):boolean {
@@ -738,7 +770,7 @@ export class Scene {
   getAnimalInteractions() {
     const roster=getUnitRoster(this.state??{});
     return UNIT_IDS.map(id=>{const animal=this.petMotion.get(id),surface=animal?.location.surface??'road',busy=!!this.action||this.suspended||this.disposed;
-      const available=!!animal&&!isNavigationLinkSurface(surface)&&!busy&&!this.mountedAnimal&&!this.constructionMode&&!this.planningMode&&!this.state?.expedition;
+      const available=!!animal&&!isNavigationLinkSurface(surface)&&!busy&&!this.mountedAnimal&&!this.constructionMode&&!this.decorationMode&&!this.planningMode&&!this.state?.expedition;
       return{id,available,surface,health:roster[id].health,mountable:available&&(id==='elephant'||id==='giraffe')&&surface==='road'&&roster[id].health>0,
         mounted:this.mountedAnimal===id,busy,canDismount:this.mountedAnimal===id&&!this.action&&!!this.findDismountNavigation()};});
   }
@@ -920,7 +952,7 @@ export class Scene {
       return {...path,id:PET_PASSAGE_LINK_ID,surface:'ramp',entryAllowed:false,open:true,
         drawn:painted?.drawn??false,painted:painted?.painted??false};
     });
-    const canInteract=!!this.state&&!this.state.expedition&&!this.action&&!this.suspended&&!this.disposed&&!this.constructionMode&&!this.planningMode;
+    const canInteract=!!this.state&&!this.state.expedition&&!this.action&&!this.suspended&&!this.disposed&&!this.constructionMode&&!this.decorationMode&&!this.planningMode;
     return {drawn:this.petPassagePaint?.drawn??false,painted:this.petPassagePaint?.painted??false,open,
       closing:this.petGateClosing??false,closingPending:this.petGateClosing??false,pendingTarget:this.petGatePendingOpen??null,
       operating:this.action?.kind==='pet-gate',canInteract,activeCrossings,waitingPets:activeCrossings.map(pet=>pet.id),
@@ -1338,9 +1370,18 @@ export class Scene {
       if(motion)this.petMotion.set(id,motion);
     });
   }
+  private updatePetDailyRoutine(motion:PetPatrolState) {
+    const floor=motion.home?.surface==='deck'?motion.home.floor??1:1,
+      bounds=getFloorBounds(this.state?.deckLevel??1,floor),
+      garden=FARM_POSITIONS[Math.min(this.state?.plots.length??1,FARM_POSITIONS.length)-1]??FARM_POSITIONS[0];
+    setPetPatrolRoutine(motion,{minutes:this.state?.minutes??660,friendship:this.state?getAnimalAffinity(this.state,motion.id):0,
+      garden:motion.id==='monkey'&&canAnimalBoardTruck(motion.id,this.state?.deckLevel??1)?{surface:'deck',floor:1,point:projectDeckPoint([garden[0]+48,garden[1]-45],1)}:undefined,
+      sunnySpot:motion.home?.surface==='deck'?{surface:'deck',floor,point:projectDeckPoint([bounds.end-92,bounds.back+68],floor)}:undefined});
+  }
   private advancePets(delta:number) {
     this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[];
     for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
+      this.updatePetDailyRoutine(motion);
       if(this.mountedAnimal===id||this.action?.animalId===id){motion.facingBlend+=(motion.facing-motion.facingBlend)*Math.min(1,delta*9);if(this.mountedAnimal!==id||!this.freeWalk){motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));}continue;}
       if(roster[id].health<=0){motion.speed=0;motion.blend=0;continue;}
       this.requestPetPassageEntryClearance(motion);
@@ -1408,12 +1449,24 @@ export class Scene {
         this.hits.push({kind:'pet',plotId:UNIT_IDS.indexOf(id),x,y:y-height/2,radius:0,bounds:[x-Math.max(22,motion.radius),y-height,x+Math.max(22,motion.radius),y+5]});this.pulse(`pet:${id}`,x,y-height*.55,Math.max(26,motion.radius));
         if(this.mountedAnimal===id||this.action?.animalId===id&&(this.action.kind==='mount'||this.action.kind==='petting')&&this.action.elapsed>=this.action.walk)this.hero(true);
         if(this.action?.animalId===id&&this.action.kind==='petting'&&this.action.elapsed>=this.action.walk)this.animalHearts(id,large);
+        else if(roster[id].health>0&&motion.speed<.05&&motion.pauseRemaining>2&&!this.planningMode&&!this.constructionMode&&!this.decorationMode)this.petRoutineEmote(motion,height);
       }
       telemetry.push({id,x,y,visible,deckUnlockLevel:getAnimalDeckUnlockLevel(id),canBoardTruck:canAnimalBoardTruck(id,this.state?.deckLevel??1),scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,passageLease:motion.passageLease??null,waitingForPassage:motion.waitingForPassage??null,
-        body:{x,y,radius:motion.radius,floor:location.floor??1,surface:location.surface,link:location.link??null},blockedReason:motion.blockedReason,
+        body:{x,y,radius:motion.radius,floor:location.floor??1,surface:location.surface,link:location.link??null},blockedReason:motion.blockedReason,routine:motion.routine,friendship:motion.friendship,pauseRemaining:motion.pauseRemaining,
         facing:options.facing,pose:options.pose,turnRemaining:motion.turnRemaining,gait:options.gait,sample:sampleCompanionGait(id,options.gait!,options.scale),contacts:companionPawContacts(options)??null});
     }
     if(!onlyId)this.canvas.dataset.petMotion=JSON.stringify(telemetry);
+  }
+  private petRoutineEmote(motion:PetPatrolState,height:number) {
+    const phase=(this.time*.18+(motion.habitatIndex??0)*.37)%3;
+    if(phase>1&&!this.reducedMotion)return;
+    const {point:[x,y]}=motion.location,pixel=1/this.scale,
+      quiet=motion.routine==='resting'||motion.routine==='sunbathing',
+      symbol=quiet?'z':motion.routine==='foraging'||motion.routine==='grazing'?'♪':motion.id==='dog'?'♥':null;
+    if(!symbol)return;
+    this.ctx.save();this.ctx.globalAlpha=this.reducedMotion ? .72 : Math.sin(Math.min(1,phase)*Math.PI)*.85;
+    this.label(symbol,x+12*pixel,y-height-5*pixel-(this.reducedMotion?0:phase*5*pixel),11*pixel,quiet?'#6d8276':motion.id==='dog'?'#c88b72':'#8b9b56',800);
+    this.ctx.restore();
   }
   private choreWalkingSample(action:Chore,elapsed=action.elapsed) {
     if(elapsed<action.walk)return{sample:sampleNavigation(action.navigation,elapsed),gaitOffset:action.gaitOffset??0};
@@ -1435,7 +1488,7 @@ export class Scene {
     return this.choreLocation(action);
   }
   private walkTo(target: NavigationLocation) {
-    if(!this.walkingEnabled||this.action||this.suspended||this.disposed||this.constructionMode||this.planningMode||this.selectedFacilityId!==null)return;
+    if(!this.walkingEnabled||this.action||this.suspended||this.disposed||this.constructionMode||this.decorationMode||this.planningMode||this.selectedFacilityId!==null)return;
     if(this.mountedAnimal&&target.surface!=='road')return;
     const navigation=planNavigation(this.walkNavigationWorld(),this.heroLocation,target)
       ??(!this.mountedAnimal?planNavigation(this.choreWorld(),this.heroLocation,target):undefined);
@@ -1532,7 +1585,8 @@ export class Scene {
   }
   private homeViewBounds(level:number):WorldBounds {
     if(!this.state)return{left:120,top:20,right:940,bottom:590};
-    return getTruckHomeBounds(this.state,this.activeFloor,level);
+    const base=getTruckHomeBounds(this.state,this.activeFloor,level),decor=getDecorPlacements(this.state).filter(item=>item.floor===this.activeFloor).map(item=>getDecorArtBounds(item));
+    return mergeVillageBounds([base,...decor.map(bounds=>({left:bounds.left-14,top:bounds.top-18,right:bounds.right+14,bottom:bounds.bottom+12}))]);
   }
   private planningBounds(): WorldBounds | null {
     if (!this.planningMode) return null;
@@ -1633,8 +1687,8 @@ export class Scene {
       const village=fitVillageCamera(bounds,availableWidth,availableHeight);
       viewWidth=village.width;viewHeight=village.height;target={x:village.x,y:village.y,zoom:village.zoom};
     }
-    const resourceView=this.activeFloor===1&&this.resourceFocus&&!this.planningMode&&!this.constructionMode&&!showFarm;
-    const overviewView=!!this.state&&!resourceView&&!showFarm&&!this.planningMode&&!this.constructionMode&&(this.villageOverview||this.selectedFacilityId===null);
+    const resourceView=this.activeFloor===1&&this.resourceFocus&&!this.planningMode&&!this.constructionMode&&!this.decorationMode&&!showFarm;
+    const overviewView=!!this.state&&!resourceView&&!showFarm&&!this.planningMode&&!this.constructionMode&&!this.decorationMode&&(this.villageOverview||this.selectedFacilityId===null);
     this.overviewBounds=null;
     if(overviewView&&this.state){
       let bounds=this.wholeWorldOverview?getHomeOverviewBounds(this.state,this.activeFloor,level):this.homeViewBounds(level);
@@ -1675,7 +1729,7 @@ export class Scene {
     // Keep the viewport as well as the camera fixed after a manual move. An action
     // starting or ending must not silently change the map's scale under the finger.
     if (this.manualViewport) [viewWidth, viewHeight] = this.manualViewport;
-    const animalFollow=this.animalFocus&&!this.manualViewport&&!planning&&!this.farmFocus&&!this.constructionMode?this.petMotion.get(this.animalFocus):undefined;
+    const animalFollow=this.animalFocus&&!this.manualViewport&&!planning&&!this.farmFocus&&!this.constructionMode&&!this.decorationMode?this.petMotion.get(this.animalFocus):undefined;
     if(animalFollow&&this.animalFocusViewport){[viewWidth,viewHeight]=this.animalFocusViewport;target={x:animalFollow.location.point[0],y:animalFollow.location.point[1]-55,zoom:1};}
     this.playerCameraFollowing=!!animalFollow;
     this.cameraMode=this.manualViewport||this.pinch.active?'manual':planning?'planning':animalFollow?'focus':overviewView?'overview':'focus';
@@ -1732,6 +1786,7 @@ export class Scene {
     this.hero();
     this.workEffects();
     this.constructionPreview();
+    this.decorationPreview();
     // Ground, residents, timber and foliage share one ambient light pass.
     // Night is a gentle moonlit colour shift: chores must remain readable at
     // every hour, including the broad overview of the gathering grounds.
@@ -1886,7 +1941,7 @@ export class Scene {
       .map(point=>projectDeckPoint(point,floor));
   }
   private constructionGrid() {
-    if(!this.state||!this.constructionMode&&!this.planningMode)return;
+    if(!this.state||!this.constructionMode&&!this.decorationMode&&!this.planningMode)return;
     const bounds=getDeckGridBounds(this.state,this.activeFloor),pixel=1/this.scale;
     this.poly(this.placementPolygon(bounds),'#fff5cb12','#ebefd0a6',1.2*pixel);
     for(let u=bounds.left+DECK_CELL_SIZE;u<bounds.right;u+=DECK_CELL_SIZE)
@@ -1896,6 +1951,10 @@ export class Scene {
     for(const building of getSettlement(this.state).buildings){
       if(building.id===this.movingBuildingId||getFacilityPlacement(this.state,building).floor!==this.activeFloor)continue;
       this.poly(this.placementPolygon(getFacilityBounds(this.state,building)),'#624f3529','#d6b78c95',1*pixel);
+    }
+    for(const item of getDecorPlacements(this.state)){
+      if(item.id===this.movingDecorationId||item.floor!==this.activeFloor)continue;
+      this.poly(this.placementPolygon(getDecorBounds(this.state,item)),'#6a7a4729','#c1ba8f95',1*pixel);
     }
   }
   /** Placement is a readable interaction overlay above residents and structures. */
@@ -1921,10 +1980,40 @@ export class Scene {
     this.label(caption,point[0],captionY+17*pixel,10*pixel,check.ok?'#4f7138':'#9a543d',800);
   }
 
+  private decorations() {
+    if(!this.state)return;
+    for(const item of getDecorPlacements(this.state)){
+      if(item.floor!==this.activeFloor)continue;
+      const point=projectDeckPoint([item.x,item.y],item.floor);
+      const paint=()=>{
+        drawCozyDecoration(this.ctx,item,this.reducedMotion?0:this.time,{alpha:item.id===this.movingDecorationId ? .4 : 1,selected:item.id===this.selectedDecorationId});
+        const bounds=getDecorArtBounds(item);
+        this.hits.push({kind:'decoration',plotId:item.id,x:(bounds.left+bounds.right)/2,y:(bounds.top+bounds.bottom)/2,radius:0,bounds:[bounds.left,bounds.top,bounds.right,bounds.bottom]});
+      };
+      // Floor rugs sit below every resident; furniture sorts by its actual feet.
+      this.deckPaintTasks.push({y:item.item==='picnicRug'?-Infinity:point[1],paint});
+    }
+  }
+  private decorationPreview() {
+    if(!this.state||!this.decorationMode||!this.selectedPlacement||this.selectedPlacement.floor!==this.activeFloor)return;
+    const position=this.selectedPlacement,item:CozyDecorPlacement={id:this.movingDecorationId??-1,item:this.decorationMode,...position},
+      bounds=getDecorBounds(this.state,item),check=checkDecorPlacement(this.state,this.decorationMode,position,this.movingDecorationId??undefined),pixel=1/this.scale,
+      fill=check.ok?'#c9ec9b80':'#efb5a078',edge=check.ok?'#b9e88c':'#ec9a84';
+    for(let y=bounds.top;y<bounds.bottom-.1;y+=DECK_CELL_SIZE)for(let x=bounds.left;x<bounds.right-.1;x+=DECK_CELL_SIZE)
+      this.poly(this.placementPolygon({left:x,top:y,right:Math.min(bounds.right,x+DECK_CELL_SIZE),bottom:Math.min(bounds.bottom,y+DECK_CELL_SIZE)}),fill,'#fff9e38c',.7*pixel);
+    this.poly(this.placementPolygon(bounds),'',edge,2.7*pixel);
+    drawCozyDecoration(this.ctx,item,this.reducedMotion?0:this.time,{alpha:check.ok ? .7 : .35,selected:false});
+    const art=getDecorArtBounds(item),point=projectDeckPoint([item.x,item.y],item.floor),columns=Math.round((bounds.right-bounds.left)/DECK_CELL_SIZE),rows=Math.round((bounds.bottom-bounds.top)/DECK_CELL_SIZE),
+      label=`${columns} × ${rows} · ${check.ok?'놓을 수 있어요':'위치를 옮겨 주세요'}`,width=check.ok?132:170,y=art.bottom+9*pixel;
+    this.round(point[0]-width/2*pixel,y,width*pixel,26*pixel,11*pixel,'#fff9e9f5',edge);
+    this.label(label,point[0],y+18*pixel,10*pixel,check.ok?'#4f7138':'#9a543d',800);
+  }
+
   /** Sort real floor contacts so residents pass behind worktops and planters. */
   private deckContents() {
     this.deckPaintTasks=[];
     const overlays=this.settlement();
+    this.decorations();
     if(this.activeFloor===1)this.farm();
     this.ensurePets();
     for(const [id,motion]of this.petMotion){
@@ -1940,7 +2029,7 @@ export class Scene {
   }
   private settlement() {
     const state = this.state, buildings = state ? getSettlement(state).buildings : [];
-    const selectedType = this.constructionMode;
+    const selectedType = this.constructionMode||this.decorationMode;
     const ordered = buildings.filter(b=>state&&getFacilityPlacement(state,b).floor===this.activeFloor).sort((a,b)=>this.facilityPoint(a)[1]-this.facilityPoint(b)[1]);
     const bubbles=layoutProductionBubbles(ordered.map(building=>{
       const point=this.facilityPoint(building),art=getFacilityArtBounds(building.type,getFacilityPlacement(state!,building).rotation);
@@ -2415,7 +2504,7 @@ export class Scene {
   }
 
   private groundMarkers() {
-    if(this.activeFloor!==1||this.constructionMode||this.planningMode||this.farmFocus||this.farmMode)return;
+    if(this.activeFloor!==1||this.constructionMode||this.decorationMode||this.planningMode||this.farmFocus||this.farmMode)return;
     // General gathering controls belong to the screen edge. Keep the world
     // clear of category pills; only the explicitly selected or working node
     // receives a label. Resource sprites retain their own polygon hit targets.

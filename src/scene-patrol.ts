@@ -17,6 +17,28 @@ export interface PetPatrolState {
   waitingForPassage?:string;
   /** Each roadside resident keeps a quiet part of the clearing instead of crowding the hero. */
   home?:NavigationLocation;habitatIndex?:number;visits?:number;
+  routine?:PetRoutine;routineFocus?:NavigationLocation;routineRest?:number;routinePace?:number;friendship?:number;
+}
+export type PetRoutine='following'|'sunbathing'|'foraging'|'wandering'|'resting'|'watching'|'grazing';
+export interface PetRoutineContext { minutes:number;friendship?:number;garden?:NavigationLocation;sunnySpot?:NavigationLocation }
+/** A species has a daily rhythm; paths still use the same clear physical surfaces. */
+export function setPetPatrolRoutine(state:PetPatrolState,context:PetRoutineContext):void {
+  const minute=((context.minutes%1440)+1440)%1440,night=minute<390||minute>=1140;
+  state.friendship=Math.max(0,context.friendship??0);
+  state.routinePace=1;state.routineRest=3;
+  delete state.routineFocus;
+  if(state.id==='dog'){state.routine=night?'resting':'following';state.routineRest=night?12:3;state.routinePace=.9;}
+  else if(state.id==='cat'){
+    state.routine=night?'wandering':'sunbathing';state.routineRest=night?5:16;state.routinePace=.72;
+    if(!night&&context.sunnySpot)state.routineFocus=copy(context.sunnySpot);
+  }else if(state.id==='monkey'){
+    state.routine=night?'resting':'foraging';state.routineRest=night?14:6;state.routinePace=.95;
+    if(!night&&context.garden)state.routineFocus=copy(context.garden);
+  }else if(state.id==='rabbit'){state.routine=night?'resting':'foraging';state.routineRest=night?13:7;state.routinePace=.8;}
+  else if(state.id==='owl'){state.routine=night?'watching':'resting';state.routineRest=night?5:24;state.routinePace=night?.9:.65;}
+  else if(state.id==='elephant'||state.id==='giraffe'||state.id==='deer'||state.id==='panda'){
+    state.routine=night?'resting':'grazing';state.routineRest=night?18:state.id==='panda'?13:8;state.routinePace=state.id==='panda'?.72:.82;
+  }else{state.routine=night?'resting':'wandering';state.routineRest=night?14:6;state.routinePace=.85;}
 }
 const nominalRadius:Readonly<Record<UnitId,number>>={dog:33,cat:34,rabbit:25,fox:33,boar:44,owl:31,
   monkey:22/.73,elephant:44/.82,giraffe:34/.82,panda:32/.78,deer:29/.78};
@@ -70,18 +92,22 @@ export function createPetPatrol(id:UnitId,world:NavigationWorld,hero:NavigationL
     targetSequence:Math.max(0,index)*11,turnFrom:facing,nextFacing:facing,turnHeading:heading,worldKey:geometryKey(world),
     desiredFloor:floor,desiredSurface};
 }
-/** Small followers accompany the hero; the other residents take turns exploring and resting outside. */
+/** Daily routines choose an anchor while physical stairs remain the only floor connection. */
 export function getPetPatrolDestination(state:PetPatrolState,world:NavigationWorld,hero:NavigationLocation):NavigationLocation{
-  const maxFloor=world.petMaxFloor??3,followers=state.id==='dog'||state.id==='cat'||state.id==='monkey',
-    outdoorTurn=!followers&&(Math.floor((state.visits??0)/3)+(state.habitatIndex??0))%3===0;
-  if(maxFloor===0||outdoorTurn){
-    if(hero.surface==='road'&&maxFloor>0&&!outdoorTurn)return copy(hero);
-    const home=state.home;
-    return{surface:'road',point:home?.surface==='road'?[...home.point]:[...world.ladder.bottom]};
+  const maxFloor=world.petMaxFloor??3,home=state.home,focus=state.routineFocus;
+  if(focus&&(focus.surface==='road'||floorOf(focus)<=maxFloor))return copy(focus);
+  // The dog greets and accompanies the resident. Other animals keep their own
+  // neighbourhood and never all trail behind the player in a single file.
+  const follows=state.id==='dog'&&state.routine!=='resting'
+    ||state.id==='monkey'&&state.routine==='foraging'&&!focus&&(state.visits??0)%4===0;
+  if(follows&&maxFloor>0){
+    if(hero.surface==='road')return copy(hero);
+    return{surface:'deck',floor:Math.min(floorOf(hero),maxFloor)as TruckFloor,
+      point:floorOf(hero)<=maxFloor?[...hero.point]:[...world.ladder.entry]};
   }
-  if(hero.surface==='road')return copy(hero);
-  const floor=Math.min(floorOf(hero),maxFloor)as TruckFloor;
-  return{surface:'deck',floor,point:floor===floorOf(hero)?[...hero.point]:[...world.ladder.entry]};
+  if(home&&(home.surface==='road'||floorOf(home)<=maxFloor))return copy(home);
+  if(maxFloor===0)return{surface:'road',point:[...world.ladder.bottom]};
+  return{surface:'deck',floor:1,point:[...world.ladder.entry]};
 }
 function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationLocation,
   actors:NavigationActor[]):NavigationPath|undefined{
@@ -92,13 +118,20 @@ function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationL
     .filter(location=>clearOfActors(location,state.radius,actors,7))
     .filter(location=>following&&!sameFloor||distance(location.point,state.location.point)>55);
   candidates.sort((a,b)=>{
-    const score=(location:NavigationLocation)=>!following||sameFloor?Math.abs(distance(location.point,state.location.point)-120)
-      +Math.max(0,distance(location.point,destination.point)-310)*.7:distance(location.point,destination.point);
+    const score=(location:NavigationLocation)=>{
+      if(!following)return Math.abs(distance(location.point,state.location.point)-90);
+      if(!sameFloor)return distance(location.point,destination.point);
+      const followDog=state.id==='dog'&&state.routine==='following',
+        radius=followDog?Math.max(60,96-(state.friendship??0)*.3):state.routine==='sunbathing'?40:state.routine==='resting'?58:state.id==='monkey'?90:state.id==='rabbit'?120:170;
+      return Math.abs(distance(location.point,destination.point)-radius)
+        +Math.abs(distance(location.point,state.location.point)-(followDog?110:75))*.22;
+    };
     return score(a)-score(b);
   });
   candidates=candidates.slice(0,24);
   if(!candidates.length)return;
-  const offset=state.targetSequence%candidates.length;state.targetSequence++;
+  // Vary a few equally suitable neighbours without abandoning the daily anchor.
+  const offset=state.targetSequence%Math.min(4,candidates.length);state.targetSequence++;
   for(let attempt=0;attempt<candidates.length;attempt++){
     const target=candidates[(offset+attempt)%candidates.length],route=planNavigation({...world,actors},state.location,target);
     if(route&&state.location.surface!=='ramp'&&route.segments.some(segment=>segment.link&&actors.some(actor=>
@@ -187,7 +220,7 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
     }
   }
   const pace=state.id==='elephant'?15:state.id==='giraffe'?17:state.id==='panda'?16:state.id==='deer'?21:22;
-  const nextElapsed=Math.min(state.route.motion.duration,state.elapsed+dt*(pace*GAME_SPEED_MULTIPLIER/WALK_SPEED));
+  const nextElapsed=Math.min(state.route.motion.duration,state.elapsed+dt*(pace*(state.routinePace??1)*GAME_SPEED_MULTIPLIER/WALK_SPEED));
   const sample=sampleNavigation(state.route,nextElapsed),from=state.location,to=sample.location,travel=distance(from.point,to.point);
   const locked=isNavigationLinkSurface(to.surface)
     ? actors.find(actor=>isNavigationLinkSurface(actor.location.surface)&&actor.location.link===to.link) : undefined;
@@ -214,5 +247,5 @@ export function stepPetPatrol(state:PetPatrolState,world:NavigationWorld,hero:Na
   }else if(to.surface!=='ramp')delete state.passageLease;
   state.location=copy(to);state.elapsed=nextElapsed;state.distance+=travel;state.speed=travel/dt;
   state.blend+=((state.speed>.05?1:0)-state.blend)*Math.min(1,dt*10);state.blockedReason=null;
-  if(nextElapsed>=state.route.motion.duration){state.route=null;state.elapsed=0;state.visits=(state.visits??0)+1;state.pauseRemaining=2.2+(state.targetSequence%5)*.6;}
+  if(nextElapsed>=state.route.motion.duration){state.route=null;state.elapsed=0;state.visits=(state.visits??0)+1;state.pauseRemaining=(state.routineRest??2.2)+(state.targetSequence%5)*.7;}
 }
