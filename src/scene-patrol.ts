@@ -5,6 +5,7 @@ import {blocksActorStep,getPatrolTargets,planNavigation,planYieldNavigation,samp
   type NavigationActor,type NavigationLocation,type NavigationPath,type NavigationWorld,type NavigationLink} from './scene-navigation';
 import type {TruckFloor} from './truck-layout';
 import type {UnitId} from './units';
+import {PET_PASSAGE_LINK_ID} from './pet-passage';
 
 export interface PetPatrolState {
   id:UnitId;location:NavigationLocation;route:NavigationPath|null;
@@ -101,7 +102,7 @@ function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationL
   for(let attempt=0;attempt<candidates.length;attempt++){
     const target=candidates[(offset+attempt)%candidates.length],route=planNavigation({...world,actors},state.location,target);
     if(route&&state.location.surface!=='ramp'&&route.segments.some(segment=>segment.link&&actors.some(actor=>
-      actor.location.surface==='ramp'&&actor.location.link===segment.link||actor.passageIntent===segment.link)))continue;
+      isNavigationLinkSurface(actor.location.surface)&&actor.location.link===segment.link||actor.passageIntent===segment.link)))continue;
     if(route&&route.motion.distance>1)return route;
   }
   };
@@ -110,7 +111,7 @@ function chooseRoute(state:PetPatrolState,world:NavigationWorld,hero:NavigationL
   // A shut gate changes which side is available, rather than freezing an animal
   // until the hero returns. Keep patrolling this real surface without crossing.
   if(world.actor==='pet'&&!sameFloor&&state.location.surface!=='ramp'){
-    const crossing=actors.filter(actor=>actor.location.surface==='ramp');
+    const crossing=actors.filter(actor=>isNavigationLinkSurface(actor.location.surface)&&actor.location.link===PET_PASSAGE_LINK_ID);
     if(world.petPassageOpen){
       if(state.waitingForPassage)return;
       const passage=world.links.find(link=>link.surface==='ramp');

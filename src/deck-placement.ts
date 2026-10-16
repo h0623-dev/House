@@ -1,6 +1,6 @@
 import type { GameState } from './game';
 import type { Building, BuildingType } from './settlement';
-import { getPetPassageGeometry } from './pet-passage';
+import { getTruckAccessGeometry } from './truck-access';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, type TruckFloor, type TruckRect } from './truck-layout';
 
@@ -22,9 +22,7 @@ const animalLandings = new Map<number, TruckRect>();
 function animalLanding(level: number): TruckRect {
   const cached = animalLandings.get(level);
   if (cached) return cached;
-  const { entryUV, hingeUV } = getPetPassageGeometry(level);
-  const bounds = { left: hingeUV[0] - 16, right: entryUV[0] + 32,
-    top: entryUV[1] - 48, bottom: entryUV[1] + 48 };
+  const bounds = getTruckAccessGeometry(level).reserved;
   animalLandings.set(level, bounds);
   return bounds;
 }
@@ -85,10 +83,7 @@ function placementObstacles(state: DeckPlacementState, floor: TruckFloor, except
     }, message: '층을 오가는 계단과 입구는 비워 주세요.' });
   }
   if (floor === 1) {
-    const d = getFloorBounds(state.deckLevel);
-    obstacles.push({ bounds: { left: -251, right: -197, top: d.front - 90, bottom: d.front },
-      message: '계단 앞에는 오르내릴 공간을 남겨 주세요.' });
-    obstacles.push({ bounds: animalLanding(state.deckLevel), message: '동물 문과 통로 입구는 비워 주세요.' });
+    obstacles.push({ bounds: animalLanding(state.deckLevel), message: '사람과 동물이 함께 쓰는 계단 입구는 비워 주세요.' });
   }
   for (const building of buildingsIn(state)) {
     if (building.id === exceptId) continue;

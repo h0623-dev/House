@@ -48,7 +48,7 @@ export const isNavigationLinkSurface = (surface: NavigationSurface) => surface =
 /** A lease admits only the animal already crossing; it never reopens entry. */
 export function getPetPassageLink(level: number, entryAllowed = true): NavigationLink {
   return { id: PET_PASSAGE_LINK_ID, lower: 0, upper: 1, points: getPetPassageGeometry(level).points,
-    surface: 'ramp', entryAllowed };
+    surface: 'ramp', gait: 'stairs', entryAllowed };
 }
 export const defaultHeroLocation = (): NavigationLocation => ({surface:'deck',point:projectDeckPoint([-74,14]),floor:1});
 const inside = (p: MotionPoint,r:NavigationRect) => p[0]>=r.left-1e-7&&p[0]<=r.right+1e-7&&p[1]>=r.top-1e-7&&p[1]<=r.bottom+1e-7;
@@ -66,12 +66,14 @@ export function getRoadBounds(level:number):NavigationRect {
     // A pet parked beyond the ramp landing must leave another full paw body
     // room to pass between it and the road edge beside the solid truck.
     passingRoom=getPetPassageWidth(level)/2+3*PET_PASSAGE_MAX_BODY_RADIUS+4,
-    groundPassingRoom=2*PET_PASSAGE_MAX_BODY_RADIUS+4;
+    groundPassingRoom=2*PET_PASSAGE_MAX_BODY_RADIUS+4,
+    landing=getTruckAccessGeometry(level).bottom;
   return {left:Math.min(-40,getTruckGroundFootprint(level).bounds.left-passingRoom,GROUND_RESOURCE_BOUNDS.left-groundPassingRoom,
-      ...corners.map(point=>point[0]-100)),top:Math.min(360,GROUND_RESOURCE_BOUNDS.top-groundPassingRoom),
-    right:Math.max(1160,GROUND_RESOURCE_BOUNDS.right+groundPassingRoom,...corners.map(point=>point[0]+130)),
+      landing[0]-groundPassingRoom,...corners.map(point=>point[0]-100)),
+    top:Math.min(360,GROUND_RESOURCE_BOUNDS.top-groundPassingRoom,landing[1]-groundPassingRoom),
+    right:Math.max(1160,GROUND_RESOURCE_BOUNDS.right+groundPassingRoom,landing[0]+groundPassingRoom,...corners.map(point=>point[0]+130)),
     bottom:Math.max(880,...corners.map(point=>point[1]+95+105),
-      GROUND_RESOURCE_BOUNDS.bottom+groundPassingRoom)};
+      GROUND_RESOURCE_BOUNDS.bottom+groundPassingRoom,landing[1]+groundPassingRoom)};
 }
 
 /** The same physical footprints feed navigation, placement previews and collision checks. */
@@ -93,9 +95,9 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   const access = getTruckAccessGeometry(level), ladder = { entry: access.entry, top: access.top, bottom: access.bottom };
   const links:NavigationLink[]=options.actor==='pet'
     ?options.petMaxFloor===0?[]:options.petPassageLease?.id===PET_PASSAGE_LINK_ID
-      ?[{...options.petPassageLease,points:options.petPassageLease.points.map(point=>[...point]),surface:'ramp',entryAllowed:options.petPassageOpen??false}]
+      ?[{...options.petPassageLease,points:options.petPassageLease.points.map(point=>[...point]),surface:'ramp',gait:'stairs',entryAllowed:options.petPassageOpen??false}]
       :options.petPassageOpen?[getPetPassageLink(level)]:[]
-    :[{id:'road-1',lower:0,upper:1,points:[ladder.bottom,ladder.top,ladder.entry],gait:'stairs'}];
+    :[{id:PET_PASSAGE_LINK_ID,lower:0,upper:1,points:access.points.map(point=>[...point]),gait:'stairs'}];
   for(const upper of ids.filter(id=>id>1)){
     const stair=getFloorStairs(level,upper as 2|3);
     if(options.actor!=='pet'||upper<=(options.petMaxFloor??3))

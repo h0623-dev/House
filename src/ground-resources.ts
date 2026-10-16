@@ -1,11 +1,12 @@
 import { getConvexPolygonClearance, getTruckGroundFootprint } from './truck-ground';
+import { getTruckAccessGeometry } from './truck-access';
 import type { OutdoorSiteId } from './outdoor-sites';
 import { GROUND_REGIONS, type GroundRegionId } from './ground-regions';
 
 export type GroundPoint = [number, number];
 export interface GroundBounds { left: number; top: number; right: number; bottom: number }
-type TreeNumber = '01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'|'09'|'10'|'11'|'12'|'13'|'14'|'15'|'16'|'17'|'18'|'19'|'20'|'21'|'22';
-type PatchNumber = '01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'|'09'|'10';
+type TreeNumber = '01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'|'09'|'10'|'11'|'12'|'13'|'14'|'15'|'16'|'17'|'18'|'19'|'20'|'21'|'22'|'23'|'24'|'25';
+type PatchNumber = '01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'|'09'|'10'|'11'|'12'|'13';
 export type GroundResourceId = `tree-${TreeNumber}`|`scrap-${PatchNumber}`|`seed-${PatchNumber}`|`water-${PatchNumber}`;
 export type GroundResourceKind = 'tree'|'scrap'|'seed'|'water';
 export type GroundResource = 'wood'|'scrap'|'seeds'|'water';
@@ -97,6 +98,22 @@ const REGIONAL_SPECS: readonly NodeSpec[] = [
   ['scrap-09',[1840,1005],1.02,'east-creek'],['scrap-10',[1980,1095],1.03,'east-creek'],
   ['water-09',[1980,475],1.02,'east-creek'],['water-10',[1840,1210],1.04,'east-creek'],
 ];
+/** The home view has real, individually harvestable scenery of its own. These
+ * small groups sit beyond the complete level-eight chassis and the swept
+ * staircase area. They never move when the deck or camera grows, and leave a
+ * broad walking space between the truck, trees and the spring bank. */
+const HOME_VERGE_SPECS: readonly NodeSpec[] = [
+  ['tree-23',[-70,725],1.10,'home-verge'],
+  ['tree-24',[70,705],1.07,'home-verge'],
+  ['tree-25',[205,770],1.03,'home-verge'],
+  ['seed-11',[-160,690],.98,'home-verge'],
+  ['seed-12',[345,820],1.05,'home-verge'],
+  ['water-11',[1320,755],1.08,'home-spring'],
+  ['water-12',[1230,835],1.02,'home-spring'],
+  ['scrap-11',[1450,665],.98,'home-spring'],
+  ['scrap-12',[1100,850],1.02,'home-spring'],
+  ['seed-13',[1390,870],1.04,'home-spring'],
+];
 const kindDetails: Record<GroundResourceKind,{siteId:OutdoorSiteId;resource:GroundResource;name:string;halfWidth:number;halfHeight:number}> = {
   tree:{siteId:'grove',resource:'wood',name:'숲 나무',halfWidth:18,halfHeight:12},
   scrap:{siteId:'salvage',resource:'scrap',name:'고철 더미',halfWidth:20,halfHeight:15},
@@ -114,7 +131,11 @@ const groundNode = ([id,point,scale,regionId]:NodeSpec):GroundResourceNode => {
     approaches:[],...(id.endsWith('-01')?{legacySiteId:details.siteId}:{})};
 };
 export const LEGACY_GROUND_RESOURCE_IDS: readonly GroundResourceId[] = [...TREE_SPECS,...PATCH_SPECS].map(([id])=>id);
-const nodes = [...TREE_SPECS,...PATCH_SPECS,...REGIONAL_SPECS].map(groundNode);
+/** Exact pre-home catalog for save compatibility, in its original order. */
+export const PREVIOUS_GROUND_RESOURCE_IDS: readonly GroundResourceId[] = [...TREE_SPECS,...PATCH_SPECS,...REGIONAL_SPECS].map(([id])=>id);
+const nodes = [...TREE_SPECS,...PATCH_SPECS,...REGIONAL_SPECS,...HOME_VERGE_SPECS].map(groundNode);
+const homeNodeIds = new Set(HOME_VERGE_SPECS.map(([id])=>id));
+const reservedAccessBounds = Array.from({length:8},(_,index)=>getTruckAccessGeometry(index+1).bounds);
 /** Eight surrounding candidates let people approach the nearest clear side.
  * Authoring filters reserve the full animal circle around every living trunk
  * and prop, including the selected one, plus the maximum truck silhouette. */
@@ -124,6 +145,7 @@ export const GROUND_RESOURCE_NODES: readonly GroundResourceNode[] = nodes.map(no
       const angle=index*Math.PI/4;
       return [node.point[0]+Math.cos(angle)*stopDistance,node.point[1]+Math.sin(angle)*stopDistance] as GroundPoint;
     }),approaches=candidates.filter(point=>getConvexPolygonClearance(maximumTruck,point)>=APPROACH_MARGIN
+      &&(!homeNodeIds.has(node.id)||reservedAccessBounds.every(bounds=>distanceToBounds(point,bounds)>=APPROACH_MARGIN))
       &&nodes.every(other=>distanceToBounds(point,other.bounds)>=APPROACH_MARGIN));
   return {...node,approaches};
 });

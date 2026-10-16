@@ -1,7 +1,7 @@
 import { CROP_IDS, CROPS, type CropId } from './crops';
 import { getSeedInventory, grantQuests, questList, type ActionResult, type GameState } from './game';
 import { GAME_MINUTES_PER_SECOND } from './game-time';
-import { GROUND_RESOURCE_NODES, LEGACY_GROUND_RESOURCE_IDS, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from './ground-resources';
+import { GROUND_RESOURCE_NODES, LEGACY_GROUND_RESOURCE_IDS, PREVIOUS_GROUND_RESOURCE_IDS, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from './ground-resources';
 import { getGroundRegion, type GroundRegion } from './ground-regions';
 import { ROADSIDE_RULES, validateRoadsideProgress } from './roadside';
 import { validateFarmEconomy } from './farm-economy';
@@ -37,11 +37,13 @@ export function validateGatheringProgress(value: unknown): value is GatheringPro
   if (!record(value) || Object.keys(value).length !== 2 || !Object.hasOwn(value, 'version') || !Object.hasOwn(value, 'nodes')
     || value.version !== 1 || !record(value.nodes)) return false;
   const nodes = value.nodes;
-  const ids = Object.keys(nodes).length === LEGACY_GROUND_RESOURCE_IDS.length
-    ? LEGACY_GROUND_RESOURCE_IDS : GROUND_RESOURCE_NODES.map(node => node.id);
-  // Accept only the complete old catalog or the complete current catalog.
+  const count = Object.keys(nodes).length;
+  const ids = [LEGACY_GROUND_RESOURCE_IDS, PREVIOUS_GROUND_RESOURCE_IDS,
+    GROUND_RESOURCE_NODES.map(node => node.id)].find(catalog => catalog.length === count);
+  // Accept only an exact complete published catalog. Both older catalogs keep
+  // their visits and real-time timers while new home nodes start ready.
   // An arbitrary partial record must never reset a missing resource's timer.
-  return Object.keys(nodes).length === ids.length && ids.every(id => {
+  return !!ids && ids.every(id => {
       const row = nodes[id];
       return Object.hasOwn(nodes, id) && record(row) && Object.keys(row).length === 2 && Object.hasOwn(row, 'visits') && Object.hasOwn(row, 'readyAtMs')
         && integer(row.visits) && deviceTime(row.readyAtMs)

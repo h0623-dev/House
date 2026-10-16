@@ -1,39 +1,27 @@
 import atlasUrl from './assets/haven-facilities-v047.png';
 import type { BuildingType } from './settlement';
 import { drawFacilityUpgradeDetails, facilityUpgradeDetailsSvg } from './facility-upgrade-art';
-import { alignArtContext, type AlignedArtTransform } from './layout-art-projection';
+import type { AlignedArtTransform } from './layout-art-projection';
 import type { LayoutDirection } from './layout-direction';
+import { FACILITY_FRAMES, getFacilityArtLayout } from './facility-art-layout';
+export { FACILITY_FRAMES, FACILITY_BASE_CORNERS, FACILITY_BASE_SLOPES, getFacilityArtBounds } from './facility-art-layout';
 
 /** Warm miniature work stations, independently framed with alpha gutters. */
 export const FACILITY_ART_URL = atlasUrl;
-export const FACILITY_FRAMES: Record<BuildingType, { x:number; y:number; width:number; height:number }> = {
- workshop: {x:39,y:22,width:471,height:481},
- kitchen: {x:543,y:28,width:470,height:474},
- waterworks: {x:1067,y:33,width:451,height:470},
- greenhouse: {x:41,y:526,width:484,height:452},
- watchtower: {x:595,y:495,width:379,height:482},
- petHouse: {x:1045,y:566,width:475,height:415},
-};
 const art = new Image();
 art.decoding='async';
 art.src=atlasUrl;
 export function facilityArtReady(){return art.complete&&art.naturalWidth>0;}
-/** Measured front platform edges before fitting to the live deck axes. */
-export const FACILITY_BASE_SLOPES: Record<BuildingType,[number,number]> = {
- workshop:[117/254,-91/199], kitchen:[114/263,-83/186], waterworks:[117/250,-91/180],
- greenhouse:[116/256,-86/204], watchtower:[83/180,-74/181], petHouse:[94/250,-89/204],
-};
-
-/** Fit each facility into its box, anchored at the bottom centre. */
-export function drawFacility(c:CanvasRenderingContext2D,type:BuildingType,x:number,y:number,width:number,height:number,alpha=1,level=1,direction:LayoutDirection=0,onPaint?:(matrix:AlignedArtTransform)=>void):boolean{
+/** The timber base occupies its paid cells and is centred on the deck placement. */
+export function drawFacility(c:CanvasRenderingContext2D,type:BuildingType,x:number,y:number,_width:number,_height:number,alpha=1,level=1,direction:LayoutDirection=0,onPaint?:(matrix:AlignedArtTransform)=>void):boolean{
  if(!facilityArtReady())return false;
- const f=FACILITY_FRAMES[type],scale=Math.min(width/f.width,height/f.height),w=f.width*scale,h=f.height*scale;
+ const {frame:f,sourceLeft:left,sourceTop:top,matrix}=getFacilityArtLayout(type,direction),w=f.width,h=f.height;
  c.save();c.globalAlpha*=alpha;c.imageSmoothingEnabled=true;
- const [positive,negative]=FACILITY_BASE_SLOPES[type],matrix=alignArtContext(c,x,y,w,h,positive,negative,direction);
- c.drawImage(art,f.x,f.y,f.width,f.height,-w/2,-h,w,h);
- drawFacilityUpgradeDetails(c,type,level,-w/2,-h,w,h);
+ c.translate(x,y);c.transform(matrix.xScale,matrix.yShear,0,matrix.yScale,0,0);
+ c.drawImage(art,f.x,f.y,f.width,f.height,left,top,w,h);
+ drawFacilityUpgradeDetails(c,type,level,left,top,w,h);
  if(level>=4){
-  const flagX=w*.23,flagY=-h*.89,size=Math.max(8,w*.17);
+  const flagX=left+w*.73,flagY=top+h*.11,size=w*.14;
   c.strokeStyle='#7c6541';c.lineWidth=Math.max(1,w*.025);c.beginPath();c.moveTo(flagX,flagY+size*1.9);c.lineTo(flagX,flagY);c.stroke();
   c.fillStyle=level>=5?'#4b8392':'#6f9158';c.strokeStyle='#f3df9e';c.lineWidth=Math.max(1,w*.018);
   c.beginPath();c.moveTo(flagX,flagY);c.lineTo(flagX+size*1.45,flagY+size*.1);c.lineTo(flagX+size*1.16,flagY+size*.65);c.lineTo(flagX+size*1.45,flagY+size*1.1);c.lineTo(flagX,flagY+size);c.closePath();c.fill();c.stroke();

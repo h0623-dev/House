@@ -1,4 +1,4 @@
-import { paintWorldQuad, drawWorldFence } from './world-art';
+import { paintWorldQuad, worldImages } from './world-art';
 import { FLOOR_HEIGHT } from './truck-layout';
 import { drawTruckAccessStairs } from './truck-stair-art';
 
@@ -47,14 +47,14 @@ function fascia(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,z:number,opaci
   const b=o.bounds,p=o.project;
   c.save();c.globalAlpha*=opacity;
   for(const face of [
-    [p(b.left,b.front,z),p(b.end,b.front,z),p(b.end,b.front,z-12),p(b.left,b.front,z-12)],
-    [p(b.end,b.back,z),p(b.end,b.front,z),p(b.end,b.front,z-12),p(b.end,b.back,z-12)],
+    [p(b.left,b.front,z),p(b.end,b.front,z),p(b.end,b.front,z-10),p(b.left,b.front,z-10)],
+    [p(b.end,b.back,z),p(b.end,b.front,z),p(b.end,b.front,z-10),p(b.end,b.back,z-10)],
   ] as [FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint][]){
-    polygon(c,face,'#677653');paintWorldQuad(c,'metal',face,.035);polygon(c,face,'','#69704b',.7);
-    line(c,face[2],face[3],'#38463366',1.8);
+    polygon(c,face,'#aa8758');c.save();c.globalAlpha=.56;paintWorldQuad(c,'wood',face,.035);c.restore();polygon(c,face,'','#746545',.7);
+    line(c,face[2],face[3],'#374d3570',1.6);
   }
-  line(c,p(b.left,b.front,z),p(b.end,b.front,z),'#e3c087',2);
-  line(c,p(b.end,b.back,z),p(b.end,b.front,z),'#cfb27d',1.4);
+  line(c,p(b.left,b.front,z),p(b.end,b.front,z),'#efd19a',2);
+  line(c,p(b.end,b.back,z),p(b.end,b.front,z),'#e3c38a',1.5);
   c.restore();
 }
 function stairLanding(c:CanvasRenderingContext2D,center:FloorArtPoint):void{
@@ -96,9 +96,98 @@ function rail(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,edge:FloorRailGa
   const segments:[number,number][]=[];let at=start;
   for(const gap of gaps){if(gap.from>at)segments.push([at,gap.from]);at=Math.max(at,gap.to);}if(at<end)segments.push([at,end]);
   for(const[a,b]of segments){
-    const n=Math.max(1,Math.ceil((b-a)/155));
-    for(let i=0;i<n;i++)drawWorldFence(c,project(a+(b-a)*i/n),project(a+(b-a)*(i+1)/n),front?23:31);
+    const n=Math.max(1,Math.ceil((b-a)/128)),height=front?26:34;
+    for(let i=0;i<n;i++){
+      const start=project(a+(b-a)*i/n),end=project(a+(b-a)*(i+1)/n);
+      const point=(p:FloorArtPoint,lift:number):FloorArtPoint=>[p[0],p[1]-lift];
+      const beam:[FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint]=[point(start,6),point(end,6),point(end,17),point(start,17)];
+      polygon(c,beam,'#b2905e','#706346',.6);
+      c.save();c.globalAlpha=.7;paintWorldQuad(c,'wood',beam,.025);c.restore();
+      line(c,point(start,17),point(end,17),'#e0c28b',1.2);
+      line(c,point(start,height-3),point(end,height-3),'#3e5743',3.1);
+      line(c,point(start,height-4),point(end,height-4),'#929c6e',.9);
+      const mid:FloorArtPoint=[(start[0]+end[0])/2,(start[1]+end[1])/2];
+      line(c,point(mid,17),point(mid,height-3),'#607452',1.8);
+    }
+    for(let i=0;i<=n;i++){
+      const at=project(a+(b-a)*i/n);
+      railPost(c,at,height,(i===0||i===n||i%3===0),o.night??0,front);
+    }
   }
+}
+/** Actual vertical posts and restrained lanterns stay upright on both deck axes.
+ * The previous full fence image distorted its uprights on the short UV edge. */
+function railPost(c:CanvasRenderingContext2D,p:FloorArtPoint,height:number,lantern:boolean,night:number,front:boolean):void{
+  const [x,y]=p,w=3.1,top=y-height;
+  polygon(c,[[x-w,y+1],[x+w,y+2],[x+w,top],[x-w,top-1]],'#4f694a','#364c38',.7);
+  polygon(c,[[x+w,y+2],[x+w+2,y],[x+w+2,top-2],[x+w,top]],'#334e38');
+  line(c,[x-w+.8,y],[x-w+.8,top],'#a5ac78',.8);
+  polygon(c,[[x-w-1,top-1],[x+w,top+1],[x+w+2,top-2],[x-w+1,top-4]],'#c7ad73','#79754b',.55);
+  for(const at of[y-4,top+5]){c.beginPath();c.arc(x-.4,at,.9,0,Math.PI*2);c.fillStyle='#d2b271';c.fill();}
+  if(!lantern)return;
+  const h=front?10:12,ly=top-3;
+  if(night>.01){
+    const glow=c.createRadialGradient(x,ly-h*.5,1,x,ly-h*.5,17);glow.addColorStop(0,`rgba(255,221,132,${.12+clamp(night)*.24})`);glow.addColorStop(1,'rgba(255,217,122,0)');
+    c.fillStyle=glow;c.beginPath();c.arc(x,ly-h*.5,17,0,Math.PI*2);c.fill();
+  }
+  const glass=c.createLinearGradient(x-3,ly-h,x+3,ly);glass.addColorStop(0,'#fff8ce');glass.addColorStop(.6,'#f9e3a1');glass.addColorStop(1,'#dcb56b');
+  c.fillStyle=glass;c.strokeStyle='#9c8a55';c.lineWidth=.75;c.beginPath();c.roundRect(x-3,ly-h,6,h,1);c.fill();c.stroke();
+  line(c,[x,ly-h],[x,ly],'#9c8d55',.55);
+  polygon(c,[[x-4,ly-h],[x,ly-h-3],[x+4,ly-h],[x+3,ly-h+1],[x-3,ly-h+1]],'#8a8858','#5b6b45',.5);
+  line(c,[x-3.5,ly],[x+3.5,ly],'#ad935b',1.1);
+}
+
+/** Board dimensions stay physical as the truck expands: one warm oak painting
+ * per staggered plank, instead of one giant grain stretched over the whole map. */
+function paintWoodSurface(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,z:number):void{
+  const b=o.bounds,p=o.project,surface=quad(o,z,1),rowDepth=23,pieceLength=156;
+  polygon(c,surface,'#d6b17b');
+  c.save();c.beginPath();surface.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.clip();
+  for(let row=0,v=b.back+1;v<b.front;row++,v+=rowDepth){
+    const lastV=Math.min(b.front,v+rowDepth),offset=(row%3)*pieceLength/3;
+    for(let column=0,u=b.left+1-offset;u<b.end;column++,u+=pieceLength){
+      const from=Math.max(b.left+1,u),to=Math.min(b.end,u+pieceLength),points:[FloorArtPoint,FloorArtPoint,FloorArtPoint,FloorArtPoint]=[p(from,v,z),p(to,v,z),p(to,lastV,z),p(from,lastV,z)];
+      const tone=(row*7+column*11)%5;
+      polygon(c,points,['#dab985','#dfbf8b','#d5af79','#e2be88','#dcb47c'][tone]);
+      c.save();c.globalAlpha=.56;paintWorldQuad(c,'wood',points,0);c.restore();
+      line(c,p(from,v,z),p(to,v,z),'#fff0c45c',.65);
+      line(c,p(to,v,z),p(to,lastV,z),'#7b5b373b',.6);
+      if((row+column)%3===0){
+        const mid=(from+to)/2+.1;
+        line(c,p(Math.max(from+4,mid-22),v+rowDepth*.38,z),p(Math.min(to-4,mid+26),v+rowDepth*.38,z),'#815e3420',.5);
+      }
+    }
+    line(c,p(b.left+1,lastV,z),p(b.end,lastV,z),'#7a5d383d',.75);
+    line(c,p(b.left+1,lastV+.9,z),p(b.end,lastV+.9,z),'#fff1ca5c',.7);
+  }
+  const shade=c.createLinearGradient(...p(b.left,b.back,z),...p(b.end,b.front,z));shade.addColorStop(0,'rgba(255,244,214,.08)');shade.addColorStop(1,'rgba(112,78,38,.025)');
+  c.beginPath();surface.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fillStyle=shade;c.fill();c.restore();polygon(c,surface,'','#a2865d',.9);
+}
+
+// Keep one raster only. Expansion interpolates the physical bounds every frame;
+// retaining all those intermediate surfaces would keep dozens of large images.
+let woodCache:{key:string;canvas:HTMLCanvasElement;left:number;top:number;width:number;height:number}|null=null;
+function woodSurface(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,z:number):void{
+  if(typeof document==='undefined'){paintWoodSurface(c,o,z);return;}
+  const corners=quad(o,z,0),left=Math.floor(Math.min(...corners.map(p=>p[0])))-2,
+    top=Math.floor(Math.min(...corners.map(p=>p[1])))-2,
+    width=Math.ceil(Math.max(...corners.map(p=>p[0]))-left)+3,
+    height=Math.ceil(Math.max(...corners.map(p=>p[1]))-top)+3;
+  const transform=c.getTransform(),deviceScale=Math.hypot(transform.a,transform.b),
+    requested=Math.max(1,Math.min(2,Math.ceil(deviceScale*2)/2)),
+    resolution=Math.min(requested,2048/Math.max(1,width),1536/Math.max(1,height)),
+    ready=worldImages.havenTruck.complete&&worldImages.havenTruck.naturalWidth>0;
+  const key=[o.bounds.left,o.bounds.end,o.bounds.back,o.bounds.front,z,...corners.flat(),resolution,ready?1:0].join(':');
+  if(woodCache?.key!==key){
+    const canvas=woodCache?.canvas??document.createElement('canvas');
+    canvas.width=Math.max(1,Math.ceil(width*resolution));canvas.height=Math.max(1,Math.ceil(height*resolution));
+    const paint=canvas.getContext('2d');
+    if(!paint){paintWoodSurface(c,o,z);return;}
+    paint.setTransform(resolution,0,0,resolution,-left*resolution,-top*resolution);
+    paintWoodSurface(paint,o,z);
+    woodCache={key,canvas,left,top,width,height};
+  }
+  c.drawImage(woodCache.canvas,0,0,width*resolution,height*resolution,left,top,width,height);
 }
 function floorPlate(c:CanvasRenderingContext2D,o:TruckFloorArtOptions,floor:FloorArtLevel):void{
   const b=o.bounds,p=o.project,anchor=p(Math.min(b.end-75,b.left+130),b.front+1,floor.z-10);
@@ -115,17 +204,12 @@ export function drawTruckFloor(c:CanvasRenderingContext2D,o:TruckFloorArtOptions
   const floor=o.floors.find(f=>f.id===o.selectedFloor)??o.floors[0]??{id:1 as const,z:94};
   const geometry:TruckFloorArtGeometry={floor:floor.id,z:floor.z,surface:quad(o,floor.z,1),
     otherFloors:[],stairways:(o.stairways??[]).filter(stairs=>stairs.from===floor.id||stairs.to===floor.id)};
-  const b=o.bounds,p=o.project;c.save();
+  c.save();
   if(o.pass==='structure'){
     // Tall posts, ghost rims and complete flights used to cover the work area.
     // The selected floor's fascia/rails and clipped local stairwell suffice.
   }else if(o.pass==='surface'){
-    fascia(c,o,floor.z);const surface=quad(o,floor.z,1);
-    polygon(c,surface,'#d7b47f');paintWorldQuad(c,'wood',surface,-.025);polygon(c,surface,'','#9a7c51',1.2);
-    for(let v=b.back+24;v<b.front;v+=24){
-      line(c,p(b.left+1,v,floor.z),p(b.end-1,v,floor.z),'#94744840',.65);
-      line(c,p(b.left+1,v+1,floor.z),p(b.end-1,v+1,floor.z),'#fff0c668',.7);
-    }
+    fascia(c,o,floor.z);const surface=quad(o,floor.z,1);woodSurface(c,o,floor.z);
     if(o.night){c.save();c.globalAlpha*=clamp(o.night)*.1;polygon(c,surface,'#263e45');c.restore();}
   }else if(o.pass==='back'){
     for(const stairs of geometry.stairways)stairWell(c,o,floor,stairs);

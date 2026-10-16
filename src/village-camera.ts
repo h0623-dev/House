@@ -3,11 +3,16 @@ import { getFarmCapacity } from './game';
 import { getSettlement, type BuildingType } from './settlement';
 import { getFacilityPlacement } from './deck-placement';
 import { FARM_POSITIONS, getFloorBounds, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
+import { getFacilityArtBounds } from './facility-art-layout';
 
 export type VillageBounds = { left:number; top:number; right:number; bottom:number };
-export const VILLAGE_FACILITY_SIZE: Record<BuildingType, [number,number]> = {
-  workshop:[126,119], kitchen:[120,112], waterworks:[116,118], greenhouse:[126,105], watchtower:[111,146], petHouse:[106,90],
-};
+/** Conservative paint extents, derived from the same physical fit as the renderer. */
+export const VILLAGE_FACILITY_SIZE = Object.fromEntries(
+  (['workshop','kitchen','waterworks','greenhouse','watchtower','petHouse'] as const).map(type=>{
+    const a=getFacilityArtBounds(type,0),b=getFacilityArtBounds(type,1);
+    return[type,[Math.max(a.width,b.width),Math.max(-a.top,-b.top)]];
+  }),
+) as Record<BuildingType,[number,number]>;
 export function mergeVillageBounds(bounds:readonly VillageBounds[]):VillageBounds {
   return { left:Math.min(...bounds.map(b=>b.left)), top:Math.min(...bounds.map(b=>b.top)),
     right:Math.max(...bounds.map(b=>b.right)), bottom:Math.max(...bounds.map(b=>b.bottom)) };
@@ -16,9 +21,10 @@ export function mergeVillageBounds(bounds:readonly VillageBounds[]):VillageBound
 export function getVillageContentBounds(state:GameState,floor:TruckFloor):VillageBounds {
   const bounds:VillageBounds[]=[];
   for(const building of getSettlement(state).buildings.filter(b=>getFacilityPlacement(state,b).floor===floor)){
-    const placement=getFacilityPlacement(state,building),[x,y]=projectTruckPoint([placement.x,placement.y],floor),[w,h]=VILLAGE_FACILITY_SIZE[building.type];
+    const placement=getFacilityPlacement(state,building),[x,y]=projectTruckPoint([placement.x,placement.y],floor);
+    const art=getFacilityArtBounds(building.type,placement.rotation);
     // Production bubbles and the finished roof are part of the visible village.
-    bounds.push({left:x-w/2-8,top:y-h-44,right:x+w/2+8,bottom:y+25});
+    bounds.push({left:x+art.left-8,top:y+art.top-44,right:x+art.right+8,bottom:y+art.bottom+25});
   }
   if(floor===1){
     const count=Math.min(state.plots.length+1,getFarmCapacity(state),FARM_POSITIONS.length);

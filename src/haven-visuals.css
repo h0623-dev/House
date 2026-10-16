@@ -204,3 +204,64 @@
 @media (prefers-reduced-motion: reduce) {
   .village-shell .nav-button { transition: none; }
 }
+
+/* Leave the middle of the scene available for the actual home silhouette. */
+.village-shell .scene-card .road-controls {
+  width: 50px;
+  max-width: 50px;
+  flex-wrap: wrap;
+}
+.village-shell .scene-card .road-controls > button:not(.travel-more) { display: none; }
+.village-shell .scene-card .road-controls > .travel-more { display: flex; order: 1; }
+.village-shell .scene-card .road-controls > .travel-more > .icon { width: 18px; transform: rotate(90deg); }
+.village-shell .scene-card.travel-open .road-controls { width: 144px; max-width: 144px; }
+.village-shell .scene-card.travel-open .road-controls > button { display: flex; }
+.village-shell .scene-card.travel-open .road-controls > .travel-more > .icon { transform: rotate(-90deg); }
+
+@media (orientation: landscape) {
+  .village-shell .scene-card,
+  .village-shell .scene-card:has([data-truck-floor="2"]:not(.locked)),
+  .village-shell .scene-card.facility-selected.facility-repeat-ready,
+  .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .facility-repeat-ready, .construction-mode, .planning-catalog, .planning-expansion) {
+    --world-safe-top: 14px;
+    --world-safe-bottom: 18px;
+  }
+  #app .scene-card .camera-tool { right: 8px; bottom: 10px; }
+  #app .scene-card:not(.camera-open) .map-controls {
+    position: absolute;
+    z-index: 7;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 44px;
+    height: auto;
+    left: auto;
+    right: 8px;
+    top: auto;
+    bottom: 68px;
+    gap: 5px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  #app .scene-card:not(.camera-open) .map-controls > button:not([data-map-zoom]) { display: none; }
+  #app .scene-card:not(.camera-open) .map-controls > button[data-map-zoom] {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid #bba374;
+    border-radius: 11px;
+    color: #5c714b;
+    background: linear-gradient(#fffbedee, #f0e3c1ed);
+    box-shadow: inset 0 1px #fffdf4, 0 2px 5px #3b482526;
+  }
+  #app .scene-card:not(.camera-open) .map-controls > button > small { display: none; }
+  #app .scene-card.camera-open .map-controls { bottom: 82px; right: 8px; }
+  #app .scene-card.camera-open .map-move-tool { bottom: 138px; right: 8px; top: auto; left: auto; }
+  #app .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .construction-mode, .planning-catalog, .planning-expansion):not(.camera-open) .map-controls { display: none; }
+  #app .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .construction-mode, .planning-catalog, .planning-expansion).camera-open .map-controls,
+  #app .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .construction-mode, .planning-catalog, .planning-expansion).camera-open .map-move-tool { right: calc(var(--landscape-panel) + 16px); }
+}
