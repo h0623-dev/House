@@ -1,9 +1,9 @@
 {
-  "version": "0.45.0",
-  "versionCode": 45,
+  "version": "0.46.0",
+  "versionCode": 46,
   "minimumNativeVersionCode": 42,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.45.0.apk",
-  "sha256": "c4eb7132f86d12313045aa44eef0cefba000df433f70c6e833c3e6ef58da09ca",
-  "notes": "로드헤이븐 가로 0.45.0 업데이트 · 기존 앱과 별도로 설치되는 가로 화면 앱이에요.",
-  "publishedAt": "2026-10-16T01:23:35.876Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.46.0.apk",
+  "sha256": "f48cc4e7acc4ee7ec1f46c1f2864c96be311bddc8819b8e289a3d096e6a4dfaa",
+  "notes": "로드헤이븐 가로 0.46.0 업데이트 · 기존 앱과 별도로 설치되는 가로 화면 앱이에요.",
+  "publishedAt": "2026-10-16T01:45:30.280Z"
 }
