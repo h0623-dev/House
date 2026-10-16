@@ -1,9 +1,9 @@
 {
-  "version": "0.51.0",
-  "versionCode": 51,
+  "version": "0.52.0",
+  "versionCode": 52,
   "minimumNativeVersionCode": 42,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.51.0.apk",
-  "sha256": "c98a7af1052cb5f6af3160e06d685ea4ec1f2ad1412ff1e66e8a184a2a689672",
-  "notes": "로드헤이븐 가로 0.51.0 업데이트 · 기존 앱과 별도로 설치되는 가로 화면 앱이에요.",
-  "publishedAt": "2026-10-16T08:26:17.494Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.52.0.apk",
+  "sha256": "ec92b235c1858c9414c621f494d9e38138b9d3f350464ef18b393d20ec3ff00a",
+  "notes": "v0.52.0 · 오리지널 미니어처 좀비 3종 아트와 걷기 자세를 적용하고 도로 접지·전투 모션을 교정했어요.",
+  "publishedAt": "2026-10-16T13:28:12.162Z"
 }
