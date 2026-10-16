@@ -1,7 +1,7 @@
 import { createMotionRoute, sampleMotionRoute, type MotionPoint, type MotionRoute } from './scene-motion';
 import { GROUND_RESOURCE_BOUNDS, GROUND_RESOURCE_NODES } from './ground-resources';
 import { getPetPassageGeometry, PET_PASSAGE_LINK_ID, getPetPassageWidth, PET_PASSAGE_MAX_BODY_RADIUS } from './pet-passage';
-import { getTruckGroundFootprint } from './truck-ground';
+import { getConvexPolygonClearance, getTruckGroundFootprint } from './truck-ground';
 import { getTruckAccessGeometry } from './truck-access';
 import { FARM_POSITIONS, SETTLEMENT_POSITIONS, getFloorBounds, getFloorStairs,
   projectTruckPoint, unprojectTruckPoint, type HomeLocation, type TruckFloor } from './truck-layout';
@@ -231,11 +231,16 @@ function escapePoint(world:NavigationWorld,location:NavigationLocation):Navigati
       candidates.push(floor?unprojectDeckPoint(p,floor as TruckFloor):p);
     });
   }
-  const otherObstacles=staticFor(world,floor).filter(obstacle=>!circleOverlapsPolygon(location.point,world.radius,navigationObstaclePolygon(obstacle))),
-    otherActors=actorsFor(world,floor).filter(actor=>distance(location.point,actor.location.point)>=world.radius+actor.radius-.01);
+  const solids=staticFor(world,floor),actors=actorsFor(world,floor);
   return candidates.filter(p=>inside(p,bounds)&&!occupied(world,floor,project(p)))
-    .filter(p=>!otherObstacles.some(obstacle=>crossesObstacle(world,floor,location.point,project(p),obstacle))
-      &&!otherActors.some(actor=>distanceToSegment(actor.location.point,location.point,project(p))<world.radius+actor.radius-.01))
+    .filter(p=>!solids.some(obstacle=>{
+      const polygon=navigationObstaclePolygon(obstacle);
+      return circleOverlapsPolygon(location.point,world.radius,polygon)
+        ?!separatesPolygonStep(location.point,project(p),polygon)
+        :crossesObstacle(world,floor,location.point,project(p),obstacle);
+    })&&!actors.some(actor=>distance(location.point,actor.location.point)<world.radius+actor.radius-.01
+      ?!separatesActorStep(location.point,project(p),actor.location.point)
+      :distanceToSegment(actor.location.point,location.point,project(p))<world.radius+actor.radius-.01))
     .sort((a,b)=>distance(project(start),project(a))-distance(project(start),project(b))).map(project)[0];
 }
 /** Multi-floor routes always use a built stair link; selecting a view never teleports feet. */
@@ -391,13 +396,50 @@ export function circleOverlapsPolygon(point:MotionPoint,radius:number,polygon:re
   }
   return inside;
 }
+function separatesActorStep(from:MotionPoint,to:MotionPoint,center:MotionPoint):boolean {
+  const dx=to[0]-from[0],dy=to[1]-from[1],radial=(from[0]-center[0])*dx+(from[1]-center[1])*dy;
+  return radial>=0&&distance(to,center)>distance(from,center)+1e-6;
+}
+/** Existing truck and deck footprints are convex, in clockwise screen order. */
+function separatesPolygonStep(from:MotionPoint,to:MotionPoint,polygon:readonly NavigationPoint[]):boolean {
+  const initial=getConvexPolygonClearance(polygon,from),final=getConvexPolygonClearance(polygon,to);
+  if(final<=initial+1e-6)return false;
+  const dx=to[0]-from[0],dy=to[1]-from[1],normals=polygonOutwardNormals(polygon),nearest=Math.abs(initial);
+  return polygon.some((a,index)=>{
+    const b=polygon[(index+1)%polygon.length];
+    if(distanceToSegment(from,a,b)>nearest+1e-7)return false;
+    if(initial<=1e-7)return normals[index][0]*dx+normals[index][1]*dy>=0;
+    const sx=b[0]-a[0],sy=b[1]-a[1],length=sx*sx+sy*sy,
+      ratio=length?Math.max(0,Math.min(1,((from[0]-a[0])*sx+(from[1]-a[1])*sy)/length)):0;
+    return (from[0]-a[0]-ratio*sx)*dx+(from[1]-a[1]-ratio*sy)*dy>=0;
+  });
+}
+/** A live edit cannot turn a retained route into a walk through a solid body. */
+export function blocksStaticNavigationStep(world:NavigationWorld,from:NavigationLocation,to:NavigationLocation):NavigationObstacle|undefined {
+  // The admitted stairs and ramp deliberately pass across the truck silhouette.
+  if(isNavigationLinkSurface(from.surface)||isNavigationLinkSurface(to.surface)||from.surface!==to.surface||floorId(from)!==floorId(to))return;
+  return staticFor(world,floorId(to)).find(obstacle=>{
+    const polygon=navigationObstaclePolygon(obstacle);
+    if(!sweptCircleOverlapsPolygon(from.point,to.point,world.radius,polygon))return false;
+    return !circleOverlapsPolygon(from.point,world.radius,polygon)||!separatesPolygonStep(from.point,to.point,polygon);
+  });
+}
 /** Swept feet, rather than endpoints alone, stop fast actors crossing a companion. */
 export function blocksActorStep(from:NavigationLocation,to:NavigationLocation,radius:number,actors:readonly NavigationActor[]):NavigationActor|undefined {
   return actors.find(a=>{
     const same=(isNavigationLinkSurface(to.surface)||isNavigationLinkSurface(a.location.surface))
       ?(to.link!==undefined&&to.link===a.location.link)||floorId(to)===floorId(a.location)
       :floorId(to)===floorId(a.location)&&to.surface===a.location.surface;
-    return same&&distanceToSegment(a.location.point,from.point,to.point)<radius+a.radius-.01;
+    if(!same)return false;
+    const clearance=radius+a.radius-.01,fromDistance=distance(from.point,a.location.point);
+    if(fromDistance<clearance){
+      // A retained or newly enlarged body can already overlap a companion.
+      // The route planner supplies an escape leg, whose first swept segment
+      // still contains that old overlap. Admit only motion whose separation
+      // increases along the entire segment; moving through or closer stays blocked.
+      if(separatesActorStep(from.point,to.point,a.location.point))return false;
+    }
+    return distanceToSegment(a.location.point,from.point,to.point)<clearance;
   });
 }
 export function getPatrolTargets(world:NavigationWorld,floor:TruckFloor|0):NavigationLocation[] {

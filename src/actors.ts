@@ -2,9 +2,10 @@ import { heroFrame, heroImages, type SurvivorFrame } from './character-art';
 import { drawSurvivorOutfit, type OutfitDrawLayer } from './outfit-art';
 import type { EquippedOutfitId } from './shop';
 import { drawGatheringBody, drawGatheringLimbs, isGatheringRigPose } from './gathering-rig';
+import { HAMMER_HEAD_DISTANCE, hammerContactAt, sampleHammerMotion } from './construction-motion';
 
 /** The village and expeditions share one compact, painted survivor. */
-export type HeroPose = 'idle' | 'walk' | 'climb' | 'gather' | 'sow' | 'water' | 'harvest' | 'chop' | 'mine' | 'pluck' | 'scoop' | 'attack' | 'skill' | 'hurt' | 'celebrate' | 'pet' | 'ride';
+export type HeroPose = 'idle' | 'walk' | 'climb' | 'gather' | 'sow' | 'water' | 'harvest' | 'chop' | 'mine' | 'pluck' | 'scoop' | 'attack' | 'skill' | 'hurt' | 'celebrate' | 'pet' | 'ride' | 'hammer';
 export interface HeroOptions {
   x: number; y: number; scale: number; time: number;
   gender: 'female' | 'male'; pose: HeroPose; facing: 1 | -1; progress?: number;
@@ -199,6 +200,48 @@ function interactionArm(c: CanvasRenderingContext2D, rig: InteractionRig, should
   interactionSegment(c, rig.upper, shoulder, elbow, width); interactionSegment(c, openPalm ? rig.openFore : rig.fore, elbow, hand, width);
 }
 
+/** A short wooden handle and squared iron head read as a hammer, not an axe. */
+function drawConstructionHammer(c: CanvasRenderingContext2D, x: number, y: number, angle: number): void {
+  c.save(); c.translate(x, y); c.rotate(angle);
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  const wood = c.createLinearGradient(-2, -24, 3, 5);
+  wood.addColorStop(0, '#c69d66'); wood.addColorStop(.5, '#ad7d4b'); wood.addColorStop(1, '#795536');
+  c.fillStyle = wood; c.strokeStyle = '#69513a'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(-2, -HAMMER_HEAD_DISTANCE); c.lineTo(2, -HAMMER_HEAD_DISTANCE); c.lineTo(3, 7); c.quadraticCurveTo(0, 10, -3, 7); c.closePath(); c.fill(); c.stroke();
+  // A leather wrap stays underneath the grip; it does not obscure the hand.
+  c.strokeStyle = '#6e5640'; c.lineWidth = 1.5;
+  for (let band = 0; band < 4; band++) { c.beginPath(); c.moveTo(-2, 1 + band * 1.8); c.lineTo(2.4, 2 + band * 1.8); c.stroke(); }
+  const iron = c.createLinearGradient(-11, -34, 12, -23);
+  iron.addColorStop(0, '#b9bfad'); iron.addColorStop(.4, '#88958a'); iron.addColorStop(1, '#586b63');
+  c.fillStyle = iron; c.strokeStyle = '#45574f'; c.lineWidth = 1.1;
+  c.beginPath(); c.moveTo(-11, -HAMMER_HEAD_DISTANCE - 5); c.lineTo(10, -HAMMER_HEAD_DISTANCE - 5); c.lineTo(13, -HAMMER_HEAD_DISTANCE - 2); c.lineTo(13, -HAMMER_HEAD_DISTANCE + 5); c.lineTo(-11, -HAMMER_HEAD_DISTANCE + 5); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#d1d3be'; c.beginPath(); c.moveTo(-10, -HAMMER_HEAD_DISTANCE - 4); c.lineTo(9, -HAMMER_HEAD_DISTANCE - 4); c.lineTo(11, -HAMMER_HEAD_DISTANCE - 2); c.lineTo(-10, -HAMMER_HEAD_DISTANCE - 2); c.closePath(); c.fill();
+  c.strokeStyle = '#53665c'; c.lineWidth = 1; c.beginPath(); c.moveTo(9, -HAMMER_HEAD_DISTANCE - 4); c.lineTo(9, -HAMMER_HEAD_DISTANCE + 4); c.stroke();
+  c.restore();
+}
+
+function drawHeroConstruction(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawResult | undefined {
+  const frame = heroFrame(o.gender, 'idle', o.time), rig = interactionRig(o.gender, frame, 'stand'); if (!rig) return undefined;
+  const outfit = o.outfit ?? 'default', progress = o.progress === undefined ? (o.time / 2.6) % 1 : clamp(o.progress);
+  const motion = sampleHammerMotion(progress), unit = 128 / (frame.referenceHeight ?? frame.footY - frame.y);
+  c.save(); c.translate(o.x, o.y); c.scale(o.scale * o.facing, o.scale);
+  drawContactShadow(c, 1.04);
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+  // A planted pelvis and boots keep the strength in the shoulder and elbow.
+  // No whole-cutout spin, stepping cycle or floating shadow is applied.
+  c.drawImage(rig.body, (frame.x - frame.footX) * unit, (frame.y - frame.footY) * unit, frame.width * unit, frame.height * unit);
+  const layers = drawSurvivorOutfit(c, o.gender, frame, outfit);
+  interactionArm(c, rig, [15, -68], [18, -46], false, .86);
+  const hand: InteractionPoint = [motion.hand.x, motion.hand.y];
+  const elbow = interactionElbow([-13, -68], hand, 21, 29);
+  interactionSegment(c, rig.upper, [-13, -68], elbow);
+  drawConstructionHammer(c, hand[0], hand[1], motion.hammerAngle);
+  interactionSegment(c, rig.fore, elbow, hand);
+  c.restore();
+  return { outfit, gender: o.gender, frame: `hammer:${frame.sheet}:${frame.x}`, imageReady: true, layers,
+    toolContact: hammerContactAt(progress, o.x, o.y, o.scale, o.facing) };
+}
+
 function drawHeroInteraction(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawResult | undefined {
   const riding = o.pose === 'ride', crouching = !riding && o.pettingHeight !== 'high';
   const frame = heroFrame(o.gender, crouching ? 'pluck' : 'idle', o.time);
@@ -246,6 +289,9 @@ function drawHeroInteraction(c: CanvasRenderingContext2D, o: HeroOptions): HeroD
 
 /** x/y are the soles, or the hip/seat for 'ride'; standing height is 128 at scale 1. */
 export function drawHero(c: CanvasRenderingContext2D, o: HeroOptions): HeroDrawResult {
+  if (o.pose === 'hammer') {
+    const construction = drawHeroConstruction(c, o); if (construction) return construction;
+  }
   if (o.pose === 'pet' || o.pose === 'ride') {
     const interaction = drawHeroInteraction(c, o); if (interaction) return interaction;
   }

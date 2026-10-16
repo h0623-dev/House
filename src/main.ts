@@ -374,7 +374,7 @@ async function showFacilityWork(id:number,kind:'build'|'upgrade'){
  const building=getSettlement(state).buildings.find(b=>b.id===id);if(!building||actionBusy)return;
  actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
  const status=document.querySelector<HTMLElement>('.chore-status')!;
- status.innerHTML=`<span class="chore-pulse">${icon('hammer')}</span><div><strong>${escape(state.name)}의 마을 작업<small data-chore-phase>이동 중</small></strong><span>${BUILDINGS[building.type].name} ${kind==='build'?'새 시설 마무리':'시설 개선 마무리'}</span><div class="chore-track" role="progressbar" aria-label="시설 작업 진행" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div></div>`;status.hidden=false;
+ status.innerHTML=`<span class="chore-pulse">${icon('hammer')}</span><div><strong>${escape(state.name)}의 마을 작업<small data-chore-phase data-working-label="망치질하는 중">이동 중</small></strong><span>${BUILDINGS[building.type].name} ${kind==='build'?'망치로 새 시설을 완성해요':'망치로 시설을 튼튼하게 개선해요'}</span><div class="chore-track" role="progressbar" aria-label="시설 작업 진행" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div></div>`;status.hidden=false;
  try{await scene.playFacilityAction(building.slot,kind,getFacilityPlacement(state,building),building.id);}catch(error){toast(error instanceof Error?error.message:'시설은 완성됐어요. 통로를 비운 뒤 다시 이동해 주세요.');}finally{actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');render();finishDeferredUpdate();}
 }
 function operateFacility(kind:'start'|'collect'|'upgrade',id:number){

@@ -25,7 +25,7 @@ import { anchoredCameraChange, clampMapZoom, MapPinchGesture } from './scene-ges
 import { fitVillageCamera, getVillageContentBounds, mergeVillageBounds, VILLAGE_FACILITY_SIZE } from './village-camera';
 import { frameHomeOverview, getHomeOverviewBounds } from './player-camera';
 import { createNavigationWorld, defaultHeroLocation, groundLocation, navigationDeckBounds, planNavigation, projectDeckPoint,
-  sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, circleOverlapsPolygon, navigationObstaclePolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS, unprojectDeckPoint,
+  sampleNavigation, planWorkNavigation, planYieldNavigation, blocksActorStep, blocksStaticNavigationStep, circleOverlapsPolygon, navigationObstaclePolygon, distanceToSegment, getPatrolTargets, getRoadBounds, HERO_BODY_RADIUS, DECK_FRONTS, FARM_POSITIONS, SETTLEMENT_POSITIONS, unprojectDeckPoint,
   type NavigationActor, type NavigationLocation, type NavigationPath, type NavigationWorld, type NavigationLink } from './scene-navigation';
 import itemAtlasUrl from './assets/items-anime.png';
 import { layoutProductionBubbles } from './production-bubble-layout';
@@ -34,6 +34,7 @@ import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, ge
 import { GROUND_REGIONS, getGroundRegion, type GroundRegionId } from './ground-regions';
 import { getGatheringNode } from './gathering';
 import { gatheringKindForResource, sampleGatheringMotion, gatheringFinalContactProgress, GATHERING_CONTACT_PHASE } from './gathering-motion';
+import { sampleHammerMotion, hammerContactAt, HAMMER_STROKES, HAMMER_IMPACT_PHASE, HAMMER_CONTACT_END_PHASE } from './construction-motion';
 import { layoutGroundMarkers, type GroundMarker, type GroundMarkerInput } from './ground-marker-layout';
 import { drawGroundLandscape, drawGroundSprite, groundArtReady } from './ground-art';
 import { GROUND_LANDSCAPE_BOUNDS, GROUND_BACKGROUND_BOUNDS, getGroundResourceVisual, getGroundVisualBounds, getGroundVisualPolygon } from './ground-visuals';
@@ -54,8 +55,10 @@ type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
 type HeroSceneState = { point: Point; pose: HeroPose; facing: 1 | -1; progress: number; time: number; climbing?: 'up' | 'down' };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'fertilize' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; facilityPlacement?:FacilityPlacement; facilityId?:number; outdoorSiteId?:OutdoorSiteId; groundResourceId?:GroundResourceId; animalId?:UnitId; stayAtTarget?:boolean; gaitOffset?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; facilityPlacement?:FacilityPlacement; facilityId?:number; outdoorSiteId?:OutdoorSiteId; groundResourceId?:GroundResourceId; animalId?:UnitId; stayAtTarget?:boolean; approaches?:NavigationLocation[]; gaitOffset?:number; workDone?:number; originalWork?:number; returnTarget?:NavigationLocation; returnNavigation?:NavigationPath; returnGaitOffset?:number; reroutes?:number; retryDelay?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
 const CHORE_STALL_TIMEOUT=16;
+const REROUTE_WAIT=.3;
+const MAX_REROUTE_WAIT=1.2;
 // Residents fit comfortably beside the truck's facilities and planters.
 // Compact painted residents sit between the crops and miniature buildings.
 const WORLD_HERO_SCALE = .64;
@@ -89,7 +92,7 @@ export class Scene {
   private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private action: Chore | null = null;
   private heroLocation: NavigationLocation = defaultHeroLocation();
-  private freeWalk: { navigation: NavigationPath; elapsed: number; gaitOffset: number; blockedFor:number; retryFor:number; reroutes:number; rate?:number } | null = null;
+  private freeWalk: { navigation: NavigationPath; elapsed: number; gaitOffset: number; blockedFor:number; retryFor:number; reroutes:number; retryDelay?:number; rate?:number } | null = null;
   private walkingEnabled = true;
   private gaitDistance = 0;
   private heroFacing: 1 | -1 = 1;
@@ -154,6 +157,7 @@ export class Scene {
   private heroDrawn = false;
   private heroToolContact: Point | null = null;
   private gatheringContact: { nodeId: GroundResourceId; cycle: number; point: Point } | null = null;
+  private constructionContact: { action:Chore; cycle:number; point:Point } | null = null;
   private actionEventState = '';
   private disposed = false;
   private suspended = false;
@@ -171,46 +175,58 @@ export class Scene {
       this.time += delta * GAME_SPEED_MULTIPLIER;
       if (this.freeWalk) {
         const walking = this.freeWalk,nextElapsed=Math.min(walking.navigation.motion.duration,walking.elapsed+delta*(walking.rate??1)),sample=sampleNavigation(walking.navigation,nextElapsed);
-        const blocker=this.stepBlocker(this.heroLocation,sample.location);
-        this.blockedReason=blocker?`actor:${blocker.id}`:null;
-        if(blocker){
+        const blocker=this.stepBlocker(this.heroLocation,sample.location),solid=blocksStaticNavigationStep(this.walkNavigationWorld(),this.heroLocation,sample.location);
+        this.blockedReason=blocker?`actor:${blocker.id}`:solid?`static:${solid.kind??'obstacle'}`:null;
+        if(blocker||solid){
           walking.blockedFor+=delta;walking.retryFor+=delta;
-          if(walking.blockedFor>=.3&&walking.retryFor>=.3){
+          if(walking.blockedFor>=REROUTE_WAIT&&walking.retryFor>=(walking.retryDelay??REROUTE_WAIT)){
             walking.retryFor=0;
-            this.tryPetYield(blocker,[sample.location,walking.navigation.target]);
+            walking.retryDelay=Math.min(MAX_REROUTE_WAIT,(walking.retryDelay??REROUTE_WAIT)+.15);
+            if(blocker)this.tryPetYield(blocker,[this.heroLocation,sample.location,walking.navigation.target],this.heroBodyRadius());
             const detour=planNavigation(this.walkNavigationWorld(),this.heroLocation,walking.navigation.target);
-            if(detour){walking.navigation=detour;walking.elapsed=0;walking.gaitOffset=this.gaitDistance;walking.reroutes++;}
+            if(detour&&detour.motion.distance>.05){walking.navigation=detour;walking.elapsed=0;walking.gaitOffset=this.gaitDistance;walking.reroutes++;}
           }
-        }else{walking.blockedFor=0;walking.retryFor=0;walking.elapsed=nextElapsed;const previous=this.heroLocation.point;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);this.advanceMountedAnimal(previous,sample.location,delta);}
+        }else{
+          const moved=Math.hypot(sample.location.point[0]-this.heroLocation.point[0],sample.location.point[1]-this.heroLocation.point[1]);
+          if(moved>.001){walking.blockedFor=0;walking.retryFor=0;walking.retryDelay=REROUTE_WAIT;}
+          walking.elapsed=nextElapsed;const previous=this.heroLocation.point;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);this.advanceMountedAnimal(previous,sample.location,delta);
+        }
         if (walking.elapsed >= walking.navigation.motion.duration) { this.freeWalk = null; this.publishWalking(); }
       }
       if (this.action) {
         const action=this.action,waitingForPets=action.kind==='pet-gate'&&this.petGateClosing&&this.petsOnPassage().length>0;
         let nextElapsed=Math.min(action.duration,action.elapsed+delta);
         if(waitingForPets&&nextElapsed>=action.walk){nextElapsed=action.walk;this.petGateWaitElapsed+=delta;}
-        const nextLocation=nextElapsed<action.walk?sampleNavigation(action.navigation,nextElapsed).location:
-          nextElapsed>action.walk+action.work?sampleNavigation(action.navigation,nextElapsed-action.walk-action.work,true).location:action.navigation.target;
-        const blocker=this.stepBlocker(this.currentHeroLocation(),nextLocation);
-        this.blockedReason=blocker?`actor:${blocker.id}`:null;
-        if(blocker){
+        const retained=this.currentHeroLocation(),nextLocation=this.choreLocation(action,nextElapsed),blocker=this.stepBlocker(retained,nextLocation),
+          solid=blocksStaticNavigationStep(this.navigationWorld(this.heroBodyRadius()),retained,nextLocation);
+        this.blockedReason=blocker?`actor:${blocker.id}`:solid?`static:${solid.kind??'obstacle'}`:null;
+        if(blocker||solid){
           action.stalled+=delta;
-          if(action.stalled-action.yieldAt>=.3){
+          if(action.stalled-action.yieldAt>=(action.retryDelay??REROUTE_WAIT)){
             action.yieldAt=action.stalled;
-            this.tryPetYield(blocker,[nextLocation,nextElapsed>action.walk+action.work?action.navigation.returnLocation:action.navigation.target]);
-            if(action.kind==='pet-gate'&&action.elapsed<action.walk)this.reroutePetGateVisit(action);
+            action.retryDelay=Math.min(MAX_REROUTE_WAIT,(action.retryDelay??REROUTE_WAIT)+.15);
+            if(blocker)this.tryPetYield(blocker,[retained,nextLocation,nextElapsed>action.walk+action.work?action.returnTarget??action.navigation.returnLocation:action.navigation.target],this.heroBodyRadius());
+            this.rerouteChore(action);
           }
-        }else{action.stalled=0;action.yieldAt=0;action.elapsed=nextElapsed;this.followFloor(nextLocation.floor??1);}
+        }else{
+          const moved=Math.hypot(nextLocation.point[0]-retained.point[0],nextLocation.point[1]-retained.point[1]),
+            worked=nextElapsed>action.elapsed&&nextElapsed>=action.walk&&nextElapsed<=action.walk+action.work;
+          if(moved>.001||worked){action.stalled=0;action.yieldAt=0;action.retryDelay=REROUTE_WAIT;}
+          const motion=this.choreWalkingSample(action,nextElapsed);
+          if(motion){this.gaitDistance=motion.gaitOffset+motion.sample.distance;this.heroFacing=motion.sample.facing;}
+          action.elapsed=nextElapsed;this.followFloor(nextLocation.floor??1);
+        }
         if(action.stalled>=CHORE_STALL_TIMEOUT||this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT){
           const retained=this.currentHeroLocation();this.heroLocation={...retained,point:[...retained.point]};this.action=null;this.zone='home';
           if(action.groundResourceId)this.treeCuts.delete(action.groundResourceId);
-          action.reject(new Error(this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT?'동물이 통로에 있어 문을 닫지 않았어요. 친구가 통로를 벗어난 뒤 다시 해 주세요.':'동물이 길을 막아 작업을 멈췄어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
+          action.reject(new Error(this.petGateWaitElapsed>=CHORE_STALL_TIMEOUT?'동물이 통로에 있어 문을 닫지 않았어요. 친구가 통로를 벗어난 뒤 다시 해 주세요.':'돌아갈 수 있는 길이 없어 작업을 멈췄어요. 주변에 빈 통로를 마련해 주세요.'));
         }else{
-          if (action.kind === 'chop' && action.groundResourceId && action.elapsed >= action.walk + action.work * gatheringFinalContactProgress('chop') && !this.treeCuts.has(action.groundResourceId)) {
+          if (action.kind === 'chop' && action.groundResourceId && this.actionProgress() >= gatheringFinalContactProgress('chop') && !this.treeCuts.has(action.groundResourceId)) {
             const node=getGroundResourceNode(action.groundResourceId);
             this.treeCuts.set(action.groundResourceId,{at:performance.now()/1000,direction:node&&node.point[0]<action.navigation.target.point[0]?-1:1});
           }
           if (action.elapsed >= action.duration) {
-            const destination=action.stayAtTarget?action.navigation.target:action.navigation.returnLocation;
+            const destination=action.stayAtTarget?action.navigation.target:action.returnTarget??action.navigation.returnLocation;
             if(action.groundResourceId)this.heroFacing=this.heroState().facing;
             this.heroLocation = { ...destination, point: [...destination.point] };
             this.action = null; this.zone = 'home';
@@ -585,7 +601,10 @@ export class Scene {
   private stepBlocker(from:NavigationLocation,to:NavigationLocation) {
     const actors=this.physicalActors().filter(actor=>actor.id!=='hero'&&actor.id!==this.mountedAnimal);
     return (isNavigationLinkSurface(to.surface)?actors.find(a=>isNavigationLinkSurface(a.location.surface)&&a.location.link===to.link):undefined)
-      ??blocksActorStep(from,to,this.mountedAnimal&&this.action?.kind!=='dismount'?this.petMotion.get(this.mountedAnimal)?.radius??HERO_BODY_RADIUS:HERO_BODY_RADIUS,actors);
+      ??blocksActorStep(from,to,this.heroBodyRadius(),actors);
+  }
+  private heroBodyRadius() {
+    return this.mountedAnimal&&this.action?.kind!=='dismount'?this.petMotion.get(this.mountedAnimal)?.radius??HERO_BODY_RADIUS:HERO_BODY_RADIUS;
   }
   private tryPetYield(blocker:NavigationActor,reserved:NavigationLocation[],reservedRadius=HERO_BODY_RADIUS,requested=new Set<UnitId>(),passage?:NavigationLink,passageOwner?:UnitId) {
     const id=blocker.id as UnitId,motion=this.petMotion.get(id),roster=getUnitRoster(this.state??{});
@@ -756,7 +775,7 @@ export class Scene {
     animal.route=null;animal.elapsed=0;animal.speed=0;animal.blend=0;animal.turnRemaining=0;animal.waitingForPassage=undefined;this.petYields.delete(id);
     const walk=navigation.motion.duration,work=kind==='petting'?2.6:1.35;this.lastFrame=performance.now();this.zone='home';
     return new Promise((resolve,reject)=>{this.action={kind,animalId:id,elapsed:0,duration:walk+work,walk,work,path:navigation.points,route:navigation.motion,navigation,
-      plotIndex:0,cropId:'carrot',stayAtTarget:true,stalled:0,yieldAt:0,resolve,reject:reason=>{this.releaseAnimalHold(id);reject(reason);}};this.publishAnimalInteraction();this.render();});
+      plotIndex:0,cropId:'carrot',stayAtTarget:true,approaches,gaitOffset:this.gaitDistance,stalled:0,yieldAt:0,resolve,reject:reason=>{this.releaseAnimalHold(id);reject(reason);}};this.publishAnimalInteraction();this.render();});
   }
   private releaseAnimalHold(id:UnitId) {
     const animal=this.petMotion.get(id);if(!animal)return;
@@ -821,7 +840,7 @@ export class Scene {
     const walk=navigation.motion.duration,work=realDuration(1.4);
     return new Promise((resolve,reject)=>{
       this.action={kind:'pet-gate',elapsed:0,duration:walk+work,walk,work,path:navigation.points,route:navigation.motion,navigation,
-        plotIndex:0,cropId:'carrot',stayAtTarget:true,stalled:0,yieldAt:0,resolve,
+        plotIndex:0,cropId:'carrot',stayAtTarget:true,approaches,gaitOffset:this.gaitDistance,stalled:0,yieldAt:0,resolve,
         reject:reason=>{this.clearPetPassageGateOperation();reject(reason);}};
       this.render();
     });
@@ -830,14 +849,34 @@ export class Scene {
   clearPetPassageGateOperation() {
     this.petGateClosing=false;this.petGatePendingOpen=null;this.petGateWaitElapsed=0;
   }
-  private reroutePetGateVisit(action:Chore) {
-    const retained=this.currentHeroLocation(),approaches=getPetPassageGeometry(this.state?.deckLevel??1).heroApproaches
-      .map(point=>({surface:'deck' as const,floor:1 as const,point:[...point]as Point}));
-    const navigation=planWorkNavigation(this.navigationWorld(),retained,approaches);
-    if(!navigation)return;
-    action.gaitOffset=(action.gaitOffset??0)+sampleNavigation(action.navigation,action.elapsed).distance;
-    action.navigation=navigation;action.route=navigation.motion;action.path=navigation.points;
-    action.walk=navigation.motion.duration;action.duration=action.walk+action.work;action.elapsed=0;
+  /** Replan from the feet that actually stopped, retaining this exact job and its work. */
+  private rerouteChore(action:Chore) {
+    // Dismounting reserves its short landing rather than walking the seated rider.
+    if(action.kind==='dismount')return false;
+    const retained=this.currentHeroLocation(),world=this.navigationWorld(),returnTarget=action.returnTarget??action.navigation.returnLocation,
+      returning=!action.stayAtTarget&&action.elapsed>=action.walk+action.work;
+    if(returning){
+      const navigation=planNavigation(world,retained,returnTarget);
+      if(!navigation)return false;
+      action.returnTarget=returnTarget;action.returnNavigation=navigation;action.returnGaitOffset=this.gaitDistance;
+      action.elapsed=action.walk+action.work;action.duration=action.elapsed+navigation.motion.duration;
+    }else{
+      const navigation=planWorkNavigation(world,retained,action.approaches??[action.navigation.target]);
+      if(!navigation)return false;
+      const returnNavigation=action.stayAtTarget?undefined:planNavigation(world,navigation.target,returnTarget);
+      if(!action.stayAtTarget&&!returnNavigation)return false;
+      const completed=(action.workDone??0)+Math.max(0,Math.min(action.work,action.elapsed-action.walk));
+      action.originalWork??=action.work;
+      action.workDone=completed;action.work=Math.max(0,action.originalWork-completed);
+      action.gaitOffset=this.gaitDistance;action.returnTarget=returnTarget;action.returnNavigation=returnNavigation;
+      action.returnGaitOffset=this.gaitDistance+navigation.motion.distance;
+      action.navigation=navigation;action.route=navigation.motion;action.path=navigation.points;
+      action.walk=navigation.motion.duration;action.duration=action.walk+action.work+(returnNavigation?.motion.duration??0);action.elapsed=0;
+    }
+    // Accepting a route is not movement: stalled time clears only after a real step or work.
+    action.reroutes=(action.reroutes??0)+1;
+    this.gatheringContact=null;this.constructionContact=null;
+    return true;
   }
   private petsOnPassage() {
     return [...this.petMotion.values()].filter(pet=>pet.location.surface==='ramp'&&pet.location.link===PET_PASSAGE_LINK_ID);
@@ -904,7 +943,8 @@ export class Scene {
     const clearance=HERO_BODY_RADIUS+3,nearby:Point[]=[];
     for(const offsetY of [8,14,-2])nearby.push([node.bounds.left-clearance,node.point[1]+offsetY],[node.bounds.right+clearance,node.point[1]+offsetY]);
     nearby.sort((a,b)=>Math.hypot(a[0]-this.heroLocation.point[0],a[1]-this.heroLocation.point[1])-Math.hypot(b[0]-this.heroLocation.point[0],b[1]-this.heroLocation.point[1]));
-    const navigation=planWorkNavigation(this.choreWorld(),this.heroLocation,[...nearby,...node.approaches].map(point=>({surface:'road',point:[...point]})));
+    const approaches=[...nearby,...node.approaches].map(point=>({surface:'road' as const,point:[...point] as Point})),
+      navigation=planWorkNavigation(this.navigationWorld(),this.heroLocation,approaches)??planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
     if(!navigation)return Promise.reject(new Error('채집 장소로 가는 길이 막혔어요. 동료를 회복시키거나 빈 길로 이동해 주세요.'));
     const kind=node.kind==='tree'?'chop':'gather';
     // Preparation, visible repeated contact and putting the tool away all fit
@@ -916,7 +956,7 @@ export class Scene {
     this.lastFrame=performance.now();
     return new Promise((resolve,reject)=>{this.action={kind,elapsed:0,duration:walk+work,stayAtTarget:true,
       walk,work,path:navigation.points,route,navigation,plotIndex:0,cropId:stock.cropId??'carrot',outdoorSiteId:node.siteId,
-      groundResourceId:node.id,stalled:0,yieldAt:0,resolve,reject};});
+      groundResourceId:node.id,approaches,gaitOffset:this.gaitDistance,stalled:0,yieldAt:0,resolve,reject};});
   }
   /** Finish at the worked plot so queued chores continue from the resident's actual feet. */
   playAction(kind: SceneAction, plotId?: number, selectedCropId?: CropId): Promise<void> {
@@ -938,17 +978,16 @@ export class Scene {
       work = 1.8;
     }
     work = realDuration(work);
-    // A passing pet may temporarily occupy the work approach. The fixed route
-    // avoids structures; each accepted frame still waits for full actor clearance.
+    // Prefer a clear edge now; a later passing resident triggers a fresh detour.
     let approaches:NavigationLocation[];
     if(kind==='expand')approaches=[target,...[-48,48,-96,96].map(shift=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint([-157+shift,this.deckBounds().front-23],1)}))];
     else approaches=[target,...[[u+83,v+39],[u+34,v-13],[u+34,v+81]].map(point=>({surface:'deck' as const,floor:1 as const,point:projectDeckPoint(point as Point,1)}))];
-    const navigation = planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
+    const navigation = planWorkNavigation(this.navigationWorld(),this.heroLocation,approaches)??planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
     if (!navigation) return Promise.reject(new Error('작업 장소로 가는 길이 막혔어요. 트럭 휴식으로 동료를 회복시키거나 빈 길로 이동해 주세요.'));
     const route = navigation.motion, path = navigation.points, walk = route.duration;
     this.zone = 'home';
     this.lastFrame = performance.now();
-    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + work, walk, work, path, route, navigation, plotIndex, cropId, stayAtTarget:true, stalled:0, yieldAt:0, resolve,reject }; });
+    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + work, walk, work, path, route, navigation, plotIndex, cropId, stayAtTarget:true, approaches,gaitOffset:this.gaitDistance, stalled:0, yieldAt:0, resolve,reject }; });
   }
   /** A short, visible visit to the facility; the controller commits its state exactly once. */
   playFacilityAction(slot: number, kind: 'build' | 'upgrade', position?:FacilityPlacement, buildingId?:number): Promise<void> {
@@ -963,12 +1002,12 @@ export class Scene {
     // Work from an unobstructed edge of this particular building's footprint.
     const approaches=[[halfW,halfD],[-halfW,halfD],[halfW,-halfD],[-halfW,-halfD],[halfW,0],[-halfW,0],[0,halfD],[0,-halfD]]
       .map(([x,y])=>({surface:'deck' as const,floor,point:projectDeckPoint([u+x,v+y],floor)}));
-    const navigation = planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
+    const navigation = planWorkNavigation(this.navigationWorld(),this.heroLocation,approaches)??planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
     if (!navigation) return Promise.reject(new Error('시설로 가는 길이 막혔어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
-    const route = navigation.motion, path = navigation.points, walk = route.duration, work = realDuration(1.65);
+    const route = navigation.motion, path = navigation.points, walk = route.duration, work = 2.6;
     this.zone = 'home'; this.lastFrame = performance.now();
     return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + work, walk, work, path,
-      route, navigation, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, facilityPlacement:placement,facilityId:buildingId, stayAtTarget:true, stalled:0, yieldAt:0, resolve,reject }; });
+      route, navigation, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, facilityPlacement:placement,facilityId:buildingId, stayAtTarget:true, approaches,gaitOffset:this.gaitDistance, stalled:0, yieldAt:0, resolve,reject }; });
   }
   focus(kind: string) { this.focused = kind; this.focusedUntil = performance.now() + 2400; }
   resize() {
@@ -1192,7 +1231,11 @@ export class Scene {
   private seed(i: number) { const n = Math.sin(i * 78.233 + 13.17) * 43758.5453; return n - Math.floor(n); }
 
   private ease(value: number) { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }
-  private actionProgress() { return this.action ? Math.max(0, Math.min(1, (this.action.elapsed - this.action.walk) / this.action.work)) : 0; }
+  private actionProgress() {
+    const action=this.action;if(!action)return 0;
+    const total=action.originalWork??action.work,completed=(action.workDone??0)+Math.max(0,Math.min(action.work,action.elapsed-action.walk));
+    return total>0?Math.max(0,Math.min(1,completed/total)):1;
+  }
   private navigationWorld(radius=HERO_BODY_RADIUS,actors=this.physicalActors().filter(actor=>actor.id!=='hero')): NavigationWorld {
     return createNavigationWorld(this.state?.deckLevel ?? 1,this.state?.plots.length ?? 3,
       this.state ? getSettlement(this.state).buildings.map(building => building.slot) : [],
@@ -1351,13 +1394,24 @@ export class Scene {
     }
     if(!onlyId)this.canvas.dataset.petMotion=JSON.stringify(telemetry);
   }
+  private choreWalkingSample(action:Chore,elapsed=action.elapsed) {
+    if(elapsed<action.walk)return{sample:sampleNavigation(action.navigation,elapsed),gaitOffset:action.gaitOffset??0};
+    if(!action.stayAtTarget&&elapsed>=action.walk+action.work&&action.duration>action.walk+action.work){
+      const returning=elapsed-action.walk-action.work;
+      return{sample:action.returnNavigation?sampleNavigation(action.returnNavigation,returning):sampleNavigation(action.navigation,returning,true),
+        gaitOffset:action.returnGaitOffset??(action.gaitOffset??0)+action.navigation.motion.distance};
+    }
+    return null;
+  }
+  private choreLocation(action:Chore,elapsed=action.elapsed):NavigationLocation {
+    const walking=this.choreWalkingSample(action,elapsed);
+    return walking?walking.sample.location:{...action.navigation.target,point:[...action.navigation.target.point]};
+  }
   private currentHeroLocation(): NavigationLocation {
     const action=this.action;
     if(!action&&this.mountedAnimal){const animal=this.petMotion.get(this.mountedAnimal);if(animal)return{...animal.location,point:[...animal.location.point]};}
     if(!action)return {...this.heroLocation,point:[...this.heroLocation.point]};
-    if(action.elapsed<action.walk)return sampleNavigation(action.navigation,action.elapsed).location;
-    if(action.elapsed>action.walk+action.work)return sampleNavigation(action.navigation,action.elapsed-action.walk-action.work,true).location;
-    return {...action.navigation.target,point:[...action.navigation.target.point]};
+    return this.choreLocation(action);
   }
   private walkTo(target: NavigationLocation) {
     if(!this.walkingEnabled||this.action||this.suspended||this.disposed||this.constructionMode||this.planningMode||this.selectedFacilityId!==null)return;
@@ -1399,12 +1453,12 @@ export class Scene {
     // Read-only scene telemetry also makes pauses, stairs and completion observable.
     this.canvas.dataset.sceneAction = JSON.stringify({ kind: action?.kind ?? null, phase,
       elapsed: round(action?.elapsed ?? 0), total: round(action?.duration ?? 0),
-      stalled:round(action?.stalled??0),stallLimit:CHORE_STALL_TIMEOUT,
+      stalled:round(action?.stalled??0),stallLimit:CHORE_STALL_TIMEOUT,reroutes:action?.reroutes??0,
       petGateClosing:this.petGateClosing??false,petGateWaitElapsed:round(this.petGateWaitElapsed??0),waitingPets:waitingForPets?this.petsOnPassage().map(pet=>pet.id):[],
       walk: round(action?.walk ?? 0), work: round(action?.work ?? 0),
       from: action ? { x: action.navigation.start.point[0], y: action.navigation.start.point[1], surface: action.navigation.start.surface, floor:action.navigation.start.floor??1 } : null,
-      returnPoint: action ? (()=>{const point=action.stayAtTarget?action.navigation.target:action.navigation.returnLocation;return{x:point.point[0],y:point.point[1],surface:point.surface,floor:point.floor??1};})() : null,
-      returnWalk: round(action?.stayAtTarget?0:action?.navigation.returnMotion.duration ?? 0),stayAtTarget:action?.stayAtTarget??false,
+      returnPoint: action ? (()=>{const point=action.stayAtTarget?action.navigation.target:action.returnTarget??action.navigation.returnLocation;return{x:point.point[0],y:point.point[1],surface:point.surface,floor:point.floor??1};})() : null,
+      returnWalk: round(action?.stayAtTarget?0:action?.returnNavigation?.motion.duration??action?.navigation.returnMotion.duration??0),stayAtTarget:action?.stayAtTarget??false,
       route: action?.navigation.points.map(point => ({ x: point[0], y: point[1] })) ?? [], climbSegments: action?.navigation.climbSegments ?? [],
       floor:this.currentHeroLocation().floor??1,blockedReason:this.blockedReason,outdoorSiteId:action?.outdoorSiteId??null,groundResourceId:action?.groundResourceId??null,facilitySlot: action?.facilitySlot ?? null, facilityId:action?.facilityId??null,facilityPlacement:action?.facilityPlacement??null,
       pose: hero.pose, climbing: hero.climbing ?? null, progress: round(hero.progress),
@@ -1442,19 +1496,15 @@ export class Scene {
       const climbing = this.heroLocation.surface==='ladder'&&this.heroLocation.link!=='road-1';
       return { point: [...this.heroLocation.point], pose: climbing?'climb':'idle', facing: this.heroFacing, progress: 0, time: this.reducedMotion || climbing ? 0 : this.time };
     }
-    if (action.elapsed < action.walk) {
-      const motion = sampleNavigation(action.navigation, action.elapsed);
-      return { ...motion, time: ((action.gaitOffset??0)+motion.distance) / 86 };
-    }
-    if (action.elapsed > action.walk + action.work) {
-      const motion = sampleNavigation(action.navigation, action.elapsed - action.walk - action.work, true);
-      return { ...motion, time: motion.distance / 86 };
-    }
-    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'idle':'gather',petting:'pet',mount:'ride',dismount:'ride' };
+    const walking=this.choreWalkingSample(action);
+    if(walking)return{...walking.sample,time:(walking.gaitOffset+walking.sample.distance)/86};
+    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'hammer', upgrade: 'hammer', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'idle':'gather',petting:'pet',mount:'ride',dismount:'ride' };
     const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
     const pose=node?gatheringKindForResource(node.resource):poses[action.kind];
-    return { point: action.path[action.path.length - 1], pose, facing: animal?animal.location.point[0]>=action.navigation.target.point[0]?1:-1:node?node.point[0]>=action.navigation.target.point[0]?1:-1:action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
-      progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
+    const placement=(action.kind==='build'||action.kind==='upgrade')&&action.facilitySlot!==undefined?action.facilityPlacement??this.legacyPlacement(action.facilitySlot):undefined,
+      facility=placement?projectDeckPoint([placement.x,placement.y],placement.floor):undefined;
+    return { point: action.path[action.path.length - 1], pose, facing: animal?animal.location.point[0]>=action.navigation.target.point[0]?1:-1:node?node.point[0]>=action.navigation.target.point[0]?1:-1:facility?facility[0]>=action.navigation.target.point[0]?1:-1:action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
+      progress: this.actionProgress(), time: ((action.workDone??0)+action.elapsed-action.walk) * GAME_SPEED_MULTIPLIER };
   }
   private heroOnDeck() {
     const location=this.currentHeroLocation();return location.surface==='deck'&&(location.floor??1)===this.activeFloor;
@@ -1521,7 +1571,7 @@ export class Scene {
     // A stable whole-farm view lets additional taps queue while the hero works.
     if (action && !(this.farmMode && isFarmAction(action.kind))) {
       const entry = action.walk > 0 ? this.ease(action.elapsed / action.walk) : 1;
-      const returnWalk = action.stayAtTarget ? 0 : action.navigation.returnMotion.duration;
+      const returnWalk = action.stayAtTarget ? 0 : action.returnNavigation?.motion.duration??action.navigation.returnMotion.duration;
       const exit = returnWalk > 0 ? this.ease((action.duration - action.elapsed) / returnWalk) : 1;
       const amount = Math.min(entry, exit);
       const targetPoint = action.path[action.path.length - 1];
@@ -2489,18 +2539,24 @@ export class Scene {
         this.line([[0, 0], [0, -25]], '#9e7750', 4); this.round(-10, -30, 21, 9, 3, '#8faaa0', '#617e75'); c.restore();
       }
     } else if ((action.kind === 'build' || action.kind === 'upgrade') && action.facilitySlot !== undefined) {
-      const placement=action.facilityPlacement??this.legacyPlacement(action.facilitySlot),facility=projectDeckPoint([placement.x,placement.y],placement.floor,5);
-      c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE);
-      c.rotate(-.75 + Math.sin(progress * Math.PI * 4) * .7);
-      this.line([[0, 0], [0, -25]], '#9e7750', 4); this.round(-10, -30, 21, 9, 3, '#8faaa0', '#617e75'); c.restore();
-      for (let i = 0; i < 6; i++) {
-        const t = (progress * 2 + i * .17) % 1;
-        this.ellipse(facility[0] + 48 - t * 12 + (i % 3 - 1) * 8, facility[1] - Math.sin(t * Math.PI) * 12 + i % 2 * 3,
-          1.8, 1.1, '#d4b578');
+      const motion=sampleHammerMotion(progress);
+      // The actor owns the one visible hammer. A little sawdust begins at its
+      // iron head only when that same rig makes contact, then settles in place.
+      if(motion.cyclePhase>=HAMMER_IMPACT_PHASE&&(this.constructionContact?.action!==action||this.constructionContact.cycle!==motion.cycleIndex)){
+        const impact=hammerContactAt((motion.cycleIndex+HAMMER_IMPACT_PHASE+.001)/HAMMER_STROKES,hx,hy,WORLD_HERO_SCALE,hero.facing),
+          point:Point=motion.impact&&this.heroToolContact?[...this.heroToolContact]:[impact.x,impact.y];
+        this.constructionContact={action,cycle:motion.cycleIndex,point};
       }
-      if (progress > .72) for (let i = 0; i < 4; i++) {
-        const x = facility[0] + Math.cos(i * 1.7) * 40, y = facility[1] - 42 + Math.sin(i * 1.7) * 24;
-        this.line([[x - 3, y], [x + 3, y]], '#fff4b0', 1.8); this.line([[x, y - 3], [x, y + 3]], '#fff4b0', 1.8);
+      const contact=this.constructionContact;
+      if(contact?.action===action&&contact.cycle===motion.cycleIndex&&motion.cyclePhase>=HAMMER_IMPACT_PHASE){
+        const age=Math.max(0,Math.min(1,(motion.cyclePhase-HAMMER_IMPACT_PHASE)/(1-HAMMER_IMPACT_PHASE))),
+          bloom=Math.min(1,(motion.cyclePhase-HAMMER_IMPACT_PHASE)/(HAMMER_CONTACT_END_PHASE-HAMMER_IMPACT_PHASE));
+        c.save();c.globalAlpha=(1-age)**2*(this.reducedMotion ? .4 : .8);
+        for(let i=0;i<(this.reducedMotion?3:6);i++){
+          const spread=(i-2.5)*2.2*bloom,x=contact.point[0]+hero.facing*(2+age*10)+spread,y=contact.point[1]-Math.sin(age*Math.PI)*(4+i%3)+age*6;
+          this.ellipse(x,y,1.5,1,i%2?'#d5b77b':'#ead8ae');
+        }
+        c.restore();
       }
     } else if (action.kind === 'expand' && progress < .83) {
       c.save(); c.translate(hx + 25 * WORLD_HERO_SCALE, hy - 37 * WORLD_HERO_SCALE); c.scale(WORLD_HERO_SCALE, WORLD_HERO_SCALE); c.rotate(-.8 + Math.sin(progress * Math.PI * 10) * .9);
