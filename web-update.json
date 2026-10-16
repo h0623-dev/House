@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "buildId": "94fd779581452d83c8b7e6817e246652bed5a7713f7c9faceb982048e57f2a8e",
-  "version": "0.48.0",
-  "contentVersion": 48,
+  "buildId": "5742dae34cc57606672ebb3fdb99d435e6a87418c9525254f3dea68ee55fb386",
+  "version": "0.49.0",
+  "contentVersion": 49,
   "base": "/House/",
   "files": [
     {
@@ -121,9 +121,9 @@
       "sha256": "639db3e773a00df8e81a86636197465d212e715bf7ce419cb9f703a6dc89e207"
     },
     {
-      "path": "assets/index-cWSD36xg.js",
-      "bytes": 647551,
-      "sha256": "e26177c5ad07f7a3081b306dfe61cd85d91069fbc159042ce68baa3246496106"
+      "path": "assets/index-fdCYvYwB.js",
+      "bytes": 659760,
+      "sha256": "c51626b97c3466b6526640ff48c6b3354c1f39296febf2d641ba9c19a534bf71"
     },
     {
       "path": "assets/index-ncvSZQKd.css",
@@ -173,7 +173,7 @@
     {
       "path": "index.html",
       "bytes": 1280,
-      "sha256": "ed315419ac561a303fbe7ade2764b69a1d7e61649312d905ecf6f1de101b8465"
+      "sha256": "79f93fb07e98871fced01b7136de3cb13ae1a3f749e56632a4c8e228bbfc2e82"
     },
     {
       "path": "manifest.webmanifest",
