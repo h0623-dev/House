@@ -167,7 +167,8 @@ app.innerHTML=`
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
     <div class="chore-status" hidden role="status" aria-live="polite"></div>
-    <div class="game-controls" id="farm-tray" hidden>
+    <div class="game-controls" id="farm-tray" hidden role="region" aria-label="농사 도구">
+     <header class="farm-tray-heading"><strong>농사 도구</strong><button class="panel-dismiss" data-farm-dismiss aria-label="농사 도구 닫기">${icon('close')}<small>닫기</small></button></header>
      <div class="planting-toolbar" id="planting-toolbar" hidden aria-label="연속 텃밭 작업">
       <div class="planting-selection"><span id="planting-seed-art"></span><div><strong id="planting-seed-name"></strong><small id="planting-seed-status" role="status" aria-live="polite"></small></div></div>
       <button class="planting-tool" data-plant-all aria-label="빈 밭에 선택한 씨앗 연속 심기"><span>${icon('seeds')}</span><small>모두 심기</small></button>
@@ -270,6 +271,13 @@ function setFarmTray(open:boolean){
  const toggle=document.querySelector<HTMLButtonElement>('[data-farm-toggle]')!;
  toggle.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-label',open?'농사 도구 접기':'농사 도구 펼치기');
  toggle.querySelector('small')!.textContent=open?'도구 접기':'농사 도구';
+}
+function dismissFarmTray(){
+ afterFarm=null;stopFarmMode();
+ // Closing stops new reservations; the current job keeps its completion path.
+ setZone('home',false,true);
+ document.querySelector<HTMLButtonElement>('[data-nav="farm"]')?.focus({preventScroll:true});
+ finishDeferredUpdate();
 }
 function closeFacility(){document.querySelector('#toast')!.classList.remove('facility-toast');selectedFacilityId=null;scene.setSelectedFacility(null);document.querySelector<HTMLElement>('#facility-sheet')!.hidden=true;document.querySelector('.scene-card')!.classList.remove('facility-selected','facility-repeat-ready');updateWalkingAvailability();}
 function changeLayoutDirection(target:LayoutTarget){
@@ -1021,7 +1029,7 @@ function renderAnimalUI(){
  if(!animal){animalPanelKey='';return;}
  const id=animal.id,definition=UNITS[id],rideable=id==='elephant'||id==='giraffe';
  const key=JSON.stringify([animal,scene.getActiveFloor()]);if(key===animalPanelKey)return;animalPanelKey=key;
- sheet.innerHTML=`<header class="animal-sheet-heading">${companionPortrait(id)}<div><strong>${definition.name}</strong><small>${definition.speciesLabel} · ${animal.surface==='road'?'지상에서 지내는 중':'트럭에서 지내는 중'}</small></div><button data-animal-dismiss aria-label="동물 메뉴 닫기">${icon('close')}</button></header><div class="animal-sheet-actions"><button data-animal-pet="${id}" ${animal.available?'':'disabled'}>${icon('paw')}<small>쓰다듬기</small></button>${rideable?`<button data-animal-ride="${id}" ${animal.mountable?'':'disabled'}>${icon('move')}<small>올라타기</small></button>`:''}</div><p>${!animal.available?'동물이 편히 쉴 수 있는 곳에서 다시 만나요.':rideable&&!animal.mountable?(animal.health<=0?'동료 돌보기로 체력을 회복해 주세요.':'지상에 내려와 있을 때 등에 탈 수 있어요.'):'곁으로 다가가 함께 시간을 보내요.'}</p>`;
+ sheet.innerHTML=`<header class="animal-sheet-heading">${companionPortrait(id)}<div><strong>${definition.name}</strong><small>${definition.speciesLabel} · ${animal.surface==='road'?'지상에서 지내는 중':'트럭에서 지내는 중'}</small></div><button class="panel-dismiss" data-animal-dismiss aria-label="동물 메뉴 닫기">${icon('close')}<small>닫기</small></button></header><div class="animal-sheet-actions"><button data-animal-pet="${id}" ${animal.available?'':'disabled'}>${icon('paw')}<small>쓰다듬기</small></button>${rideable?`<button data-animal-ride="${id}" ${animal.mountable?'':'disabled'}>${icon('move')}<small>올라타기</small></button>`:''}</div><p>${!animal.available?'동물이 편히 쉴 수 있는 곳에서 다시 만나요.':rideable&&!animal.mountable?(animal.health<=0?'동료 돌보기로 체력을 회복해 주세요.':'지상에 내려와 있을 때 등에 탈 수 있어요.'):'곁으로 다가가 함께 시간을 보내요.'}</p>`;
 }
 async function interactWithAnimal(kind:'pet'|'mount'|'dismount',id:UnitId):Promise<boolean>{
  if(actionBusy||battleView||startupPending||contentActivationPending)return false;
@@ -1401,6 +1409,7 @@ document.addEventListener('pointercancel',event=>{
 },{capture:true});
 document.addEventListener('click',e=>{
  const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||orientationBlocked||battleView||contentActivationPending)return;
+ if(t.hasAttribute('data-farm-dismiss')){dismissFarmTray();return;}
  if(t.hasAttribute('data-animal-dismiss')){closeAnimalContext();return;}
  if(t.dataset.animalFocus&&isUnitId(t.dataset.animalFocus)){showAnimalContext(t.dataset.animalFocus,true);return;}
  if(t.dataset.animalPet&&isUnitId(t.dataset.animalPet)){void interactWithAnimal('pet',t.dataset.animalPet);return;}
@@ -1463,7 +1472,8 @@ document.addEventListener('click',e=>{
  if(t.hasAttribute('data-map-overview')){scene.setMapMoveMode(false);scene.showVillageOverview();return;}
  if(t.dataset.mapZoom){scene.setMapZoom(scene.getMapZoom()*(Number(t.dataset.mapZoom)>0?1.25:.8));return;}
  if(t.hasAttribute('data-farm-toggle')){
-  const toggle=()=>{cancelConstruction();closeFacility();if(farmTrayOpen){afterFarm=null;stopFarmMode();setFarmTray(false);}else setFarmTray(true);};
+  if(farmTrayOpen){dismissFarmTray();return;}
+  const toggle=()=>{cancelConstruction();closeFacility();setFarmTray(true);};
   if(runningFarm&&actionBusy)afterCurrentFarm(toggle);else if(!actionBusy)toggle();return;
  }
  if(t.dataset.buildType&&BUILDING_TYPES.includes(t.dataset.buildType as BuildingType)){beginConstruction(t.dataset.buildType as BuildingType);return;}
@@ -1533,7 +1543,7 @@ modalRoot.addEventListener('pointerdown',e=>{modalBackdropPointer=e.target===mod
 modalRoot.addEventListener('pointerup',e=>{modalBackdropClickPointer=modalBackdropPointer===e.pointerId&&e.target===modalRoot?e.pointerId:null;modalBackdropPointer=null;});
 modalRoot.addEventListener('pointercancel',()=>{modalBackdropPointer=null;modalBackdropClickPointer=null;});
 modalRoot.addEventListener('click',e=>{const backdropGesture=modalBackdropClickPointer!==null&&(!(e instanceof PointerEvent)||e.pointerId===modalBackdropClickPointer);modalBackdropClickPointer=null;if(!startupPending&&e.target===modalRoot&&backdropGesture)closeModal();});
-document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(animalContextId){closeAnimalContext();return;}if(gatheringTrayOpen){setGatheringTray(false);document.querySelector<HTMLButtonElement>('[data-gather-toggle]')!.focus();return;}if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
+document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(animalContextId){closeAnimalContext();return;}if(gatheringTrayOpen){setGatheringTray(false);document.querySelector<HTMLButtonElement>('[data-gather-toggle]')!.focus();return;}if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmTrayOpen||farmMode){dismissFarmTray();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
 let saveCounter=0;
 setInterval(()=>{
  if(!startupPending&&!contentActivationPending&&playerConfirmed){
