@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "buildId": "ca43648ac80bede42fbd5d38cf1706e9aad49db03db22f308b62816a1507c619",
-  "version": "0.46.0",
-  "contentVersion": 46,
+  "buildId": "4c00809f68f25690b5766e17e1b0b266d13b17f0b7d0c6b177637d5620951199",
+  "version": "0.47.0",
+  "contentVersion": 47,
   "base": "/House/",
   "files": [
     {
@@ -31,24 +31,9 @@
       "sha256": "cd7531285cb2d7ac072fd84df4a76626ecdf54befd27706955fda2d091419a5e"
     },
     {
-      "path": "assets/companions-reserve-anime-D_ilhqwL.png",
-      "bytes": 1466917,
-      "sha256": "c0268d933f6e1f29c76fb20cbc8f32f9f0b29bda2b17f6f7b918b46a27e61e6a"
-    },
-    {
-      "path": "assets/companions-safari-anime-CJLJE6_y.png",
-      "bytes": 1896676,
-      "sha256": "3508d6681d16fc328e5829068e6afbe0d5f99c8fdf4edec974cbe15e25093f3a"
-    },
-    {
       "path": "assets/creatures-anime-DdNIkJKd.png",
       "bytes": 2493525,
       "sha256": "5d1cf1176a79a677bdd135316f2f24d5abda68748747d78e28e9b16c8e03b060"
-    },
-    {
-      "path": "assets/crops-anime-D9C4XKsQ.png",
-      "bytes": 1735166,
-      "sha256": "57ac079b21e0e7b97d66562fbf1dff65faba73d2b43bd9e6c06aa39f6c204d29"
     },
     {
       "path": "assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2",
@@ -61,29 +46,89 @@
       "sha256": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"
     },
     {
-      "path": "assets/ground-landscape-BoXqCLkF.png",
-      "bytes": 3318489,
-      "sha256": "0535c7fdf826d03f87b519c3c59be594572a33a6c97ed6065404c9faeeb3f25a"
+      "path": "assets/haven-companions-cat-4rV17IN9.png",
+      "bytes": 1231350,
+      "sha256": "039df732c96633a8b57d7325551d7fb284c7be39304cc9602a31b214f90b1e3e"
     },
     {
-      "path": "assets/ground-props-p-Zi-SMY.png",
-      "bytes": 2894285,
-      "sha256": "5d12d1dbea4e34d5b3deb25ae5723be361c121fa487a6f88c50fa66d9d9b405e"
+      "path": "assets/haven-companions-dog-C_Avxq7A.png",
+      "bytes": 1190045,
+      "sha256": "06638659fcac56a8627ad152f5f926bbebbd91cd8347418b4dd1d033e02d069e"
     },
     {
-      "path": "assets/index-64jn6Yif.css",
-      "bytes": 267801,
-      "sha256": "3f75b03865f3b0659cd0ef9486ffa3123f3064d40b96d3e98b0671bcf7e2e982"
+      "path": "assets/haven-companions-reserve-CxrKZcaR.png",
+      "bytes": 1068795,
+      "sha256": "bd0e1d1eaa3db362e10292819da4f9d7d53e8420a87745a3349bfa3b2e751396"
     },
     {
-      "path": "assets/index-CI_vpoQX.js",
-      "bytes": 630645,
-      "sha256": "630766c47350459b6f2f12fb51166618fd6b3807b184a8d69d2c1f448753d864"
+      "path": "assets/haven-companions-safari-DNVy2oTC.png",
+      "bytes": 1405068,
+      "sha256": "e57b867628279dd2a64f0280eb445896e319d9142bd3d237ee3f3a3a031dd585"
     },
     {
-      "path": "assets/items-anime-BFjuG2x0.png",
-      "bytes": 2446531,
-      "sha256": "d7d62a625c2f1929a8479e780059e433347eb032ece4fee12be2e4d64783a842"
+      "path": "assets/haven-crops-growth-v047-Cv41UhXq.png",
+      "bytes": 1801043,
+      "sha256": "b719458c528a4d64c368d9a947291aa837c088099504d58be430cab688407f0d"
+    },
+    {
+      "path": "assets/haven-crops-inventory-v047-DXmSSy5k.png",
+      "bytes": 1989167,
+      "sha256": "db91a19b1236d84224cc420ac5f0400c0cfef0dfbaf066aea60fc61debc0b871"
+    },
+    {
+      "path": "assets/haven-facilities-v047-BhSn5R0l.png",
+      "bytes": 2739855,
+      "sha256": "70199098851b3e6d5ab6e718286f237b2b29d7628a097e66b82b7f7473af48a8"
+    },
+    {
+      "path": "assets/haven-ground-landscape-RYW0cYT7.png",
+      "bytes": 3873656,
+      "sha256": "5fbdb3070149b5cc2e1a30ec3f1e5cf1c6322b838348d393d9f22a7aded9171a"
+    },
+    {
+      "path": "assets/haven-ground-props-CwPWevi3.png",
+      "bytes": 2564318,
+      "sha256": "bba973f06c22bc69d19909d71c35aed1132fccecbac100f92dc0c1e01b3833c0"
+    },
+    {
+      "path": "assets/haven-hero-actions-3fYZ4U9d.webp",
+      "bytes": 1218026,
+      "sha256": "53dd17bf1dcd5119f76175056a5df90d0858a5cdbf4775c8570dca2bf6afc921"
+    },
+    {
+      "path": "assets/haven-hero-gathering-DD8A19bE.webp",
+      "bytes": 1090974,
+      "sha256": "ccaf91335771ae23bdba8b4c8b0320462174b9da082bbc443355e386a35ee329"
+    },
+    {
+      "path": "assets/haven-hero-locomotion-_aPy7ZT_.webp",
+      "bytes": 1190408,
+      "sha256": "305f9430462782224edf2cc0b867f869f2a9c716344f80c825e1976ed4600154"
+    },
+    {
+      "path": "assets/haven-hero-survivors-B2sShSwV.webp",
+      "bytes": 1167606,
+      "sha256": "f50c3d64b081dfbeb2bada9ee032e6ba73ce0ffd29da2b3e4a1aeaaea32a4e1d"
+    },
+    {
+      "path": "assets/haven-items-miniature-CWyvCdAf.png",
+      "bytes": 2296104,
+      "sha256": "ac7202af9c9ce885b4a2d8d211f502929cf6e4101d948d37fc5bef90575c3e1a"
+    },
+    {
+      "path": "assets/haven-truck-miniature-BEm5SmxQ.png",
+      "bytes": 1851066,
+      "sha256": "639db3e773a00df8e81a86636197465d212e715bf7ce419cb9f703a6dc89e207"
+    },
+    {
+      "path": "assets/index-CWoaO2nM.css",
+      "bytes": 276799,
+      "sha256": "76efad6442d874815d2eabb29c6403a5c733eb403432cbb68a9d5149c3ac5db7"
+    },
+    {
+      "path": "assets/index-DJ5H5IIC.js",
+      "bytes": 634288,
+      "sha256": "4fbb636806d5b65fd4e5dcfeaa26c94506df4eae2d1f6f8969705a0527535d84"
     },
     {
       "path": "assets/pwa/road-haven-icon.png",
@@ -91,34 +136,9 @@
       "sha256": "8727a08b900599142a9882fa61e8f4c617ba8b8fc7df6292e182432be871991d"
     },
     {
-      "path": "assets/settlement-buildings-BujeG0ZI.png",
-      "bytes": 2573254,
-      "sha256": "ebc9837dc05533cf466108aa95939474b65ea68f5edd93cffa607efd29d0e587"
-    },
-    {
       "path": "assets/skills-farm-anime-yMjBbn83.png",
       "bytes": 2786844,
       "sha256": "8c1c807a3c14355038ec31b552e14368818b18e8993f98424bb4670c4a02c933"
-    },
-    {
-      "path": "assets/survivors-actions-DljXGqPS.png",
-      "bytes": 2386618,
-      "sha256": "16100023bd05e12aece0cb46910d6b4b5356b6e257e4cdf758a9f78b9794b06d"
-    },
-    {
-      "path": "assets/survivors-anime-B10LrHeL.png",
-      "bytes": 2302538,
-      "sha256": "739489bddecb6f08bcd7383783a85bc8f3a059cb973961bc7b3362afe5dc4915"
-    },
-    {
-      "path": "assets/survivors-gathering-CwcR0tbO.png",
-      "bytes": 1706850,
-      "sha256": "9909fc86921be824e365c1ed533fecc4bdbc026b8779c91f114ebfaa8b531769"
-    },
-    {
-      "path": "assets/survivors-locomotion-DGF7tlBo.png",
-      "bytes": 2307891,
-      "sha256": "242526090add97d0644cc04e085747102d16a9821acbc1040de009314582c4d0"
     },
     {
       "path": "assets/world-atlas-anime-j_pxBRxb.png",
@@ -153,7 +173,7 @@
     {
       "path": "index.html",
       "bytes": 1280,
-      "sha256": "888b1a8727aa911b0376c7649d668bf3cb2133efc06319bf44925ce4133a29cd"
+      "sha256": "dc139c499f33611eea40b68cf05e4a003175fcf25391b740139527bc5bfa80d1"
     },
     {
       "path": "manifest.webmanifest",
