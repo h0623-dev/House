@@ -1,9 +1,9 @@
 {
-  "version": "0.52.0",
-  "versionCode": 52,
+  "version": "0.53.0",
+  "versionCode": 53,
   "minimumNativeVersionCode": 42,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.52.0.apk",
-  "sha256": "ec92b235c1858c9414c621f494d9e38138b9d3f350464ef18b393d20ec3ff00a",
-  "notes": "v0.52.0 · 오리지널 미니어처 좀비 3종 아트와 걷기 자세를 적용하고 도로 접지·전투 모션을 교정했어요.",
-  "publishedAt": "2026-10-16T13:28:12.162Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.53.0.apk",
+  "sha256": "fdee5db3a313e3085e418280c293a6fbf3ef5b08e43638b534c0691690752d48",
+  "notes": "v0.53.0 · 동물의 전방 보행과 정지 회전·코너 감속을 교정했어요. 회전 시 형태, 토끼·올빼미 홉, 사슴 걸음, 탑승 좌석과 전투 돌진 거리도 조정했어요.",
+  "publishedAt": "2026-10-16T13:53:59.218Z"
 }
