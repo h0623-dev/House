@@ -264,6 +264,96 @@
 }
 
 @media (orientation: landscape) and (max-height: 600px) {
+  /* The first-play form must expose its start action without an initial scroll. */
+  #modal-root .modal:has(> [data-start]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: repeat(6, auto);
+    gap: 6px 16px;
+    width: min(660px, 100%);
+    padding-bottom: 12px;
+  }
+  #modal-root .modal:has(> [data-start]) > .game-dialog-heading {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-height: 58px;
+    margin-bottom: 0;
+  }
+  #modal-root .modal:has(> [data-start]) > .modal-description {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0 0 2px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  #modal-root .modal:has(> [data-start]) > .modal-description br { display: none; }
+  #modal-root .modal:has(> [data-start]) .character-choices {
+    grid-column: 1;
+    grid-row: 3 / 7;
+    align-self: stretch;
+    gap: 8px;
+    margin: 0;
+  }
+  #modal-root .modal:has(> [data-start]) .character-choice {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 6px;
+  }
+  #modal-root .modal:has(> [data-start]) .character-choice.selected { padding: 5px; }
+  #modal-root .modal:has(> [data-start]) .character-choice .portrait {
+    width: 82px;
+    height: 82px;
+    margin-bottom: 5px;
+    object-fit: contain;
+  }
+  #modal-root .modal:has(> [data-start]) .character-choice strong { font-size: 12px; line-height: 1.4; }
+  #modal-root .modal:has(> [data-start]) .character-choice > span { margin-top: 3px; font-size: 10px; line-height: 1.4; }
+  #modal-root .modal:has(> [data-start]) > .name-label {
+    grid-column: 2;
+    grid-row: 3;
+    align-self: end;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  #modal-root .modal:has(> [data-start]) > .name-input {
+    grid-column: 2;
+    grid-row: 4;
+    min-width: 0;
+    height: 44px;
+    min-height: 44px;
+    margin: 0;
+    font-size: 16px;
+  }
+  #modal-root .modal:has(> [data-start]) > [data-start] {
+    grid-column: 2;
+    grid-row: 5;
+    min-height: 48px;
+    padding: 10px 8px;
+    font-size: 13px;
+  }
+  #modal-root .modal:has(> [data-start]) > .fine-print {
+    grid-column: 2;
+    grid-row: 6;
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.5;
+    text-align: left;
+  }
+  #modal-root .modal:has(> [data-start]) > .pwa-welcome-install {
+    grid-column: 1 / -1;
+    grid-row: 7;
+    margin-top: 0;
+    font-size: 10px;
+  }
+  #modal-root .modal:has(> [data-start]) > .pwa-welcome-install > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 7px 0;
+  }
+
   .battle-screen { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .battle-shell { width: 100%; height: 100%; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr) 240px; grid-template-rows: 54px 28px minmax(0, 1fr); border: 0; border-radius: 0; }
   .battle-topbar { grid-column: 1 / -1; grid-row: 1; padding: 4px 10px; min-width: 0; }

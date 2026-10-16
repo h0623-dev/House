@@ -140,6 +140,7 @@ export class Scene {
   private expansionPreview: number | null = null;
   private cameraFocusRequested = true;
   private villageOverview = false;
+  private wholeWorldOverview = false;
   private safeViewport = { top: 0, bottom: 0, left: 0, right: 0, width: 1, height: 1 };
   private queuedPlotIds: number[] = [];
   private plantingCropId: CropId = 'carrot';
@@ -393,12 +394,12 @@ export class Scene {
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
-  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; if(enabled){this.resourceFocus=null;this.villageOverview=false;} }
+  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; if(enabled){this.resourceFocus=null;this.villageOverview=false;this.wholeWorldOverview=false;} }
   /** A farming tool stays selected while taps or a finger swipe queue further plots. */
   setFarmMode(mode: FarmAction | null, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
     if (mode !== this.farmMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.farmMode = mode;
-    if(mode){this.resourceFocus=null;this.villageOverview=false;}
+    if(mode){this.resourceFocus=null;this.villageOverview=false;this.wholeWorldOverview=false;}
     this.canvas.style.touchAction = 'none';
     this.queuedPlotIds = mode ? [...queuedPlotIds] : [];
     this.plantingCropId = selectedSeed;
@@ -423,7 +424,7 @@ export class Scene {
     this.planningMode = mode; this.planningLevel = level; this.villageOverview = false;
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null;
     this.cameraFocusRequested = true;
-    if (mode) {this.zone = 'home';this.resourceFocus=null;}
+    if (mode) {this.zone = 'home';this.resourceFocus=null;this.wholeWorldOverview=false;}
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
   }
@@ -436,7 +437,7 @@ export class Scene {
     if (!this.state || !getSettlement(this.state).buildings.some(building => building.id === id)) return;
     this.setActiveFloor(getFacilityPlacement(this.state,getSettlement(this.state).buildings.find(building=>building.id===id)!).floor);
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
-    this.selectedFacilityId = id; this.zone = 'home'; this.resourceFocus=null;this.villageOverview = false;
+    this.selectedFacilityId = id; this.zone = 'home'; this.resourceFocus=null;this.villageOverview = false;this.wholeWorldOverview=false;
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
     this.render();
@@ -444,6 +445,7 @@ export class Scene {
   setSelectedFacility(id: number | null) {
     if (id !== this.selectedFacilityId) { this.endFarmStroke(); this.endMapGesture(); }
     this.selectedFacilityId = id;
+    if(id!==null)this.wholeWorldOverview=false;
   }
   setMapZoom(zoom: number) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.zoomAt(zoom); }
   getMapZoom() { return this.mapZoom; }
@@ -608,7 +610,15 @@ export class Scene {
     this.publishWalking();
   }
   resetMapView() {
+    this.resetOverview(false);
+  }
+  /** Return to the readable truck and its nearby road without moving residents. */
+  showHomeView() {
+    this.resetOverview(false);
+  }
+  private resetOverview(wholeWorld:boolean) {
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.villageOverview = true;
+    this.wholeWorldOverview=wholeWorld;
     this.resourceFocus=null;
     this.cameraFocusRequested = true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange', { detail: { zoom: this.mapZoom } }));
@@ -622,9 +632,9 @@ export class Scene {
     this.villageOverview=true;this.zone='home';this.resourceFocus=null;
     this.render();
   }
-  /** Explicit overview fits the selected floor and its playable surroundings. */
+  /** Only the explicit map overview fits all seven ground regions at once. */
   showVillageOverview() {
-    this.resetMapView(); this.villageOverview = true; this.cameraFocusRequested = true; this.render();
+    this.resetOverview(true);
   }
   setSuspended(value: boolean) {
     this.suspended = value;
@@ -660,7 +670,7 @@ export class Scene {
     if(this.activeFloor!==1)this.setActiveFloor(1);
     this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
     this.resourceFocus=focus;this.zone=focus.siteId==='grove'?'grove':'home';
-    this.farmFocus=false;this.villageOverview=false;this.selectedFacilityId=null;
+    this.farmFocus=false;this.villageOverview=false;this.wholeWorldOverview=false;this.selectedFacilityId=null;
     this.mapPan=[0,0];this.mapZoom=1;this.manualViewport=null;this.cameraFocusRequested=true;
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange',{detail:{zoom:this.mapZoom}}));
     this.render();
@@ -780,7 +790,7 @@ export class Scene {
       walk,work,path:navigation.points,route,navigation,plotIndex:0,cropId:stock.cropId??'carrot',outdoorSiteId:node.siteId,
       groundResourceId:node.id,stalled:0,yieldAt:0,resolve,reject};});
   }
-  /** Resolves only after the visible walk, work and return have finished. */
+  /** Finish at the worked plot so queued chores continue from the resident's actual feet. */
   playAction(kind: SceneAction, plotId?: number, selectedCropId?: CropId): Promise<void> {
     if(kind==='chop'||kind==='gather')return this.playOutdoorAction(kind,kind==='chop'?'grove':'salvage');
     if (this.disposed) return Promise.resolve();
@@ -809,7 +819,7 @@ export class Scene {
     const route = navigation.motion, path = navigation.points, walk = route.duration;
     this.zone = 'home';
     this.lastFrame = performance.now();
-    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + navigation.returnMotion.duration + work, walk, work, path, route, navigation, plotIndex, cropId, stalled:0, yieldAt:0, resolve,reject }; });
+    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + work, walk, work, path, route, navigation, plotIndex, cropId, stayAtTarget:true, stalled:0, yieldAt:0, resolve,reject }; });
   }
   /** A short, visible visit to the facility; the controller commits its state exactly once. */
   playFacilityAction(slot: number, kind: 'build' | 'upgrade', position?:FacilityPlacement, buildingId?:number): Promise<void> {
@@ -827,8 +837,8 @@ export class Scene {
     if (!navigation) return Promise.reject(new Error('시설로 가는 길이 막혔어요. 트럭 휴식으로 동료를 회복시킨 뒤 다시 해 주세요.'));
     const route = navigation.motion, path = navigation.points, walk = route.duration, work = realDuration(1.65);
     this.zone = 'home'; this.lastFrame = performance.now();
-    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + navigation.returnMotion.duration + work, walk, work, path,
-      route, navigation, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, facilityPlacement:placement,facilityId:buildingId, stalled:0, yieldAt:0, resolve,reject }; });
+    return new Promise((resolve,reject) => { this.action = { kind, elapsed: 0, duration: walk + work, walk, work, path,
+      route, navigation, plotIndex: 0, cropId: 'carrot', facilitySlot: slot, facilityPlacement:placement,facilityId:buildingId, stayAtTarget:true, stalled:0, yieldAt:0, resolve,reject }; });
   }
   focus(kind: string) { this.focused = kind; this.focusedUntil = performance.now() + 2400; }
   resize() {
@@ -928,7 +938,7 @@ export class Scene {
       farmMode: this.farmMode, constructionMode: this.constructionMode, mapZoom: this.mapZoom,
       mapMoveMode: this.mapMoveMode, mapPan: this.mapPan.map(round), manualCamera: this.manualViewport !== null,
       playerFollowing:this.playerCameraFollowing,cameraCenter:{x:round(this.camera.x),y:round(this.camera.y)},
-      cameraMode:this.cameraMode,overviewBounds:this.overviewBounds,
+      cameraMode:this.cameraMode,overviewBounds:this.overviewBounds,overviewScope:this.wholeWorldOverview?'world':'home',
       resourceFocus:this.resourceFocus,
       cameraViewport:{width:round(this.cameraViewport[0]),height:round(this.cameraViewport[1])},
       planningMode: this.planningMode, planningLevel: this.planningLevel, expansionPreview: this.expansionPreview,
@@ -1300,6 +1310,21 @@ export class Scene {
   private heroOnDeck() {
     const location=this.currentHeroLocation();return location.surface==='deck'&&(location.floor??1)===this.activeFloor;
   }
+  private homeViewBounds(level:number):WorldBounds {
+    if(!this.state)return{left:120,top:20,right:940,bottom:590};
+    if(this.activeFloor!==1)return getHomeOverviewBounds(this.state,this.activeFloor,level);
+    const deck=this.deckBounds(level),corners=[[deck.left,deck.back],[deck.end,deck.back],[deck.end,deck.front],[deck.left,deck.front]]
+      .map(([u,v])=>this.p(u,v,94));
+    const cabin=this.p(deck.end+95,(deck.back+deck.front)/2,-107);
+    // Include the home, both real road landings and a little breathing room.
+    // Distant gathering regions belong only to the explicit whole-map view.
+    return mergeVillageBounds([
+      {left:Math.min(...corners.map(p=>p[0]))-40,top:Math.min(...corners.map(p=>p[1]))-82,
+        right:Math.max(...corners.map(p=>p[0]))+40,bottom:Math.max(...corners.map(p=>p[1]))+154},
+      {left:cabin[0]-126,top:cabin[1]-147,right:cabin[0]+134,bottom:cabin[1]+85},
+      getVillageContentBounds(this.state,1),getTruckAccessGeometry(level).bounds,getPetPassageGeometry(level).bounds,
+    ]);
+  }
   private planningBounds(): WorldBounds | null {
     if (!this.planningMode) return null;
     const level = this.planningMode === 'expansion' ? this.planningLevel ?? this.state?.deckLevel ?? 1 : this.state?.deckLevel ?? 1;
@@ -1347,7 +1372,7 @@ export class Scene {
     // A stable whole-farm view lets additional taps queue while the hero works.
     if (action && !(this.farmMode && isFarmAction(action.kind))) {
       const entry = action.walk > 0 ? this.ease(action.elapsed / action.walk) : 1;
-      const returnWalk = action.navigation.returnMotion.duration;
+      const returnWalk = action.stayAtTarget ? 0 : action.navigation.returnMotion.duration;
       const exit = returnWalk > 0 ? this.ease((action.duration - action.elapsed) / returnWalk) : 1;
       const amount = Math.min(entry, exit);
       const targetPoint = action.path[action.path.length - 1];
@@ -1403,7 +1428,7 @@ export class Scene {
     const overviewView=!!this.state&&!resourceView&&!showFarm&&!this.planningMode&&!this.constructionMode&&(this.villageOverview||this.selectedFacilityId===null);
     this.overviewBounds=null;
     if(overviewView&&this.state){
-      let bounds=getHomeOverviewBounds(this.state,this.activeFloor,level);
+      let bounds=this.wholeWorldOverview?getHomeOverviewBounds(this.state,this.activeFloor,level):this.homeViewBounds(level);
       if(this.activeFloor===1){
         const leased=this.activePetPassageLeases().map(path=>({
           left:Math.min(...path.points.map(point=>point[0]))-40,top:Math.min(...path.points.map(point=>point[1]))-72,
@@ -1422,7 +1447,10 @@ export class Scene {
       const view=frameHomeOverview(bounds,availableWidth,availableHeight);
       viewWidth=view.width;viewHeight=view.height;target={x:view.x,y:view.y,zoom:view.zoom};
       const minScale=node&&node.kind!=='tree'?RESOURCE_PROP_FOCUS_MIN_SCALE:RESOURCE_FOCUS_MIN_SCALE;
-      if(view.scale<minScale){
+      // A selected small prop still shares a clearing with the working resident.
+      // Avoid stretching one scrap sprite across a short landscape viewport.
+      if(node&&view.scale>1){viewWidth=availableWidth;viewHeight=availableHeight;}
+      else if(view.scale<minScale){
         viewWidth=availableWidth/minScale;viewHeight=availableHeight/minScale;
         // A short landscape strip starts at the clearing's entrance. Further
         // trees remain readable when the player pans down the real forest trail.

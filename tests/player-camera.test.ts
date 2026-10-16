@@ -7,6 +7,7 @@ import { frameHomeOverview, getHomeOverviewBounds } from '../src/player-camera.t
 import { createNavigationWorld, defaultHeroLocation, getRoadBounds, planNavigation, sampleNavigation, type NavigationLocation, type NavigationPath } from '../src/scene-navigation.ts';
 import { getFloorBounds, projectTruckPoint, FLOOR_HEIGHT, type TruckFloor } from '../src/truck-layout.ts';
 import { getPetPassageGeometry } from '../src/pet-passage.ts';
+import { getTruckAccessGeometry } from '../src/truck-access.ts';
 import { GROUND_RESOURCE_NODES, GROUND_RESOURCE_ZONES, getGroundResourceNode, getGroundResourceZone, type GroundResourceId } from '../src/ground-resources.ts';
 import { GROUND_REGIONS, getGroundRegion, type GroundRegionId } from '../src/ground-regions.ts';
 
@@ -27,7 +28,7 @@ function inside(point: readonly number[], frame: ReturnType<typeof frameHomeOver
     `complete map point ${point} stays between the HUDs at ${width}×${height}`);
 }
 
-test('the default first-floor view fits the complete truck, playable road, outdoor places and full animal passage', () => {
+test('the explicit first-floor overview fits the complete truck, playable road, outdoor places and full animal passage', () => {
   for (const level of [1, 4, 8]) {
     const state = expanded(level), before = structuredClone(state), deck = getFloorBounds(level), road = getRoadBounds(level),
       bounds = getHomeOverviewBounds(state, 1), passage = getPetPassageGeometry(level),
@@ -69,10 +70,11 @@ test('upper-floor overview excludes the ground and other storeys while keeping t
   }
 });
 
-test('ordinary real walking and human-ladder travel use the same complete-map frame', () => {
+test('walking through the real exterior stair link retains an explicitly selected complete-map frame', () => {
   const state = createGame(), world = createNavigationWorld(1, 3, []),
     route = planNavigation(world, defaultHeroLocation(), { surface: 'road', point: [490, 620] });
-  assert.ok(route); assert.ok(route.climbSegments.length);
+  assert.ok(route); assert.ok(route.segments.some(segment => segment.link === 'road-1'),
+    'the road journey uses the real exterior stair instead of requiring the retired ladder-climbing pose');
   const before = structuredClone(route), surfaces = new Set<string>(), bounds = getHomeOverviewBounds(state, 1);
   for (const [width, height] of usableViewports) {
     const frame = frameHomeOverview(bounds, width, height);
@@ -95,7 +97,7 @@ type CameraScene = {
   resumePlayerCamera(): void; walkOntoRoad(): void; stopWalking(): void; resetMapView(): void; showVillageOverview(): void;
   setActiveFloor(floor: TruckFloor): void; playPetPassageGate(open: boolean): Promise<void>; clearPetPassageGateOperation(): void;
 };
-test('actual Scene retains deliberate zoom and pan through road commands and gate work, and only an explicit overview resets it', async () => {
+test('actual Scene defaults to the readable home, preserves manual road views, and fits the entire world only on request', async () => {
   const globals: Record<string, unknown> = {
     window: { matchMedia: () => ({ matches: false }), addEventListener() {}, devicePixelRatio: 1 },
     document: { hidden: false, addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] },
@@ -115,11 +117,22 @@ test('actual Scene retains deliberate zoom and pan through road commands and gat
     const prototype = Scene.prototype as unknown as { render(): void }, original = prototype.render;
     prototype.render = () => {}; restorePainting = () => { prototype.render = original; };
     const canvas = { getContext: () => ({}), style: {}, dataset: {} as Record<string, string>, setAttribute() {}, addEventListener() {}, dispatchEvent() {},
-      getBoundingClientRect: () => ({ width: 390, height: 580, left: 0, top: 0 }), hasPointerCapture: () => false };
+      getBoundingClientRect: () => ({ width: 844, height: 390, left: 0, top: 0 }), hasPointerCapture: () => false };
     const scene = new Scene(canvas as unknown as HTMLCanvasElement, () => {}) as unknown as CameraScene;
-    scene.setState(expanded(8)); scene.updateCamera(); scene.publishGeometry();
+    scene.setState(createGame()); scene.updateCamera(); scene.publishGeometry();
     const initial = structuredClone(scene.camera), initialScale = scene.scale;
     assert.equal(scene.cameraMode, 'overview'); assert.equal(JSON.parse(canvas.dataset.sceneGeometry).playerFollowing, false);
+    const geometry = JSON.parse(canvas.dataset.sceneGeometry), deck = getFloorBounds(1, 1);
+    const homePoints = [
+      ...[[deck.left, deck.back], [deck.end, deck.back], [deck.end, deck.front], [deck.left, deck.front]]
+        .map(point => projectTruckPoint(point, 1, 94)),
+      ...getTruckAccessGeometry(1).points, ...getPetPassageGeometry(1).points,
+    ];
+    for (const point of homePoints) {
+      const x = geometry.dx + point[0] * initialScale, y = geometry.dy + point[1] * initialScale;
+      assert.ok(x >= 0 && x <= 844 && y >= 40 && y <= 320,
+        'the home view contains the complete deck and both real ground landings between the landscape HUDs');
+    }
     const retainedFeet = structuredClone(scene.heroLocation), before = structuredClone(scene.state);
     scene.walkOntoRoad(); assert.ok(scene.freeWalk); scene.updateCamera();
     assert.deepEqual(scene.camera, initial); assert.equal(scene.scale, initialScale);
@@ -139,11 +152,20 @@ test('actual Scene retains deliberate zoom and pan through road commands and gat
     scene.action.resolve(); await gate; scene.action = null; scene.clearPetPassageGateOperation();
     scene.showVillageOverview(); scene.updateCamera(); scene.publishGeometry();
     assert.equal(scene.cameraMode, 'overview'); assert.equal(scene.mapZoom, 1); assert.equal(scene.manualViewport, null);
-    assert.deepEqual(scene.camera, initial); assert.equal(scene.scale, initialScale);
+    const world = frameHomeOverview(getHomeOverviewBounds(scene.state, 1), 844, 280);
+    assert.deepEqual(scene.camera, { x: world.x, y: world.y, zoom: world.zoom });
+    assert.equal(scene.scale, world.scale);
+    assert.ok(initialScale > scene.scale * 2,
+      'ordinary home tasks stay substantially larger than fitting all seven distant gathering regions');
+    scene.resetMapView(); scene.updateCamera();
+    assert.deepEqual(scene.camera, initial); assert.equal(scene.scale, initialScale,
+      'returning to the default view restores the home instead of the complete-world overview');
     assert.deepEqual(scene.heroLocation, retainedFeet); assert.deepEqual(scene.state, before);
+    scene.setState(expanded(8));
+    const expandedFeet = structuredClone(scene.heroLocation), expandedState = structuredClone(scene.state);
     scene.setActiveFloor(3); scene.updateCamera(); scene.showVillageOverview(); scene.updateCamera();
     assert.equal(scene.activeFloor, 3, 'explicit overview preserves the chosen work floor instead of following the resident downstairs');
-    assert.deepEqual(scene.heroLocation, retainedFeet); assert.deepEqual(scene.state, before);
+    assert.deepEqual(scene.heroLocation, expandedFeet); assert.deepEqual(scene.state, expandedState);
   } finally {
     hook.deregister(); restorePainting?.();
     for (const [key, descriptor] of Object.entries(descriptors)) {
@@ -185,7 +207,9 @@ test('actual landscape resource focus keeps tree and prop hits readable inside a
     prototype.render = () => {}; restorePainting = () => { prototype.render = original; };
     // Camera framing, the ground painter and its real hit polygons stay live;
     // only the browser shell and Canvas calls are replaced by this harness.
-    const context = new Proxy({ globalAlpha: 1 }, { get: (target, key) => Reflect.has(target, key) ? Reflect.get(target, key) : () => {} });
+    const context = new Proxy({ globalAlpha: 1,
+      createRadialGradient: () => ({ addColorStop() {} }), createLinearGradient: () => ({ addColorStop() {} }) },
+      { get: (target, key) => Reflect.has(target, key) ? Reflect.get(target, key) : () => {} });
     const canvas = { getContext: () => context, style: {}, dataset: {} as Record<string, string>, setAttribute() {}, addEventListener() {}, dispatchEvent() {},
       getBoundingClientRect: () => ({ width: 844, height: 390, left: 0, top: 0, right: 844, bottom: 390 }), hasPointerCapture: () => false };
     const scene = new Scene(canvas as unknown as HTMLCanvasElement, () => {}) as unknown as ResourceScene;
@@ -208,7 +232,7 @@ test('actual landscape resource focus keeps tree and prop hits readable inside a
       'explicit node focus displays the complete selected prop inside the safe strip');
       return row;
     }
-    paintGround();
+    scene.showVillageOverview(); paintGround();
     const overview = structuredClone(scene.camera), overviewScale = scene.scale,
       feet = structuredClone(scene.heroLocation), before = structuredClone(scene.state);
     assert.equal(JSON.parse(canvas.dataset.sceneGeometry).viewport.usableHeight, 88);
