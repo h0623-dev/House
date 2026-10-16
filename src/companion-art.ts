@@ -16,6 +16,39 @@ export interface CompanionOptions {
   facing: 1 | -1; pose?: CompanionPose; progress?: number;
   /** Village movement supplies real distance; combat/rest retain their poses. */
   gait?: CompanionGaitInput;
+  /** Petting is a local reaction; a rider shares the animal's back position. */
+  interaction?: { kind: 'petting' | 'ridden'; progress: number };
+}
+
+/** Points on the existing animal drawings, relative to their feet. */
+export function companionInteractionAnchor(id: UnitId, scale = 1, facing: 1 | -1 = 1):
+  { pet: readonly [number, number]; saddle: readonly [number, number] } {
+  const anchors: Record<UnitId, { pet: readonly [number, number]; saddle: readonly [number, number] }> = {
+    dog: { pet: [14, -41], saddle: [-11, -32] },
+    cat: { pet: [18, -37], saddle: [-12, -31] },
+    rabbit: { pet: [10, -29], saddle: [-9, -23] },
+    fox: { pet: [17, -38], saddle: [-12, -29] },
+    boar: { pet: [20, -37], saddle: [-11, -38] },
+    owl: { pet: [2, -36], saddle: [-4, -24] },
+    monkey: { pet: [13, -41], saddle: [-9, -29] },
+    elephant: { pet: [35, -67], saddle: [-29, -90] },
+    giraffe: { pet: [21, -60], saddle: [-12, -70] },
+    panda: { pet: [29, -49], saddle: [-15, -56] },
+    deer: { pet: [24, -51], saddle: [-10, -50] },
+  };
+  const anchor = anchors[id];
+  return { pet: [anchor.pet[0] * scale * facing, anchor.pet[1] * scale],
+    saddle: [anchor.saddle[0] * scale * facing, anchor.saddle[1] * scale] };
+}
+
+function interactionReaction(o: CompanionOptions): { head: number; tail: number; ears: number } {
+  if (o.interaction?.kind !== 'petting' || o.gait?.reducedMotion) return { head: 0, tail: 0, ears: 0 };
+  const progress = Math.max(0, Math.min(1, o.interaction.progress));
+  const envelope = Math.sin(progress * Math.PI);
+  const stroke = Math.sin(progress * Math.PI * 6);
+  return { head: -.07 * envelope + stroke * .013 * envelope,
+    tail: stroke * (o.id === 'dog' ? .19 : o.id === 'cat' || o.id === 'monkey' ? .08 : .035) * envelope,
+    ears: Math.sin(progress * Math.PI * 4) * .035 * envelope };
 }
 
 interface CatFrame {
@@ -47,6 +80,8 @@ interface QuadrupedArt {
   tail: readonly ArtPoint[];
   tailRoot: ArtPoint;
   limbs: Record<CompanionPaw, PuppetLimb>;
+  ears?: readonly { contour: readonly ArtPoint[]; root: ArtPoint }[];
+  wings?: readonly { contour: readonly ArtPoint[]; root: ArtPoint }[];
 }
 
 // Puppet contours reuse only pixels from each animal's original standing art.
@@ -131,6 +166,69 @@ const reserveArt: Record<OriginalReserveId, ReserveArt> = {
       walk: { x: 373, y: 979, width: 204, height: 207, footX: 493, footY: 1180 },
       attack: { x: 663, y: 977, width: 294, height: 213, footX: 812, footY: 1184 },
       down: { x: 1016, y: 996, width: 184, height: 183, footX: 1110, footY: 1173 },
+    },
+  },
+};
+
+// The four smaller companions now use the same articulated, original-pixel
+// construction as dog/cat. A walking frame is never alternated with idle art:
+// its different silhouette and foot anchors used to make the body jerk/slide.
+const reservePuppets: Record<OriginalReserveId, QuadrupedArt> = {
+  rabbit: {
+    frame: reserveArt.rabbit.frames.idle, unit: reserveArt.rabbit.pixelUnit,
+    body: [[111,247],[136,233],[169,228],[196,241],[218,259],[232,281],[231,304],[208,319],[178,326],[145,324],[117,311],[103,282]],
+    head: [[176,171],[206,174],[236,179],[255,196],[269,222],[267,247],[252,264],[221,266],[196,252],[174,235],[160,208]], neck: [211,251],
+    tail: [[94,246],[116,238],[130,248],[130,270],[118,283],[98,279],[92,263]], tailRoot: [117,265],
+    ears: [
+      { contour: [[120,111],[140,111],[167,132],[186,160],[200,184],[177,202],[154,176],[135,153],[123,132]], root: [185,190] },
+      { contour: [[184,97],[204,101],[220,124],[230,151],[237,181],[216,196],[202,165],[190,134]], root: [223,185] },
+    ],
+    limbs: {
+      hindFar: { hip: [165,292], knee: [165,313], foot: [175,333], contour: [[148,279],[175,281],[181,304],[174,319],[185,326],[188,337],[165,341],[151,334],[149,314]] },
+      hindNear: { hip: [133,292], knee: [125,314], foot: [133,333], contour: [[112,276],[143,278],[153,299],[142,319],[154,327],[153,338],[123,342],[108,334],[108,314]] },
+      frontFar: { hip: [236,282], knee: [235,309], foot: [239,331], contour: [[223,269],[244,272],[248,295],[244,316],[253,326],[250,337],[227,338],[221,327],[225,308]] },
+      frontNear: { hip: [206,284], knee: [201,312], foot: [207,334], contour: [[191,270],[215,274],[218,298],[212,318],[220,329],[216,340],[193,341],[183,331],[188,310]] },
+    },
+  },
+  fox: {
+    frame: reserveArt.fox.frames.idle, unit: reserveArt.fox.pixelUnit,
+    body: [[117,539],[143,520],[180,513],[215,525],[241,543],[253,567],[246,590],[221,603],[186,600],[157,594],[128,598],[110,579]],
+    head: [[209,415],[297,415],[301,496],[296,519],[274,545],[239,550],[208,536],[181,508],[185,467]], neck: [239,527],
+    tail: [[47,441],[66,421],[105,415],[137,431],[158,463],[164,500],[148,542],[129,568],[102,569],[73,546],[53,512],[47,479]], tailRoot: [130,557],
+    limbs: {
+      hindFar: { hip: [166,579], knee: [156,608], foot: [165,632], contour: [[151,564],[178,569],[180,592],[168,610],[170,623],[184,630],[181,642],[157,642],[146,627],[146,604]] },
+      hindNear: { hip: [120,576], knee: [108,609], foot: [104,632], contour: [[106,559],[135,569],[137,588],[121,614],[117,626],[123,634],[117,644],[95,643],[89,633],[94,610]] },
+      frontFar: { hip: [254,571], knee: [250,607], foot: [259,630], contour: [[242,553],[264,558],[268,588],[260,610],[265,624],[276,630],[273,641],[248,642],[239,630],[242,604]] },
+      frontNear: { hip: [221,574], knee: [216,610], foot: [221,635], contour: [[208,556],[234,560],[236,590],[227,614],[229,627],[242,635],[235,646],[211,646],[202,634],[205,608]] },
+    },
+  },
+  boar: {
+    frame: reserveArt.boar.frames.idle, unit: reserveArt.boar.pixelUnit,
+    body: [[65,775],[102,740],[151,713],[180,711],[203,738],[215,784],[209,829],[194,850],[166,867],[130,863],[93,864],[65,848],[52,821]],
+    head: [[180,719],[246,723],[278,744],[291,776],[308,803],[312,830],[297,849],[271,857],[241,851],[214,840],[191,814],[172,773]], neck: [222,812],
+    tail: [[51,768],[64,760],[76,769],[76,785],[69,801],[57,796],[52,783]], tailRoot: [72,795],
+    limbs: {
+      hindFar: { hip: [127,851], knee: [132,877], foot: [144,897], contour: [[113,838],[139,843],[145,861],[142,878],[151,891],[159,897],[155,907],[134,908],[120,894],[119,871]] },
+      hindNear: { hip: [79,848], knee: [70,878], foot: [70,901], contour: [[63,833],[90,837],[96,858],[83,879],[83,893],[91,899],[87,911],[61,911],[54,901],[55,879]] },
+      frontFar: { hip: [239,851], knee: [237,878], foot: [247,900], contour: [[225,834],[251,838],[255,859],[249,879],[258,893],[267,898],[263,909],[240,910],[229,896],[229,875]] },
+      frontNear: { hip: [190,855], knee: [185,881], foot: [193,907], contour: [[175,839],[202,843],[207,864],[199,887],[206,901],[214,907],[208,919],[182,919],[170,904],[172,880]] },
+    },
+  },
+  owl: {
+    frame: reserveArt.owl.frames.idle, unit: reserveArt.owl.pixelUnit,
+    body: [[132,1052],[176,1041],[213,1052],[237,1081],[232,1119],[211,1144],[183,1157],[148,1154],[121,1131],[112,1097]],
+    head: [[139,982],[218,982],[245,1002],[256,1033],[244,1064],[220,1080],[180,1076],[149,1066],[130,1048],[124,1017]], neck: [194,1068],
+    tail: [[81,1142],[112,1136],[127,1151],[100,1172],[76,1175]], tailRoot: [119,1143],
+    wings: [
+      { contour: [[217,1071],[237,1073],[245,1092],[239,1121],[223,1137],[212,1116]], root: [224,1083] },
+      { contour: [[102,1056],[131,1048],[158,1060],[175,1086],[164,1123],[141,1144],[113,1159],[77,1171],[88,1136]], root: [137,1075] },
+    ],
+    limbs: {
+      hindFar: { hip: [201,1139], knee: [204,1158], foot: [207,1176], contour: [[190,1127],[211,1130],[215,1149],[211,1165],[220,1170],[222,1180],[203,1185],[187,1177],[191,1160]] },
+      hindNear: { hip: [157,1141], knee: [159,1161], foot: [163,1182], contour: [[145,1129],[168,1131],[174,1151],[169,1169],[180,1176],[181,1188],[160,1191],[144,1182],[148,1164]] },
+      // The contact API retains four keys; owls render only their two hindfeet.
+      frontFar: { hip: [201,1139], knee: [204,1158], foot: [207,1176], contour: [] },
+      frontNear: { hip: [157,1141], knee: [159,1161], foot: [163,1182], contour: [] },
     },
   },
 };
@@ -253,22 +351,34 @@ function projectedPart(c:CanvasRenderingContext2D,image:HTMLImageElement,art:Qua
   puppetPart(c,image,art,contour);c.restore();
 }
 
-function drawWalkingQuadruped(c: CanvasRenderingContext2D, o: CompanionOptions,
+function drawWalkingCompanion(c: CanvasRenderingContext2D, o: CompanionOptions,
   gait: CompanionGaitSample): void {
-  if(o.id!=='dog'&&o.id!=='cat')return;
-  const art=quadrupedArt[o.id],image=o.id==='dog'?creatureImage:catCompanionImage;
+  if(isSafariUnitId(o.id))return;
+  const art=o.id==='dog'||o.id==='cat'?quadrupedArt[o.id]:reservePuppets[o.id];
+  const image=o.id==='dog'?creatureImage:o.id==='cat'?catCompanionImage:reserveCompanionImage;
   if(!image.complete||!image.naturalWidth)return;
   groundShadow(c,gait.strength>.15);
   c.imageSmoothingEnabled=true;c.imageSmoothingQuality='high';
   // Grounded feet remain independent of the torso's subtle weight transfer.
-  const projection=facingProjection(o);
-  for(const paw of ['hindFar','frontFar','hindNear','frontNear'] as const)puppetLeg(c,image,art,paw,gait,projection);
+  const projection=facingProjection(o), reaction=interactionReaction(o);
+  const feet=o.id==='owl'?['hindFar','hindNear'] as const:['hindFar','frontFar','hindNear','frontNear'] as const;
+  for(const paw of feet)puppetLeg(c,image,art,paw,gait,projection);
   c.save();c.translate(0,gait.bodyY);c.rotate(gait.bodyRoll);
-  const idleTail=o.gait?.reducedMotion?0:Math.sin(o.time*1.4)*.025*(1-gait.strength);
-  puppetPivot(c,art,art.tailRoot,gait.tailTilt+idleTail,()=>puppetPart(c,image,art,art.tail,undefined,projection),projection);
+  const resting=1-gait.strength;
+  // Dogs gently wag; a cat/fox balances with a slower, small tail-tip sway.
+  const tailFrequency=o.id==='dog'?1.8:o.id==='cat'? .75:o.id==='fox'? .85:1.1;
+  const tailAmplitude=o.id==='dog'? .04:o.id==='cat'? .015:.018;
+  const idleTail=o.gait?.reducedMotion?0:Math.sin(o.time*tailFrequency)*tailAmplitude*resting;
+  puppetPivot(c,art,art.tailRoot,gait.tailTilt+idleTail+reaction.tail,()=>puppetPart(c,image,art,art.tail,undefined,projection),projection);
   projectedPart(c,image,art,art.body,projection,.5);
-  puppetPivot(c,art,art.neck,gait.headTilt+Math.sin(gait.heading)*.018*gait.strength,
-    ()=>projectedPart(c,image,art,art.head,projection,.75),projection);
+  puppetPivot(c,art,art.neck,gait.headTilt+reaction.head+Math.sin(gait.heading)*.012*gait.strength,()=>{
+    for(const ear of art.ears??[])puppetPivot(c,art,ear.root,gait.earTilt+reaction.ears,
+      ()=>puppetPart(c,image,art,ear.contour,undefined,projection),projection);
+    projectedPart(c,image,art,art.head,projection,.75);
+  },projection);
+  for(const [index,wing] of (art.wings??[]).entries())puppetPivot(c,art,wing.root,
+    (index?-1:1)*(gait.wingTilt+reaction.ears),
+    ()=>puppetPart(c,image,art,wing.contour,undefined,projection),projection);
   c.restore();
 }
 
@@ -278,9 +388,10 @@ export function companionPawContacts(o: CompanionOptions): Record<CompanionPaw,
   if(isSafariUnitId(o.id)&&o.gait&&['idle','walk','run'].includes(o.pose??'idle')) {
     return safariPawContacts(o,sampleCompanionGait(o.id,o.gait,o.scale));
   }
-  if((o.id!=='dog'&&o.id!=='cat')||!o.gait
+  if(isSafariUnitId(o.id)||!o.gait
     ||!['idle','walk','run'].includes(o.pose??'idle'))return;
-  const art=quadrupedArt[o.id],gait=sampleCompanionGait(o.id,o.gait,o.scale);
+  const art=o.id==='dog'||o.id==='cat'?quadrupedArt[o.id]:reservePuppets[o.id];
+  const gait=sampleCompanionGait(o.id,o.gait,o.scale);
   const projection=facingProjection(o);
   const result={} as NonNullable<ReturnType<typeof companionPawContacts>>;
   for(const name of ['frontNear','frontFar','hindNear','hindFar'] as const){
@@ -397,7 +508,8 @@ export function drawCompanion(c: CanvasRenderingContext2D, o: CompanionOptions):
   const naturalWalk=gait&&(pose==='idle'||pose==='walk'||pose==='run')
     &&(o.id==='dog'?creatureImage.complete&&creatureImage.naturalWidth>0
       :o.id==='cat'?catCompanionImage.complete&&catCompanionImage.naturalWidth>0
-      :isSafariUnitId(o.id)?safariCompanionArtReady():false);
+      :isSafariUnitId(o.id)?safariCompanionArtReady()
+      :reserveCompanionImage.complete&&reserveCompanionImage.naturalWidth>0);
   c.save(); c.translate(o.x, o.y); c.scale(o.scale * (naturalWalk?1:o.facing), o.scale);
   if (pose === 'hurt') c.globalAlpha *= .65 + Math.abs(Math.sin(o.time * 19)) * .35;
   if (pose === 'down') {
@@ -407,7 +519,7 @@ export function drawCompanion(c: CanvasRenderingContext2D, o: CompanionOptions):
     if (o.id === 'dog' || o.id === 'cat') { c.scale(1, .55); c.rotate(-.1); }
   }
   if(isSafariUnitId(o.id))drawSafariCompanion(c,o,naturalWalk?gait:undefined);
-  else if(naturalWalk)drawWalkingQuadruped(c,o,gait);
+  else if(naturalWalk)drawWalkingCompanion(c,o,gait);
   else if (o.id === 'dog') {
     const dogPose: PetPose = pose === 'attack' || pose === 'skill' ? 'pounce'
       : pose === 'hurt' || pose === 'down' ? 'idle' : pose;

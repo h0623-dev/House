@@ -4,7 +4,7 @@ import { CROPS, getCropProgress, getPlotCropId, getFarmCapacity, type CropId, ty
 import { drawHero, type HeroPose } from './actors';
 import { getEquippedOutfit } from './shop';
 import { drawZombie } from './creatures';
-import { drawCompanion, companionPawContacts, sampleCompanionGait, type CompanionOptions } from './companion-art';
+import { drawCompanion, companionPawContacts, companionInteractionAnchor, sampleCompanionGait, type CompanionOptions } from './companion-art';
 import { drawTruckFloor } from './truck-floor-art';
 import { drawTruckAccessStairs } from './truck-stair-art';
 import { drawSkyBirds, skyNightAmount } from './sky-birds';
@@ -12,7 +12,7 @@ import { createPetPatrol, stepPetPatrol, getPetGroundRadius, getPetPatrolDestina
 import { planPlacementPetRelocations } from './scene-placement';
 import { getFloorBounds, getFloorSlots, getFloorStairs,
   getSlotFloor, getSlotLocalIndex, getTruckFloorCount, FLOOR_HEIGHT, type TruckFloor } from './truck-layout';
-import { getUnlockedUnitIds, getUnitRoster, getAnimalDeckUnlockLevel, canAnimalBoardTruck, type UnitId } from './units';
+import { UNIT_IDS, getUnlockedUnitIds, getUnitRoster, getAnimalDeckUnlockLevel, canAnimalBoardTruck, type UnitId } from './units';
 import { drawWorldSprite, paintWorldQuad, drawWorldRoad, drawWorldFence, drawWorldStairs, worldArtReady } from './world-art';
 import { drawCropSprite } from './crop-art';
 import { BUILDINGS, getSettlement, type Building, type BuildingType } from './settlement';
@@ -46,7 +46,7 @@ import { isNavigationLinkSurface } from './scene-navigation';
 type Point = [number, number];
 type Selectable = 'farm' | 'farm-expand' | 'truck' | 'pet' | 'pet-gate' | 'character' | 'grove' | 'grove-work' | 'outdoor-site' | 'ground-resource' | 'road-entry' | 'facility' | 'facility-collect' | 'facility-start' | 'build-slot' | 'build-placement';
 type Hit = { kind: Selectable; x: number; y: number; radius: number; bounds?: [number, number, number, number]; polygon?: Point[]; plotId?: number; siteId?:OutdoorSiteId; nodeId?:GroundResourceId; marker?:boolean };
-type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade' | 'pet-gate';
+type SceneAction = 'plant' | 'water' | 'fertilize' | 'harvest' | 'chop' | 'expand' | 'expandFarm' | 'gather' | 'build' | 'upgrade' | 'pet-gate' | 'petting' | 'mount' | 'dismount';
 type FarmAction = 'plant' | 'water' | 'fertilize' | 'harvest';
 type PlanningMode = 'catalog' | 'placement' | 'expansion';
 type WorldBounds = { left: number; top: number; right: number; bottom: number };
@@ -54,7 +54,7 @@ type FarmStroke = { pointerId: number; last: Point; visited: Set<number> };
 type MapGesture = { pointerId: number; start: Point; last: Point; moved: boolean };
 type HeroSceneState = { point: Point; pose: HeroPose; facing: 1 | -1; progress: number; time: number; climbing?: 'up' | 'down' };
 const isFarmAction = (kind: SceneAction): kind is FarmAction => kind === 'plant' || kind === 'water' || kind === 'fertilize' || kind === 'harvest';
-type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; facilityPlacement?:FacilityPlacement; facilityId?:number; outdoorSiteId?:OutdoorSiteId; groundResourceId?:GroundResourceId; stayAtTarget?:boolean; gaitOffset?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
+type Chore = { kind: SceneAction; elapsed: number; duration: number; walk: number; work: number; path: Point[]; route: MotionRoute; navigation: NavigationPath; plotIndex: number; cropId: CropId; facilitySlot?: number; facilityPlacement?:FacilityPlacement; facilityId?:number; outdoorSiteId?:OutdoorSiteId; groundResourceId?:GroundResourceId; animalId?:UnitId; stayAtTarget?:boolean; gaitOffset?:number; stalled:number; yieldAt:number; resolve: () => void; reject:(reason:Error)=>void };
 const CHORE_STALL_TIMEOUT=16;
 // Residents fit comfortably beside the truck's facilities and planters.
 // Compact painted residents sit between the crops and miniature buildings.
@@ -89,7 +89,7 @@ export class Scene {
   private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private action: Chore | null = null;
   private heroLocation: NavigationLocation = defaultHeroLocation();
-  private freeWalk: { navigation: NavigationPath; elapsed: number; gaitOffset: number; blockedFor:number; retryFor:number; reroutes:number } | null = null;
+  private freeWalk: { navigation: NavigationPath; elapsed: number; gaitOffset: number; blockedFor:number; retryFor:number; reroutes:number; rate?:number } | null = null;
   private walkingEnabled = true;
   private gaitDistance = 0;
   private heroFacing: 1 | -1 = 1;
@@ -99,6 +99,10 @@ export class Scene {
   private walkEventState = '';
   private petMotion = new Map<UnitId,PetPatrolState>();
   private petYields = new Map<UnitId,{route:NavigationPath;reserved:NavigationLocation[];reservedRadius:number;passage?:NavigationLink;passageOwner?:UnitId}>();
+  private mountedAnimal: UnitId | null = null;
+  private animalInteractionEventState = '';
+  private animalFocus: UnitId | null = null;
+  private animalFocusViewport: Point | null = null;
   private placementRelocationSequence = 0;
   private petGateClosing = false;
   private petGatePendingOpen: boolean | null = null;
@@ -166,7 +170,7 @@ export class Scene {
     for (let step = 0; step < steps; step++) {
       this.time += delta * GAME_SPEED_MULTIPLIER;
       if (this.freeWalk) {
-        const walking = this.freeWalk,nextElapsed=Math.min(walking.navigation.motion.duration,walking.elapsed+delta),sample=sampleNavigation(walking.navigation,nextElapsed);
+        const walking = this.freeWalk,nextElapsed=Math.min(walking.navigation.motion.duration,walking.elapsed+delta*(walking.rate??1)),sample=sampleNavigation(walking.navigation,nextElapsed);
         const blocker=this.stepBlocker(this.heroLocation,sample.location);
         this.blockedReason=blocker?`actor:${blocker.id}`:null;
         if(blocker){
@@ -174,10 +178,10 @@ export class Scene {
           if(walking.blockedFor>=.3&&walking.retryFor>=.3){
             walking.retryFor=0;
             this.tryPetYield(blocker,[sample.location,walking.navigation.target]);
-            const detour=planNavigation(this.navigationWorld(),this.heroLocation,walking.navigation.target);
+            const detour=planNavigation(this.walkNavigationWorld(),this.heroLocation,walking.navigation.target);
             if(detour){walking.navigation=detour;walking.elapsed=0;walking.gaitOffset=this.gaitDistance;walking.reroutes++;}
           }
-        }else{walking.blockedFor=0;walking.retryFor=0;walking.elapsed=nextElapsed;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);}
+        }else{walking.blockedFor=0;walking.retryFor=0;walking.elapsed=nextElapsed;const previous=this.heroLocation.point;this.heroLocation=sample.location;this.heroFacing=sample.facing;this.gaitDistance=walking.gaitOffset+sample.distance;this.followFloor(sample.location.floor??1);this.advanceMountedAnimal(previous,sample.location,delta);}
         if (walking.elapsed >= walking.navigation.motion.duration) { this.freeWalk = null; this.publishWalking(); }
       }
       if (this.action) {
@@ -209,7 +213,13 @@ export class Scene {
             const destination=action.stayAtTarget?action.navigation.target:action.navigation.returnLocation;
             if(action.groundResourceId)this.heroFacing=this.heroState().facing;
             this.heroLocation = { ...destination, point: [...destination.point] };
-            this.action = null; this.zone = 'home'; action.resolve();
+            this.action = null; this.zone = 'home';
+            if(action.animalId){
+              if(action.kind==='mount'){this.mountedAnimal=action.animalId;const animal=this.petMotion.get(action.animalId);if(animal)this.heroLocation={...animal.location,point:[...animal.location.point]};if(!this.manualViewport&&!this.animalFocus){this.animalFocus=action.animalId;this.animalFocusViewport=[...this.cameraViewport];this.cameraFocusRequested=false;}}
+              if(action.kind==='dismount')this.mountedAnimal=null;
+              this.releaseAnimalHold(action.animalId);this.publishAnimalInteraction();
+            }
+            action.resolve();
           }
         }
       }
@@ -336,14 +346,14 @@ export class Scene {
     const { candidates, plots, x, y } = this.pointerHits(event.clientX, event.clientY);
     const facilityAction = candidates.filter(item => item.kind === 'facility-collect' || item.kind === 'facility-start')
       .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
-    const foreground = [...candidates].reverse().find(item => (item.kind === 'pet' || item.kind === 'character') && Math.hypot(item.x - x, item.y - y) < item.radius);
+    const foreground = [...candidates].reverse().find(item => item.kind === 'pet' || item.kind === 'character');
     const workTree = candidates.find(item => item.kind === 'grove-work');
     const slots = candidates.filter(item => item.kind === 'build-slot').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const facilities = candidates.filter(item => item.kind === 'facility').sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
     const roadEntry=candidates.find(item=>item.kind==='road-entry'),petGate=candidates.find(item=>item.kind==='pet-gate'),outdoorSite=candidates.find(item=>item.kind==='outdoor-site'),
       resource=[...candidates].reverse().find(item=>item.kind==='ground-resource'),
       resourceMarker=[...candidates].reverse().find(item=>item.kind==='ground-resource'&&item.marker),
-      outdoors=this.currentHeroLocation().surface==='road',world=this.navigationWorld();
+      outdoors=this.currentHeroLocation().surface==='road',world=this.walkNavigationWorld();
     if(petGate&&!this.constructionMode){this.focus('pet-gate');this.onSelect('pet-gate');return;}
     if(roadEntry&&!this.constructionMode){
       this.walkTo(outdoors?{surface:'deck',floor:1,point:[...world.ladder.entry]}:{surface:'road',point:[...world.ladder.bottom]});return;
@@ -354,7 +364,7 @@ export class Scene {
     const target = groundLocation(world, [x,y],this.activeFloor,outdoors?'road':undefined);
     // The truck cab remains interactive; its broad legacy hit circle must not
     // turn a real empty deck tile into the expansion menu.
-    if (hit && (hit.kind !== 'truck' || !target)) { this.focus(hit.nodeId?`ground:${hit.nodeId}`:hit.kind); this.onSelect(hit.kind, hit.plotId); }
+    if (hit && (hit.kind !== 'truck' || !target)) { this.focus(hit.nodeId?`ground:${hit.nodeId}`:hit.kind==='pet'&&hit.plotId!==undefined?`pet:${UNIT_IDS[hit.plotId]}`:hit.kind); this.onSelect(hit.kind, hit.plotId); }
     else if (target) this.walkTo(target);
   };
   private wheelInput = (event: WheelEvent) => {
@@ -386,19 +396,22 @@ export class Scene {
 
   setState(state: GameState) {
     this.state = state;
+    if(state.expedition||this.mountedAnimal&&getUnitRoster(state)[this.mountedAnimal].health<=0)this.clearAnimalActivity('다음 활동을 위해 동물과 인사를 마쳤어요.');
     if(this.petGatePendingOpen!==null&&this.action?.kind!=='pet-gate')this.clearPetPassageGateOperation();
     const team=getUnlockedUnitIds(state);
     for(const id of this.petMotion.keys())if(!team.includes(id)){this.petMotion.delete(id);this.petYields.delete(id);}
     if(this.activeFloor>getTruckFloorCount(state))this.activeFloor=1;
     if (this.selectedPlotId !== null && !state.plots.some(plot => plot.id === this.selectedPlotId)) this.selectedPlotId = null;
     if (this.selectedFacilityId !== null && !getSettlement(state).buildings.some(building => building.id === this.selectedFacilityId)) this.selectedFacilityId = null;
+    this.ensurePets();
   }
   setSelectedPlot(plotId: number | null) { this.selectedPlotId = plotId; }
-  setFarmFocus(enabled: boolean) { if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; if(enabled){this.resourceFocus=null;this.villageOverview=false;this.wholeWorldOverview=false;} }
+  setFarmFocus(enabled: boolean) { if(enabled){this.animalFocus=null;this.animalFocusViewport=null;} if (enabled !== this.farmFocus) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); } this.farmFocus = enabled; if(enabled){this.resourceFocus=null;this.villageOverview=false;this.wholeWorldOverview=false;} }
   /** A farming tool stays selected while taps or a finger swipe queue further plots. */
   setFarmMode(mode: FarmAction | null, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') {
     if (mode !== this.farmMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.farmMode = mode;
+    if(mode){this.animalFocus=null;this.animalFocusViewport=null;}
     if(mode){this.resourceFocus=null;this.villageOverview=false;this.wholeWorldOverview=false;}
     this.canvas.style.touchAction = 'none';
     this.queuedPlotIds = mode ? [...queuedPlotIds] : [];
@@ -407,8 +420,10 @@ export class Scene {
   }
   setPlantingMode(enabled: boolean, queuedPlotIds: number[] = [], selectedSeed: CropId = 'carrot') { this.setFarmMode(enabled ? 'plant' : null, queuedPlotIds, selectedSeed); }
   setConstructionMode(type: BuildingType | null, position?: FacilityPlacement | number, movingId?: number) {
+    if(type&&this.action?.animalId)this.clearAnimalActivity('건설을 준비하며 동물과 인사를 마쳤어요.');
     if (type !== this.constructionMode) { this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); }
     this.constructionMode = type;
+    if(type){this.animalFocus=null;this.animalFocusViewport=null;}
     if(type)this.resourceFocus=null;
     this.selectedPlacement = type && position !== undefined ? typeof position==='number'
       ? this.legacyPlacement(position) : {...position} : null;
@@ -421,7 +436,8 @@ export class Scene {
     const level = mode === 'expansion' ? Math.min(8, Math.max(1, nextLevel ?? (this.state?.deckLevel ?? 1) + 1)) : null;
     if (mode === this.planningMode && level === this.planningLevel) return;
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
-    this.planningMode = mode; this.planningLevel = level; this.villageOverview = false;
+    this.planningMode = mode; this.planningLevel = level;
+    if(mode){this.animalFocus=null;this.animalFocusViewport=null;} this.villageOverview = false;
     this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null;
     this.cameraFocusRequested = true;
     if (mode) {this.zone = 'home';this.resourceFocus=null;this.wholeWorldOverview=false;}
@@ -434,6 +450,7 @@ export class Scene {
   }
   /** Selecting a distant facility explicitly makes both its sprite and upgrade sheet readable. */
   focusFacility(id: number) {
+    this.animalFocus=null;this.animalFocusViewport=null;
     if (!this.state || !getSettlement(this.state).buildings.some(building => building.id === id)) return;
     this.setActiveFloor(getFacilityPlacement(this.state,getSettlement(this.state).buildings.find(building=>building.id===id)!).floor);
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture();
@@ -558,7 +575,7 @@ export class Scene {
   private physicalActors():NavigationActor[] {
     const hero:NavigationActor={id:'hero',location:this.currentHeroLocation(),radius:HERO_BODY_RADIUS};
     const team=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[];
-    return[hero,...team.flatMap(id=>{const motion=this.petMotion.get(id),route=motion?.route,
+    return[...(!this.mountedAnimal?[hero]:this.action?.kind==='dismount'?[{...hero,location:{...this.action.navigation.target,point:[...this.action.navigation.target.point] as Point}}]:[]),...team.flatMap(id=>{const motion=this.petMotion.get(id),route=motion?.route,
       approaching=motion&&route&&motion.location.surface===route.start.surface&&(motion.location.floor??1)===(route.start.floor??1),
       reserved=[...this.petYields.values()].find(yielding=>yielding.passageOwner===id&&yielding.passage&&motion&&this.holdsPetPassageIntent(motion,yielding.passage)),
       passageIntent=(approaching?route.segments.find((_,index)=>route.surfaces[index]==='ramp')?.link:undefined)??reserved?.passage?.id;
@@ -566,13 +583,13 @@ export class Scene {
         ...(passageIntent?{passageIntent}:{})}]:[];})];
   }
   private stepBlocker(from:NavigationLocation,to:NavigationLocation) {
-    const actors=this.physicalActors().filter(actor=>actor.id!=='hero');
+    const actors=this.physicalActors().filter(actor=>actor.id!=='hero'&&actor.id!==this.mountedAnimal);
     return (isNavigationLinkSurface(to.surface)?actors.find(a=>isNavigationLinkSurface(a.location.surface)&&a.location.link===to.link):undefined)
-      ??blocksActorStep(from,to,HERO_BODY_RADIUS,actors);
+      ??blocksActorStep(from,to,this.mountedAnimal&&this.action?.kind!=='dismount'?this.petMotion.get(this.mountedAnimal)?.radius??HERO_BODY_RADIUS:HERO_BODY_RADIUS,actors);
   }
   private tryPetYield(blocker:NavigationActor,reserved:NavigationLocation[],reservedRadius=HERO_BODY_RADIUS,requested=new Set<UnitId>(),passage?:NavigationLink,passageOwner?:UnitId) {
     const id=blocker.id as UnitId,motion=this.petMotion.get(id),roster=getUnitRoster(this.state??{});
-    if(!motion||requested.has(id)||this.petYields.has(id)||this.reducedMotion||roster[id].health<=0)return;
+    if(!motion||requested.has(id)||this.petYields.has(id)||this.reducedMotion||roster[id].health<=0||this.mountedAnimal===id||this.action?.animalId===id)return;
     if(motion.location.surface==='ramp'&&motion.passageLease)return;
     requested.add(id);
     const ownsLink=isNavigationLinkSurface(motion.location.surface)&&reserved.some(location=>isNavigationLinkSurface(location.surface)&&location.link===motion.location.link);
@@ -604,7 +621,8 @@ export class Scene {
   }
   /** Only an explicit new-game reset discards the session's retained position. */
   resetPosition() {
-    this.stopWalking(); this.heroLocation=defaultHeroLocation();this.gaitDistance=0;this.heroFacing=1;this.petMotion.clear();this.petYields.clear();this.activeFloor=1;
+    this.clearAnimalActivity('새로운 마을을 준비해요.');
+    this.mountedAnimal=null;this.stopWalking(); this.heroLocation=defaultHeroLocation();this.gaitDistance=0;this.heroFacing=1;this.petMotion.clear();this.petYields.clear();this.activeFloor=1;
     this.resourceFocus=null;this.treeCuts.clear();
     this.clearPetPassageGateOperation();
     this.publishWalking();
@@ -620,6 +638,7 @@ export class Scene {
     this.resetOverview(false);
   }
   private resetOverview(wholeWorld:boolean) {
+    this.animalFocus=null;this.animalFocusViewport=null;
     this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); this.mapPan = [0, 0]; this.mapZoom = 1; this.manualViewport = null; this.villageOverview = true;
     this.wholeWorldOverview=wholeWorld;
     this.resourceFocus=null;
@@ -641,7 +660,7 @@ export class Scene {
   }
   setSuspended(value: boolean) {
     this.suspended = value;
-    if (value) { this.stopWalking(); this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); cancelAnimationFrame(this.frame); this.frame = 0; }
+    if (value) { this.clearAnimalActivity('게임 화면을 잠시 닫아 인사를 멈췄어요.',false);this.stopWalking(); this.cancelCameraGesture(); this.endFarmStroke(); this.endMapGesture(); cancelAnimationFrame(this.frame); this.frame = 0; }
     else this.visibility();
   }
   setZone(zone: 'home' | 'grove', recenter = false) {
@@ -670,6 +689,7 @@ export class Scene {
     this.focus(`ground:${node.id}`);
   }
   private focusResourceView(focus:{siteId:OutdoorSiteId;nodeId?:GroundResourceId;regionId?:GroundRegionId}) {
+    this.animalFocus=null;this.animalFocusViewport=null;
     if(this.activeFloor!==1)this.setActiveFloor(1);
     this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
     this.resourceFocus=focus;this.zone=focus.siteId==='grove'?'grove':'home';
@@ -678,9 +698,113 @@ export class Scene {
     this.canvas.dispatchEvent(new CustomEvent('scenezoomchange',{detail:{zoom:this.mapZoom}}));
     this.render();
   }
+  /** Residents are identified by species, never by a transient draw order. */
+  getAnimalInteractions() {
+    const roster=getUnitRoster(this.state??{});
+    return UNIT_IDS.map(id=>{const animal=this.petMotion.get(id),surface=animal?.location.surface??'road',busy=!!this.action||this.suspended||this.disposed;
+      const available=!!animal&&!isNavigationLinkSurface(surface)&&!busy&&!this.mountedAnimal&&!this.constructionMode&&!this.planningMode&&!this.state?.expedition;
+      return{id,available,surface,health:roster[id].health,mountable:available&&(id==='elephant'||id==='giraffe')&&surface==='road'&&roster[id].health>0,
+        mounted:this.mountedAnimal===id,busy,canDismount:this.mountedAnimal===id&&!this.action&&!!this.findDismountNavigation()};});
+  }
+  getMountedAnimal(): UnitId | null { return this.mountedAnimal; }
+  isAnimalInteracting() { return !!this.action?.animalId; }
+  /** Choosing a companion moves the camera only; feet retain their physical place. */
+  focusAnimal(id:UnitId):boolean {
+    this.ensurePets();const animal=this.petMotion.get(id);if(!animal||this.disposed||this.suspended)return false;
+    this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();this.stopWalking();
+    this.activeFloor=animal.location.floor??1;this.renderFloor=this.activeFloor;
+    this.resourceFocus=null;this.selectedFacilityId=null;this.farmFocus=false;this.villageOverview=false;this.wholeWorldOverview=false;
+    const availableWidth=Math.max(180,this.width-this.safeViewport.left-this.safeViewport.right),availableHeight=Math.max(120,this.height-this.safeViewport.top-this.safeViewport.bottom);
+    const focusScale=Math.min(.85,Math.max(.55,availableHeight/290));
+    this.animalFocus=id;this.animalFocusViewport=[availableWidth/focusScale,availableHeight/focusScale];this.manualViewport=null;this.mapPan=[0,0];this.mapZoom=1;
+    this.camera={x:animal.location.point[0],y:animal.location.point[1]-55,zoom:1};this.cameraFocusRequested=false;
+    this.focus(`pet:${id}`);
+    this.canvas.dispatchEvent(new CustomEvent('scenefloorchange',{detail:{floor:this.activeFloor}}));
+    this.canvas.dispatchEvent(new CustomEvent('scenezoomchange',{detail:{zoom:1}}));this.render();return true;
+  }
+  playPetting(id:UnitId):Promise<void> { return this.beginAnimalVisit(id,'petting'); }
+  mountAnimal(id:UnitId):Promise<void> { return this.beginAnimalVisit(id,'mount'); }
+  /** A real clear roadside landing is reserved before the rider leaves the back. */
+  dismountAnimal():Promise<void> {
+    if(!this.mountedAnimal)return Promise.reject(new Error('지금 동물에 타고 있지 않아요.'));
+    if(this.action||this.disposed||this.suspended)return Promise.reject(new Error('움직임을 마친 뒤 내려 주세요.'));
+    this.stopWalking();const id=this.mountedAnimal,navigation=this.findDismountNavigation();
+    if(!navigation)return Promise.reject(new Error('내려설 공간이 없어요. 조금 더 넓은 지상으로 이동해 주세요.'));
+    const work=1.05;this.lastFrame=performance.now();
+    return new Promise((resolve,reject)=>{this.action={kind:'dismount',animalId:id,elapsed:0,duration:work,walk:0,work,
+      path:navigation.points,route:navigation.motion,navigation,plotIndex:0,cropId:'carrot',stayAtTarget:true,stalled:0,yieldAt:0,resolve,reject};this.publishAnimalInteraction();this.render();});
+  }
+  private beginAnimalVisit(id:UnitId,kind:'petting'|'mount'):Promise<void> {
+    this.ensurePets();const animal=this.petMotion.get(id),availability=this.getAnimalInteractions().find(item=>item.id===id);
+    if(!availability?.available||!animal)return Promise.reject(new Error(isNavigationLinkSurface(animal?.location.surface??'road')?'친구가 통로를 다 지나간 뒤 인사해 주세요.':'하던 행동을 마치고 동물에게 인사해 주세요.'));
+    if(kind==='mount'&&!availability.mountable)return Promise.reject(new Error('코끼리와 기린은 건강할 때 지상에서 탈 수 있어요.'));
+    this.stopWalking();this.cancelCameraGesture();this.endFarmStroke();this.endMapGesture();
+    const minimumDistance=animal.radius+HERO_BODY_RADIUS+4,origin=animal.location.point;
+    const contact=companionInteractionAnchor(id,this.petScale(id),animal.facing).pet;
+    const reachY=(id==='elephant'||id==='giraffe'?69:23)*WORLD_HERO_SCALE;
+    const contactOffset:Point=[contact[0]+animal.facing*31*WORLD_HERO_SCALE,contact[1]+reachY];
+    const contactDistance=Math.max(minimumDistance,Math.hypot(...contactOffset)),contactAngle=Math.atan2(contactOffset[1],contactOffset[0]);
+    // Choose the face/neck side within hand reach, rather than stroking empty air
+    // behind whichever flank happened to give the shortest walking route.
+    const angles=kind==='petting'?[0,.12,-.12,.24,-.24].map(offset=>contactAngle+offset):Array.from({length:12},(_,index)=>index*Math.PI/6);
+    const approaches=angles.map(angle=>({surface:animal.location.surface,floor:animal.location.floor,
+      point:[origin[0]+Math.cos(angle)*(kind==='petting'?contactDistance:minimumDistance),origin[1]+Math.sin(angle)*(kind==='petting'?contactDistance:minimumDistance)] as Point}));
+    const navigation=planWorkNavigation(this.navigationWorld(),this.heroLocation,approaches)
+      ??planWorkNavigation(this.navigationWorld(HERO_BODY_RADIUS,this.physicalActors().filter(actor=>actor.id===id||actor.id!=='hero'&&(this.reducedMotion||getUnitRoster(this.state??{})[actor.id as UnitId].health<=0))),this.heroLocation,approaches);
+    if(!navigation)return Promise.reject(new Error('친구 옆으로 가는 길이 막혔어요. 빈 길로 이동한 뒤 다시 인사해 주세요.'));
+    // The selected friend plants its feet while the hero approaches and touches it.
+    animal.route=null;animal.elapsed=0;animal.speed=0;animal.blend=0;animal.turnRemaining=0;animal.waitingForPassage=undefined;this.petYields.delete(id);
+    const walk=navigation.motion.duration,work=kind==='petting'?2.6:1.35;this.lastFrame=performance.now();this.zone='home';
+    return new Promise((resolve,reject)=>{this.action={kind,animalId:id,elapsed:0,duration:walk+work,walk,work,path:navigation.points,route:navigation.motion,navigation,
+      plotIndex:0,cropId:'carrot',stayAtTarget:true,stalled:0,yieldAt:0,resolve,reject:reason=>{this.releaseAnimalHold(id);reject(reason);}};this.publishAnimalInteraction();this.render();});
+  }
+  private releaseAnimalHold(id:UnitId) {
+    const animal=this.petMotion.get(id);if(!animal)return;
+    animal.route=null;animal.elapsed=0;animal.speed=0;animal.blend=0;animal.pauseRemaining=1.3;animal.retryRemaining=0;animal.blockedReason=null;animal.waitingForPassage=undefined;
+  }
+  private mountedWorld():NavigationWorld {
+    const id=this.mountedAnimal,animal=id?this.petMotion.get(id):undefined;
+    const world=this.navigationWorld(animal?.radius??HERO_BODY_RADIUS,this.physicalActors().filter(actor=>actor.id!=='hero'&&actor.id!==id));
+    return{...world,links:[],actor:'pet',petMaxFloor:0,petPassageOpen:false};
+  }
+  private walkNavigationWorld():NavigationWorld { return this.mountedAnimal?this.mountedWorld():this.navigationWorld(); }
+  private findDismountNavigation():NavigationPath|undefined {
+    const id=this.mountedAnimal,animal=id?this.petMotion.get(id):undefined;if(!animal||animal.location.surface!=='road')return;
+    const world=this.navigationWorld(HERO_BODY_RADIUS,this.physicalActors().filter(actor=>actor.id!=='hero'&&actor.id!==id)),origin=animal.location.point;
+    const candidates=[0,Math.PI,Math.PI/2,-Math.PI/2,Math.PI/4,Math.PI*.75,-Math.PI/4,-Math.PI*.75].map(angle=>{
+      const distance=animal.radius+HERO_BODY_RADIUS+8;return{surface:'road' as const,point:[origin[0]+Math.cos(angle)*distance,origin[1]+Math.sin(angle)*distance] as Point};});
+    return planWorkNavigation({...world,links:[]},animal.location,candidates);
+  }
+  private advanceMountedAnimal(previous:Point,location:NavigationLocation,delta:number) {
+    const id=this.mountedAnimal,animal=id?this.petMotion.get(id):undefined;if(!animal)return;
+    const dx=location.point[0]-previous[0],dy=location.point[1]-previous[1],distance=Math.hypot(dx,dy);
+    animal.location={...location,point:[...location.point]};animal.distance+=distance;animal.speed=delta?distance/delta:0;
+    if(distance>.0001){animal.heading=Math.atan2(dy,dx);if(Math.abs(dx)>distance*.18)animal.facing=dx>=0?1:-1;}
+    animal.facingBlend+=(animal.facing-animal.facingBlend)*Math.min(1,delta*7);animal.blend+=((animal.speed>.05?1:0)-animal.blend)*Math.min(1,delta*8);animal.turnRemaining=0;
+  }
+  private clearAnimalActivity(message:string,unmount=true) {
+    if(this.action?.animalId){const action=this.action,id=this.action.animalId,retained=this.currentHeroLocation();this.action=null;
+      const mounted=this.mountedAnimal?this.petMotion.get(this.mountedAnimal):undefined;this.heroLocation=mounted?{...mounted.location,point:[...mounted.location.point]}:retained;
+      this.releaseAnimalHold(id);action.reject(new Error(message));}
+    if(unmount&&this.mountedAnimal){this.stopWalking();const navigation=this.findDismountNavigation();if(navigation){const id=this.mountedAnimal;this.heroLocation={...navigation.target,point:[...navigation.target.point]};this.mountedAnimal=null;this.releaseAnimalHold(id);}}
+    this.publishAnimalInteraction();
+  }
+  private publishAnimalInteraction() {
+    const action=this.action?.animalId?this.action:null,phase=action?action.elapsed<action.walk?'approaching':action.kind:'idle';
+    const detail={mountedId:this.mountedAnimal,interactionId:action?.animalId??null,phase};
+    this.canvas.dataset.animalInteraction=JSON.stringify({...detail,progress:action?this.actionProgress():0});
+    const key=JSON.stringify(detail);if(key!==this.animalInteractionEventState){this.animalInteractionEventState=key;this.canvas.dispatchEvent(new CustomEvent('sceneanimalinteractionchange',{detail}));}
+  }
+  private animalHearts(id:UnitId,large:boolean) {
+    const animal=this.petMotion.get(id);if(!animal)return;
+    const anchor=companionInteractionAnchor(id,this.petScale(id),animal.facing).pet,progress=this.actionProgress();
+    for(let index=0;index<3;index++){const phase=(progress*1.7+index*.34)%1,x=animal.location.point[0]+anchor[0]+Math.sin(index*2)*8,y=animal.location.point[1]+anchor[1]-12-phase*(large?32:24),size=3.3*(1-phase*.3);
+      this.ctx.save();this.ctx.globalAlpha=Math.sin(phase*Math.PI)*.9;this.ctx.fillStyle='#df8c8c';this.ctx.beginPath();this.ctx.moveTo(x,y+size);this.ctx.bezierCurveTo(x-size*2,y-size*.1,x-size,y-size*1.7,x,y-size*.7);this.ctx.bezierCurveTo(x+size,y-size*1.7,x+size*2,y-size*.1,x,y+size);this.ctx.fill();this.ctx.restore();}
+  }
   /** Rewards belong to the controller and can commit only after actual work finishes. */
   playPetPassageGate(open: boolean): Promise<void> {
     if(!this.state||this.disposed||this.suspended)return Promise.reject(new Error('게임 화면을 연 뒤 동물 통로 문을 조작해 주세요.'));
+    if(this.mountedAnimal)return Promise.reject(new Error('동물에게서 내린 뒤 문을 열어 주세요.'));
     if(typeof open!=='boolean'||this.action||this.petGatePendingOpen!==null)return Promise.reject(new Error('진행 중인 행동을 마친 뒤 문을 조작해 주세요.'));
     if(getPetPassage(this.state).open===open)return Promise.reject(new Error(open?'동물 통로 문이 이미 열려 있어요.':'동물 통로 문이 이미 닫혀 있어요.'));
     const crossing=this.petsOnPassage(),roster=getUnitRoster(this.state);
@@ -769,6 +893,7 @@ export class Scene {
   /** The chosen node never changes between its visible visit and the reward. */
   playGroundResourceAction(id:GroundResourceId):Promise<void> {
     if(!this.state||this.disposed||this.suspended)return Promise.reject(new Error('게임 화면을 연 뒤 채집해 주세요.'));
+    if(this.mountedAnimal)return Promise.reject(new Error('동물에게서 내린 뒤 채집해 주세요.'));
     if(this.action)return Promise.reject(new Error('이미 행동 중이에요.'));
     const stock=getGatheringNode(this.state,id),node=stock?.node;
     if(!node)return Promise.reject(new Error('땅 위의 채집물을 확인해 주세요.'));
@@ -797,6 +922,7 @@ export class Scene {
   playAction(kind: SceneAction, plotId?: number, selectedCropId?: CropId): Promise<void> {
     if(kind==='chop'||kind==='gather')return this.playOutdoorAction(kind,kind==='chop'?'grove':'salvage');
     if (this.disposed) return Promise.resolve();
+    if (this.mountedAnimal) return Promise.reject(new Error('동물에게서 내린 뒤 작업해 주세요.'));
     if (this.action) return Promise.reject(new Error('이미 행동 중이에요.'));
     this.stopWalking();
     const state = this.state;
@@ -827,6 +953,7 @@ export class Scene {
   /** A short, visible visit to the facility; the controller commits its state exactly once. */
   playFacilityAction(slot: number, kind: 'build' | 'upgrade', position?:FacilityPlacement, buildingId?:number): Promise<void> {
     if (this.disposed) return Promise.resolve();
+    if (this.mountedAnimal) return Promise.reject(new Error('동물에게서 내린 뒤 작업해 주세요.'));
     if (this.action) return Promise.reject(new Error('이미 행동 중이에요.'));
     this.stopWalking();
     const building=this.state&&buildingId!==undefined?getSettlement(this.state).buildings.find(value=>value.id===buildingId):undefined;
@@ -861,10 +988,11 @@ export class Scene {
     this.cancelCameraGesture();
     this.endFarmStroke(false);
     this.endMapGesture(false);
-    if(this.action?.kind==='pet-gate')this.action.reject(new Error('게임 화면을 닫아 문 조작을 멈췄어요.'));
+    if(this.action?.animalId)this.action.reject(new Error('게임 화면을 닫아 동물과 인사를 멈췄어요.'));
+    else if(this.action?.kind==='pet-gate')this.action.reject(new Error('게임 화면을 닫아 문 조작을 멈췄어요.'));
     else if(this.action?.groundResourceId)this.action.reject(new Error('게임 화면을 닫아 채집을 멈췄어요.'));
     else this.action?.resolve();
-    this.action = null;this.treeCuts.clear();this.clearPetPassageGateOperation();
+    this.action = null;this.mountedAnimal=null;this.treeCuts.clear();this.clearPetPassageGateOperation();
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
     this.canvas.removeEventListener('pointerdown', this.pointerDown);
@@ -908,7 +1036,7 @@ export class Scene {
       if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
     }
   }
-  private holdCamera() { this.manualViewport ??= [...this.cameraViewport]; }
+  private holdCamera() { this.animalFocus=null;this.animalFocusViewport=null;this.manualViewport ??= [...this.cameraViewport]; }
   private zoomAt(zoom: number, from?: { x: number; y: number }, to = from) {
     this.holdCamera();
     const rect = this.canvas.getBoundingClientRect();
@@ -1150,6 +1278,7 @@ export class Scene {
   private advancePets(delta:number) {
     this.ensurePets();const roster=getUnitRoster(this.state??{}),team=this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[];
     for(const id of team){const motion=this.petMotion.get(id);if(!motion)continue;
+      if(this.mountedAnimal===id||this.action?.animalId===id){motion.facingBlend+=(motion.facing-motion.facingBlend)*Math.min(1,delta*9);if(this.mountedAnimal!==id||!this.freeWalk){motion.speed=0;motion.blend=Math.max(0,motion.blend*(1-Math.min(1,delta*10)));}continue;}
       if(roster[id].health<=0){motion.speed=0;motion.blend=0;continue;}
       this.requestPetPassageEntryClearance(motion);
       this.requestPetPassageClearance(motion);
@@ -1207,9 +1336,14 @@ export class Scene {
       const location=motion.location,[x,y]=location.point,visible=(location.floor??1)===this.activeFloor;
       const options:CompanionOptions={id,x,y,scale:this.petScale(id),time:this.reducedMotion?0:this.time,facing:motion.facing,
         pose:roster[id].health<=0?'down':motion.speed>.05&&!motion.turnRemaining?'walk':'idle',
+        ...(this.action?.animalId===id&&this.action.kind==='petting'&&this.action.elapsed>=this.action.walk?{interaction:{kind:'petting' as const,progress:this.actionProgress()}}:this.mountedAnimal===id?{interaction:{kind:'ridden' as const,progress:0}}:{}),
         gait:{distance:motion.distance,speed:motion.speed,heading:motion.heading,blend:motion.blend,facingBlend:motion.facingBlend,reducedMotion:this.reducedMotion}};
       if(visible&&(!onlyId||onlyId===id)&&(!excludeRoad||location.surface!=='road')&&(onDeck?location.surface==='deck':location.surface!=='deck')){
-        drawCompanion(this.ctx,options);this.hits.push({kind:'pet',x,y:y-14,radius:Math.max(24,motion.radius)});this.pulse('pet',x,y-15,Math.max(26,motion.radius));
+        drawCompanion(this.ctx,options);
+        const large=id==='elephant'||id==='giraffe',height=(id==='giraffe'?127:id==='elephant'?82:id==='owl'?58:57)*options.scale;
+        this.hits.push({kind:'pet',plotId:UNIT_IDS.indexOf(id),x,y:y-height/2,radius:0,bounds:[x-Math.max(22,motion.radius),y-height,x+Math.max(22,motion.radius),y+5]});this.pulse(`pet:${id}`,x,y-height*.55,Math.max(26,motion.radius));
+        if(this.mountedAnimal===id||this.action?.animalId===id&&(this.action.kind==='mount'||this.action.kind==='petting')&&this.action.elapsed>=this.action.walk)this.hero(true);
+        if(this.action?.animalId===id&&this.action.kind==='petting'&&this.action.elapsed>=this.action.walk)this.animalHearts(id,large);
       }
       telemetry.push({id,x,y,visible,deckUnlockLevel:getAnimalDeckUnlockLevel(id),canBoardTruck:canAnimalBoardTruck(id,this.state?.deckLevel??1),scale:options.scale,floor:location.floor??1,surface:location.surface,link:location.link??null,passageLease:motion.passageLease??null,waitingForPassage:motion.waitingForPassage??null,
         body:{x,y,radius:motion.radius,floor:location.floor??1,surface:location.surface,link:location.link??null},blockedReason:motion.blockedReason,
@@ -1219,6 +1353,7 @@ export class Scene {
   }
   private currentHeroLocation(): NavigationLocation {
     const action=this.action;
+    if(!action&&this.mountedAnimal){const animal=this.petMotion.get(this.mountedAnimal);if(animal)return{...animal.location,point:[...animal.location.point]};}
     if(!action)return {...this.heroLocation,point:[...this.heroLocation.point]};
     if(action.elapsed<action.walk)return sampleNavigation(action.navigation,action.elapsed).location;
     if(action.elapsed>action.walk+action.work)return sampleNavigation(action.navigation,action.elapsed-action.walk-action.work,true).location;
@@ -1226,14 +1361,15 @@ export class Scene {
   }
   private walkTo(target: NavigationLocation) {
     if(!this.walkingEnabled||this.action||this.suspended||this.disposed||this.constructionMode||this.planningMode||this.selectedFacilityId!==null)return;
-    const navigation=planNavigation(this.navigationWorld(),this.heroLocation,target)
-      ??planNavigation(this.choreWorld(),this.heroLocation,target);
+    if(this.mountedAnimal&&target.surface!=='road')return;
+    const navigation=planNavigation(this.walkNavigationWorld(),this.heroLocation,target)
+      ??(!this.mountedAnimal?planNavigation(this.choreWorld(),this.heroLocation,target):undefined);
     if(!navigation)return;
     if(navigation.motion.duration<.001){this.stopWalking();return;}
     // Tapping a destination moves feet while retaining the complete map or the
     // deliberate camera position chosen by a pinch/drag.
     this.villageOverview=true;this.zone='home';
-    this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0};
+    this.freeWalk={navigation,elapsed:0,gaitOffset:this.gaitDistance,blockedFor:0,retryFor:0,reroutes:0,...(this.mountedAnimal?{rate:this.mountedAnimal==='elephant'?.16:.19}:{})};
     this.lastFrame=performance.now();this.publishWalking();this.render();
   }
   private publishWalking() {
@@ -1241,7 +1377,7 @@ export class Scene {
     const point=(p:Point)=>({x:p[0],y:p[1]});
     const corners=(r:{left:number;top:number;right:number;bottom:number})=>[[r.left,r.top],[r.right,r.top],[r.right,r.bottom],[r.left,r.bottom]]as Point[];
     this.canvas.dataset.freeMovement=JSON.stringify({moving:walking!==null,enabled:this.walkingEnabled,surface:location.surface,floor:location.floor??1,activeFloor:this.activeFloor,link:location.link??null,blockedReason:this.blockedReason,
-      body:{...point(hero.point),radius:HERO_BODY_RADIUS,floor:location.floor??1,surface:location.surface,link:location.link??null},
+      body:{...point(location.point),radius:this.mountedAnimal?this.petMotion.get(this.mountedAnimal)?.radius??HERO_BODY_RADIUS:HERO_BODY_RADIUS,floor:location.floor??1,surface:location.surface,link:location.link??null},
       position:point(hero.point),target:walking?{...point(walking.navigation.target.point),surface:walking.navigation.target.surface,floor:walking.navigation.target.floor??1}:null,
       route:walking?walking.navigation.points.map((p,index)=>({...point(p),surface:index?walking.navigation.surfaces[index-1]:walking.navigation.start.surface,floor:index?walking.navigation.segments[index-1].toFloor:walking.navigation.start.floor??1})):[],
       frameAt:this.lastFrame,elapsed:walking?.elapsed??0,total:walking?.navigation.motion.duration??0,blockedFor:walking?.blockedFor??0,reroutes:walking?.reroutes??0,pose:hero.pose,facing:hero.facing,climbing:hero.climbing??null,gaitDistance:this.gaitDistance,
@@ -1251,7 +1387,7 @@ export class Scene {
         ladder:{entry:point(world.ladder.entry),top:point(world.ladder.top),bottom:point(world.ladder.bottom)},
         obstacles:world.obstacles.map(o=>{const polygon=navigationObstaclePolygon(o);return{surface:o.surface,floor:o.floor??1,kind:o.kind,
           bounds:{left:Math.min(...polygon.map(p=>p[0])),top:Math.min(...polygon.map(p=>p[1])),right:Math.max(...polygon.map(p=>p[0])),bottom:Math.max(...polygon.map(p=>p[1]))},polygon:polygon.map(point)};})}});
-    const detail={moving:walking!==null,surface:location.surface},eventState=JSON.stringify(detail);
+    const detail={moving:walking!==null,surface:location.surface,mountedId:this.mountedAnimal},eventState=JSON.stringify(detail);
     if(eventState!==this.walkEventState){this.walkEventState=eventState;this.canvas.dispatchEvent(new CustomEvent('scenewalkchange',{detail}));}
   }
   private publishAction() {
@@ -1291,6 +1427,16 @@ export class Scene {
   }
   private heroState(): HeroSceneState {
     const action = this.action;
+    const animalId=action?.animalId??this.mountedAnimal,animal=animalId?this.petMotion.get(animalId):undefined;
+    if(animal&&animalId){
+      const animalScale=this.petScale(animalId),anchor=companionInteractionAnchor(animalId,animalScale,1),gait=sampleCompanionGait(animalId,{distance:animal.distance,speed:animal.speed,heading:animal.heading,blend:animal.blend,facingBlend:animal.facingBlend,reducedMotion:this.reducedMotion},animalScale),cos=Math.cos(gait.bodyRoll),sin=Math.sin(gait.bodyRoll),seatX=anchor.saddle[0]*animal.facingBlend,seat:Point=[animal.location.point[0]+seatX*cos-anchor.saddle[1]*sin,animal.location.point[1]+seatX*sin+anchor.saddle[1]*cos+gait.bodyY*animalScale],progress=this.actionProgress();
+      if(!action&&this.mountedAnimal)return{point:seat,pose:'ride',facing:animal.facing,progress:0,time:animal.distance/75};
+      // The interaction rig uses a hip anchor while seated. Preserve the torso
+      // height when changing from grounded feet, then lift/lower that same hip.
+      const groundHipOffset=47.5*WORLD_HERO_SCALE;
+      if(action?.kind==='mount'&&action.elapsed>=action.walk){const t=this.ease(progress),from=action.navigation.target.point;return{point:[from[0]+(seat[0]-from[0])*t,from[1]-groundHipOffset+(seat[1]-from[1]+groundHipOffset)*t],pose:'ride',facing:animal.facing,progress,time:action.elapsed-action.walk};}
+      if(action?.kind==='dismount'){const t=this.ease(action.duration?Math.min(1,action.elapsed/action.duration):1),to=action.navigation.target.point;return{point:progress>.97?[...to]:[seat[0]+(to[0]-seat[0])*t,seat[1]+(to[1]-groundHipOffset-seat[1])*t],pose:progress>.97?'idle':'ride',facing:animal.facing,progress:t,time:action.elapsed};}
+    }
     if (!action) {
       if(this.freeWalk){const motion=sampleNavigation(this.freeWalk.navigation,this.freeWalk.elapsed);return {...motion,facing:motion.distance>.01?motion.facing:this.heroFacing,time:(this.freeWalk.gaitOffset+motion.distance)/86};}
       const climbing = this.heroLocation.surface==='ladder'&&this.heroLocation.link!=='road-1';
@@ -1304,10 +1450,10 @@ export class Scene {
       const motion = sampleNavigation(action.navigation, action.elapsed - action.walk - action.work, true);
       return { ...motion, time: motion.distance / 86 };
     }
-    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'idle':'gather' };
+    const poses: Record<SceneAction, HeroPose> = { plant: 'sow', water: 'water', fertilize:'sow', harvest: 'harvest', chop: 'chop', expand: this.actionProgress() > .83 ? 'celebrate' : 'idle', expandFarm: this.actionProgress() > .83 ? 'celebrate' : 'gather', gather: 'gather', build: 'gather', upgrade: 'gather', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'idle':'gather',petting:'pet',mount:'ride',dismount:'ride' };
     const node=action.groundResourceId?getGroundResourceNode(action.groundResourceId):undefined;
     const pose=node?gatheringKindForResource(node.resource):poses[action.kind];
-    return { point: action.path[action.path.length - 1], pose, facing: node?node.point[0]>=action.navigation.target.point[0]?1:-1:action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
+    return { point: action.path[action.path.length - 1], pose, facing: animal?animal.location.point[0]>=action.navigation.target.point[0]?1:-1:node?node.point[0]>=action.navigation.target.point[0]?1:-1:action.kind === 'chop' || action.kind === 'gather' ? -1 : 1,
       progress: this.actionProgress(), time: (action.elapsed - action.walk) * GAME_SPEED_MULTIPLIER };
   }
   private heroOnDeck() {
@@ -1469,8 +1615,10 @@ export class Scene {
     // Keep the viewport as well as the camera fixed after a manual move. An action
     // starting or ending must not silently change the map's scale under the finger.
     if (this.manualViewport) [viewWidth, viewHeight] = this.manualViewport;
-    this.playerCameraFollowing=false;
-    this.cameraMode=this.manualViewport||this.pinch.active?'manual':planning?'planning':overviewView?'overview':'focus';
+    const animalFollow=this.animalFocus&&!this.manualViewport&&!planning&&!this.farmFocus&&!this.constructionMode?this.petMotion.get(this.animalFocus):undefined;
+    if(animalFollow&&this.animalFocusViewport){[viewWidth,viewHeight]=this.animalFocusViewport;target={x:animalFollow.location.point[0],y:animalFollow.location.point[1]-55,zoom:1};}
+    this.playerCameraFollowing=!!animalFollow;
+    this.cameraMode=this.manualViewport||this.pinch.active?'manual':planning?'planning':animalFollow?'focus':overviewView?'overview':'focus';
     this.cameraViewport = [viewWidth, viewHeight];
     // One user-controlled magnification works on the truck, farm, grove and during chores.
     const road=this.activeFloor===1?getRoadBounds(this.state?.deckLevel??1):null;
@@ -1484,7 +1632,7 @@ export class Scene {
       this.camera = { ...target }; this.cameraFocusRequested = false;
     }
     if (!this.manualViewport && !this.pinch.active) {
-      if(overviewView){this.camera={...target};}
+      if(overviewView&&!animalFollow){this.camera={...target};}
       else{
         this.camera.x += (target.x - this.camera.x) * blend;
         this.camera.y += (target.y - this.camera.y) * blend;
@@ -1537,6 +1685,7 @@ export class Scene {
     this.publishAction();
     this.publishWalking();
     this.publishPetPassage();
+    this.publishAnimalInteraction();
     this.canvas.dataset.sceneHits=JSON.stringify(this.hits.map(hit=>({...hit})));
     this.canvas.dataset.groundResources=JSON.stringify(this.groundResourcePaint);
     this.canvas.dataset.outdoorGround=JSON.stringify({visible:this.activeFloor===1,cutaway:false,truckOpacity:1,
@@ -1980,21 +2129,22 @@ export class Scene {
     }
   }
 
-  private hero() {
+  private hero(force=false) {
+    if(!force&&(this.mountedAnimal||this.action?.animalId&&(this.action.kind==='mount'||this.action.kind==='petting')&&this.action.elapsed>=this.action.walk))return;
     if((this.currentHeroLocation().floor??1)!==this.activeFloor)return;
     if (this.heroDrawn) return;
     this.heroDrawn = true;
     const hero = this.heroState(), [x, y] = hero.point;
     const progress = hero.progress;
     const outfit=this.state?getEquippedOutfit(this.state):'default';
-    const drawn=drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: hero.time, progress, climbing: hero.climbing,outfit,reducedMotion:this.reducedMotion });
+    const drawn=drawHero(this.ctx, { x, y, scale: WORLD_HERO_SCALE, gender: this.state?.gender ?? 'female', pose: hero.pose, facing: hero.facing, time: hero.time, progress, climbing: hero.climbing,outfit,reducedMotion:this.reducedMotion,...(this.action?.kind==='petting'?{pettingHeight:this.action.animalId==='elephant'||this.action.animalId==='giraffe'?'high' as const:'low' as const}:{}) });
     if(drawn.toolContact)this.heroToolContact=[drawn.toolContact.x,drawn.toolContact.y];
     this.canvas.dataset.survivorOutfit=JSON.stringify({...drawn,pose:hero.pose,facing:hero.facing,floor:this.currentHeroLocation().floor??1,activeFloor:this.activeFloor,scale:WORLD_HERO_SCALE,x,y});
     this.hits.push({ kind: 'character', x, y: y - 64 * WORLD_HERO_SCALE, radius: 60 * WORLD_HERO_SCALE });
     this.pulse('character', x, y - 64 * WORLD_HERO_SCALE, 54 * WORLD_HERO_SCALE);
     if (this.action && this.action.elapsed >= this.action.walk && this.action.elapsed <= this.action.walk + this.action.work) {
       const cropName = CROPS[this.action.cropId].name;
-      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', fertilize:'흙에 영양을 나눠요', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'친구가 지나가길 기다려요':this.petGatePendingOpen?'동물 문을 열어요':'동물 문을 닫아요' };
+      const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', fertilize:'흙에 영양을 나눠요', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'친구가 지나가길 기다려요':this.petGatePendingOpen?'동물 문을 열어요':'동물 문을 닫아요',petting:'다정하게 쓰다듬어요',mount:'친구 등에 올라타요',dismount:'안전하게 내려와요' };
       const node=this.action.groundResourceId?getGroundResourceNode(this.action.groundResourceId):undefined;
       const workLabels={tree:'도끼로 차근차근 벌목',scrap:'고철을 두드려 모아요',seed:'씨앗을 따서 담아요',water:'샘물을 떠서 담아요'};
       const label = node?workLabels[node.kind]:labels[this.action.kind];

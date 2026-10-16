@@ -23,6 +23,7 @@ interface SafariArt {
   description: string; wash: string;
   body: readonly Point[]; head: readonly Point[]; neck: Point;
   tail: readonly Point[]; tailRoot: Point;
+  ears?: readonly { contour: readonly Point[]; root: Point }[];
   trunk?: { contour: readonly Point[]; root: Point };
   limbs: Record<CompanionPaw, Limb>;
 }
@@ -59,7 +60,8 @@ const artById: Record<SafariUnitId, SafariArt> = {
       down: { x: 973, y: 320, width: 260, height: 159, footX: 1100, footY: 470 },
     },
     body: [[78,299],[122,287],[164,294],[190,322],[226,354],[248,383],[248,424],[219,439],[164,435],[125,433],[90,431],[65,405],[63,355]],
-    head: [[141,265],[278,265],[304,291],[309,326],[299,354],[284,365],[275,385],[257,398],[228,393],[203,371],[183,383],[148,370],[126,340]], neck: [196,350],
+    head: [[197,265],[272,265],[300,284],[310,311],[306,338],[295,355],[276,369],[270,386],[248,395],[223,386],[202,367],[197,336],[186,302]], neck: [196,350],
+    ears: [{ contour: [[159,271],[187,270],[205,286],[211,316],[207,344],[191,368],[174,383],[153,374],[136,352],[125,328],[130,302],[142,284]], root: [191,303] }],
     tail: [[34,335],[65,324],[79,341],[64,372],[57,400],[57,428],[43,430],[36,416],[40,385]], tailRoot: [66,347],
     trunk: { contour: [[276,339],[298,341],[298,375],[300,402],[311,420],[324,411],[325,435],[313,446],[296,445],[285,433],[278,409],[272,381]], root: [284,352] },
     limbs: {
@@ -234,6 +236,21 @@ function shadow(c: CanvasRenderingContext2D, radius: number): void {
   c.save(); c.scale(1, .22); c.fillStyle = gradient; c.beginPath(); c.arc(0, 3, radius, 0, TAU); c.fill(); c.restore();
 }
 
+/** Two overlapping trunk sections bend independently instead of a rigid stick. */
+function trunk(c: CanvasRenderingContext2D, art: SafariArt, projection: number, angle: number): void {
+  if (!art.trunk) return;
+  const joint: Point = [286, 395];
+  const cut = localPoint(art, joint)[1];
+  pivot(c, art, art.trunk.root, angle, projection, () => {
+    c.save(); c.beginPath(); c.rect(-250, -250, 500, cut + 251.2); c.clip();
+    part(c, art, art.trunk!.contour, projection); c.restore();
+    pivot(c, art, joint, -angle * .8, projection, () => {
+      c.save(); c.beginPath(); c.rect(-250, cut - 1.2, 500, 250); c.clip();
+      part(c, art, art.trunk!.contour, projection); c.restore();
+    });
+  });
+}
+
 /** Local foot coordinates: the caller owns world translation, scale and pose-facing. */
 export function drawSafariCompanion(c: CanvasRenderingContext2D, o: CompanionOptions,
   gait?: CompanionGaitSample): void {
@@ -243,16 +260,25 @@ export function drawSafariCompanion(c: CanvasRenderingContext2D, o: CompanionOpt
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
   if (gait && (pose === 'idle' || pose === 'walk' || pose === 'run')) {
     const projection = projectionOf(o), still = o.gait?.reducedMotion ? 0 : 1 - gait.strength;
+    const progress = Math.max(0, Math.min(1, o.interaction?.progress ?? 0));
+    const pet = o.interaction?.kind === 'petting' && !o.gait?.reducedMotion
+      ? Math.sin(progress * Math.PI) : 0;
+    const petStroke = Math.sin(progress * Math.PI * 6) * pet;
+    const idleTail = Math.sin(o.time * (o.id === 'monkey' ? 1.2 : .75))
+      * (o.id === 'monkey' ? .045 : o.id === 'panda' ? .009 : .02) * still;
     for (const name of ['hindFar', 'frontFar', 'hindNear', 'frontNear'] as const) leg(c, art, name, gait, projection);
     c.save(); c.translate(0, gait.bodyY); c.rotate(gait.bodyRoll);
-    pivot(c, art, art.tailRoot, gait.tailTilt + Math.sin(o.time * 1.2) * .025 * still, projection,
+    pivot(c, art, art.tailRoot, gait.tailTilt + idleTail + petStroke * (o.id === 'monkey' ? .09 : .025), projection,
       () => part(c, art, art.tail, projection));
     solidPart(c, art, art.body, projection, .56);
-    pivot(c, art, art.neck, gait.headTilt * (o.id === 'giraffe' ? .6 : 1), projection,
-      () => solidPart(c, art, art.head, projection, .8));
-    if (art.trunk) pivot(c, art, art.trunk.root,
-      gait.tailTilt * .55 + Math.sin(o.time * 1.35) * .018 * still, projection,
-      () => part(c, art, art.trunk!.contour, projection));
+    const headReaction = pet * (o.id === 'giraffe' ? .035 : o.id === 'elephant' ? .025 : -.065);
+    pivot(c, art, art.neck, gait.headTilt + headReaction, projection, () => {
+      for (const ear of art.ears ?? []) pivot(c, art, ear.root,
+        gait.earTilt + Math.sin(o.time * .8) * .012 * still + petStroke * .026, projection,
+        () => part(c, art, ear.contour, projection));
+      solidPart(c, art, art.head, projection, .8);
+      trunk(c, art, projection, gait.trunkTilt + Math.sin(o.time * .85) * .021 * still - pet * .075);
+    });
     c.restore();
     return;
   }

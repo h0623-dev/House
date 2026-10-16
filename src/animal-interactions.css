@@ -1,0 +1,53 @@
+.animal-sheet {
+  position: absolute;
+  z-index: 7;
+  top: 174px;
+  right: max(8px, env(safe-area-inset-right));
+  width: 236px;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 184px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 9px;
+  border: 1px solid #b59d6c;
+  border-radius: 15px;
+  background: #fff6dff5;
+  box-shadow: inset 0 1px #fffdf0, 0 4px 12px #233d3030;
+}
+.animal-sheet[hidden],.animal-ride-hud[hidden] { display: none; }
+.animal-sheet-heading { display: flex; align-items: center; gap: 5px; }
+.animal-sheet-heading > :is(.companion-portrait,.pet-portrait) { width: 52px; height: 56px; flex: 0 0 52px; }
+.animal-sheet-heading > div { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+.animal-sheet-heading strong { font-size: 14px; color: #355d42; }
+.animal-sheet-heading small { font-size: 10px; line-height: 1.5; color: #73805b; }
+.animal-sheet-heading > button { display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 9px; border: 0; border-radius: 10px; color: #557548; background: #eee2bd; }
+.animal-sheet-heading > button .icon { width: 22px; height: 22px; }
+.animal-sheet-actions { display: flex; gap: 6px; margin-top: 7px; }
+.animal-sheet-actions > button { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 44px; min-height: 56px; border: 1px solid #849b68; border-radius: 10px; color: #fff8df; background: linear-gradient(#5e8855,#3e6d49); font: inherit; }
+.animal-sheet-actions > button .icon { width: 25px; height: 25px; }
+.animal-sheet-actions small { font-size: 11px; font-weight: 750; }
+.animal-sheet-actions > button:disabled { color: #76785b; border-color: #c4b994; background: #e4dfc4; }
+.animal-sheet > p { margin: 7px 1px 1px; font-size: 11px; color: #6c7654; line-height: 1.5; }
+.animal-ride-hud { position: absolute; z-index: 7; left: max(8px, env(safe-area-inset-left)); bottom: 8px; display: flex; gap: 5px; align-items: stretch; width: 265px; max-width: calc(100% - 85px); padding: 4px; border: 1px solid #b59d6c; border-radius: 13px; color: #355d42; background: #fff6dff5; box-shadow: 0 3px 8px #233d3029; }
+.animal-ride-follow { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 44px; min-height: 44px; padding: 0 3px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.animal-ride-follow > :is(.companion-portrait,.pet-portrait) { width: 41px; height: 44px; flex: 0 0 41px; }
+.animal-ride-follow > span { display: flex; flex-direction: column; gap: 3px; }
+.animal-ride-follow strong { font-size: 11px; }
+.animal-ride-follow small { font-size: 9px; line-height: 1.4; }
+.animal-dismount { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 55px; min-height: 44px; padding: 4px; color: #fff8df; background: #47774e; border: 1px solid #3f6744; border-radius: 9px; font: inherit; }
+.animal-dismount > .icon { width: 21px; height: 21px; }
+.animal-dismount small { font-size: 10px; font-weight: 750; }
+.animal-dismount:disabled { opacity: .6; }
+.scene-card:is(.animal-riding,.animal-interacting) .village-hub { display: none; }
+button.companion-card[data-animal-focus] { font: inherit; text-align: left; cursor: pointer; }
+button.companion-card[data-animal-focus] .companion-card-info::after { content: '만나기 ›'; margin-top: 4px; color: #47704b; font-size: 11px; font-weight: 750; }
+.animal-sheet button:focus-visible,.animal-ride-hud button:focus-visible,button[data-animal-focus]:focus-visible { outline: 3px solid #65944d; outline-offset: 2px; }
+.animal-meet-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin: 12px 0; }
+.animal-meet-grid > button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 44px; min-height: 104px; padding: 7px; border: 1px solid #c6b88e; border-radius: 12px; background: #f8f0d9; color: #3e6446; font: inherit; }
+.animal-meet-grid > button > :is(.companion-portrait,.pet-portrait) { width: 56px; height: 56px; }
+.animal-meet-grid strong { font-size: 12px; }
+.animal-meet-grid small { font-size: 10px; color: #7c7c57; }
+@media (orientation: landscape) {
+  .village-shell .animal-sheet { top: 64px; max-height: calc(100% - 72px); }
+  .animal-meet-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+}

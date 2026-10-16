@@ -56,6 +56,7 @@ import './deck-placement.css';
 import { initializeGameOrientation, type GameOrientationController, type GameOrientationState } from './game-orientation';
 import './landscape.css';
 import './gathering-dock.css';
+import './animal-interactions.css';
 
 const stored = loadGame();
 let state = stored ?? createGame('female', '하루');
@@ -84,6 +85,10 @@ let selectedPlotId: number | null = state.plots[0]?.id ?? null;
 let farmFocused = false;
 let farmTrayOpen=false;
 let gatheringTrayOpen=false;
+let animalContextId:UnitId|null=null;
+let animalPanelKey='';
+let animalRideKey='';
+let animalActionKind:'pet'|'mount'|'dismount'|null=null;
 let selectedFacilityId:number|null=null;
 let placement:{type:BuildingType;point:FacilityPlacement|null;movingId?:number}|null=null;
 let modalBackdropPointer:number|null=null;
@@ -155,6 +160,8 @@ app.innerHTML=`
      <div class="gathering-tray" id="gathering-tray" role="group" aria-label="전체 채집지의 준비된 자원 · 선택하면 가까운 곳에서 채집" hidden>${gatheringShortcuts.map(([resource,label])=>`<button data-gather-resource="${resource}">${icon(resource)}<span><strong>${label}</strong><small data-gather-ready="${resource}">채집 준비</small></span></button>`).join('')}</div>
      <button class="gathering-toggle" data-gather-toggle aria-controls="gathering-tray" aria-expanded="false" aria-label="채집 도구 펼치기">${icon('axe')}<strong data-gather-toggle-label>채집</strong>${icon('chevron')}</button>
     </div>
+    <section class="animal-sheet" id="animal-sheet" hidden aria-label="동물과 함께하기"></section>
+    <section class="animal-ride-hud" id="animal-ride-hud" hidden aria-label="동물 탑승 중"></section>
     <div class="road-controls" aria-label="전체 지도와 도로 활동"><button data-camera-player aria-label="지금 층의 전체 맵을 기본 크기로 보기">${icon('map')}<small>전체 보기</small></button><button data-road-walk aria-label="계단를 내려가 도로 걷기">${icon('move')}<small>도로 걷기</small></button><button data-open="roadside" aria-label="도로 채집 장소 보기">${icon('map')}<small>채집 장소</small></button><button data-road-return aria-label="실제 계단으로 트럭에 돌아오기">${icon('truck')}<small>트럭으로</small></button><button data-open="pet-passage" aria-label="동물 통로 문 조작">${icon('paw')}<small>동물 문</small></button></div>
     <div class="construction-bar" id="construction-bar" hidden aria-live="polite"></div>
     <section class="facility-sheet" id="facility-sheet" hidden aria-label="선택한 시설"></section>
@@ -203,7 +210,7 @@ const scene=new Scene(document.querySelector('#world')!,(kind,plotId?:number,poi
  }
  else if(farmMode)stopFarmMode();
  if(kind==='truck')openModal('expand');
- if(kind==='pet')openModal('pet');
+ if(kind==='pet'){const id=plotId===undefined?'dog':UNIT_IDS[plotId];if(id)showAnimalContext(id);}
  if(kind==='character')openModal('character');
  if(kind==='grove'){setZone('grove');renderControls();}
  if(kind==='grove-work')void roadsideAction('grove');
@@ -223,7 +230,13 @@ function resumePlayerView(){
 function updateWalkingAvailability(){
  scene.setWalkingEnabled(playerConfirmed&&!startupPending&&!orientationBlocked&&!contentActivationPending&&!battleView&&!currentModal&&!placement&&selectedFacilityId===null&&!actionBusy);
  renderGatheringDock();
+ renderAnimalUI();
 }
+document.querySelector('#world')!.addEventListener('sceneanimalinteractionchange',event=>{
+ const detail=(event as CustomEvent<{phase:string}>).detail;
+ if(animalActionKind){const label=document.querySelector('[data-animal-phase]');if(label)label.textContent=detail.phase==='approaching'?'곁으로 걸어가는 중':detail.phase==='petting'?'다정하게 쓰다듬는 중':detail.phase==='mount'?'등에 올라타는 중':detail.phase==='dismount'?'안전한 땅으로 내려오는 중':'함께하는 중';}
+ updateWalkingAvailability();
+});
 document.querySelector('#world')!.addEventListener('scenewalkchange',()=>{
  // A menu or a new chore may stop a walk synchronously; assess patch safety
  // after that interaction has finished changing the controller state.
@@ -283,6 +296,7 @@ function renderFloorControls(){
  });
 }
 function chooseTruckFloor(floor:TruckFloor){
+ if(!requireOnFoot())return;
  if(actionBusy){toast('지금 작업을 마친 뒤 층을 바꿀 수 있어요.');return;}
  if(floor>getTruckFloorCount(state)){openModal('floors');return;}
  closeModal();closeFacility();stopFarmMode();setZone('home');setFarmTray(false);
@@ -291,6 +305,7 @@ function chooseTruckFloor(floor:TruckFloor){
  renderFloorControls();renderSettlement();
 }
 function purchaseTruckFloor(){
+ if(!requireOnFoot())return;
  if(actionBusy||battleView)return;
  const next=getTruckFloorCost(state);if(!next)return;
  const result=buildTruckFloor(state);if(!result.ok){toast(result.message);return;}
@@ -301,6 +316,7 @@ function selectFacility(id:number){
  cancelConstruction();if(!actionBusy)stopFarmMode();closeModal();setZone('home');setFarmTray(false);selectedFacilityId=id;scene.setSelectedFacility(id);updateWalkingAvailability();renderSettlement();scene.focusFacility(id);
 }
 function beginConstruction(type:BuildingType,movingId?:number){
+ if(!requireOnFoot())return;
  if(battleView)return;if(actionBusy){toast('지금 작업을 마치면 시설을 배치할 수 있어요. 건설 목록은 둘러볼 수 있어요.');return;}
  const definition=BUILDINGS[type];
  if(state.deckLevel<definition.unlockLevel){toast(`데크 Lv.${definition.unlockLevel}부터 ${definition.name}을 지을 수 있어요.`);openModal('expand');return;}
@@ -342,6 +358,7 @@ function rotateConstruction(){
  scene.setConstructionMode(placement.type,placement.point,placement.movingId);renderConstructionBar();
 }
 function confirmConstruction(){
+ if(!requireOnFoot())return;
  if(!placement?.point||actionBusy||battleView)return;
  const check=checkFacilityPlacement(state,placement.type,placement.point,placement.movingId);
  if(!check.ok){toast(check.message);return;}
@@ -361,6 +378,7 @@ async function showFacilityWork(id:number,kind:'build'|'upgrade'){
  try{await scene.playFacilityAction(building.slot,kind,getFacilityPlacement(state,building),building.id);}catch(error){toast(error instanceof Error?error.message:'시설은 완성됐어요. 통로를 비운 뒤 다시 이동해 주세요.');}finally{actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');render();finishDeferredUpdate();}
 }
 function operateFacility(kind:'start'|'collect'|'upgrade',id:number){
+ if(kind==='upgrade'&&!requireOnFoot())return;
  if(battleView||placement||contentActivationPending)return;
  if(actionBusy&&kind!=='collect'){toast('지금 작업을 마치면 생산과 개선을 시작할 수 있어요. 시설은 둘러볼 수 있어요.');return;}
  const result=kind==='start'?startProduction(state,id):kind==='collect'?collectProduction(state,id):upgradeFacility(state,id);
@@ -430,6 +448,7 @@ function openFacilityReplacement(id:number,preferred?:BuildingType){
  if(preferred)requestAnimationFrame(()=>document.querySelector<HTMLElement>(`[data-replace-type="${preferred}"]`)?.scrollIntoView({block:'nearest'}));
 }
 function confirmFacilityReplacement(id:number,type:BuildingType){
+ if(!requireOnFoot())return;
  if(actionBusy||battleView||contentActivationPending)return;
  const building=getSettlement(state).buildings.find(b=>b.id===id);if(!building)return;
  const definition=BUILDINGS[type];
@@ -702,6 +721,7 @@ function afterCurrentFarm(next:()=>void){
  else next();
 }
 function startFarmMode(mode:FarmAction,plotId?:number,all=false){
+ if(!requireOnFoot())return;
  if(battleView||actionBusy&&!runningFarm)return;
  if(!actionBusy)scene.setActiveFloor(1);
  scene.setMapMoveMode(false);
@@ -816,6 +836,8 @@ function showActivityHelp(a:Action,plotId:number|undefined,message:string,cropId
 
 async function action(a:Action,plotId?:number,cropId:CropId=selectedCropId,queuedFarm=false):Promise<boolean>{
  if(startupPending||contentActivationPending)return false;
+ if(a==='pet')return interactWithAnimal('pet','dog');
+ if(!requireOnFoot())return false;
  state=recoverEnergy(state);
  if(a==='chop'||a==='gather')return roadsideAction(a==='chop'?'grove':'salvage');
  if(['plant','water','harvest','fertilize'].includes(a)&&!queuedFarm){startFarmMode(a as FarmAction,plotId??quickPlot(a as FarmAction)?.id);return false;}
@@ -844,7 +866,7 @@ async function action(a:Action,plotId?:number,cropId:CropId=selectedCropId,queue
  if(result.ok&&a==='expandFarm'){selectedPlotId=state.plots.at(-1)!.id;scene.setSelectedPlot(selectedPlotId);}
  if(queuedFarm)runningFarm=null;
  if(animatedActions.includes(a)&&!queuedFarm)setZone('home',['plant','water','harvest','fertilize','expandFarm'].includes(a));toast(result.message);
- if(result.ok){ping();persist();if(!queuedFarm)scene.focus(a==='pet'?'pet':a==='expand'?'truck':a==='plant'||a==='water'||a==='harvest'||a==='fertilize'||a==='expandFarm'?'farm':'character');}
+ if(result.ok){ping();persist();if(!queuedFarm)scene.focus(a==='expand'?'truck':a==='plant'||a==='water'||a==='harvest'||a==='fertilize'||a==='expandFarm'?'farm':'character');}
  render();
  if(currentModal==='quests')openModal('quests');
  if(currentModal==='pet')openModal('pet');
@@ -852,6 +874,7 @@ async function action(a:Action,plotId?:number,cropId:CropId=selectedCropId,queue
  finishDeferredUpdate();return result.ok;
 }
 function startBattle(){
+ if(!requireOnFoot())return;
  if(actionBusy||battleView||contentActivationPending)return;
  state=recoverEnergy(state);
  scene.stopWalking();
@@ -884,7 +907,7 @@ function animalHomeLabel(id:UnitId){
 }
 function companionRosterCards(compact=false){
  const roster=getUnitRoster(state),selected=getSelectedTeam(state),unlocked=getUnlockedUnitIds(state),bonuses=getUnitBattleBonuses(state);
- if(compact)return `<section class="unit-team unit-team-compact"><div class="unit-team-heading"><strong>출전 편성 <b>${selected.length} / 3</b></strong><button data-open="pet">${icon('paw')} 편성 바꾸기</button></div><div class="companion-roster" style="--team-columns:${selected.length}">${selected.map(id=>{const definition=UNITS[id],progress=roster[id],max=getUnitMaxHealth(id,progress),hp=Math.ceil(progress.health*max/100);return `<article class="companion-card ${hp===0?'companion-resting':''}" data-companion-card="${id}"><div class="companion-card-art">${companionPortrait(id)}</div><div class="companion-card-info"><strong>${definition.name}<small>Lv.${getUnitLevel(progress)}</small></strong><span>${definition.speciesLabel} · ${definition.roleLabel}</span><span class="animal-home-label">${animalHomeLabel(id)} · 1마리</span><b data-companion-hp="${id}">${hp} / ${max}</b><div class="companion-hp-track"><i style="width:${progress.health}%"></i></div>${hp===0?'<small class="companion-xp">돌봄 후 출전해요</small>':''}</div></article>`;}).join('')}</div></section>`;
+ if(compact)return `<section class="unit-team unit-team-compact"><div class="unit-team-heading"><strong>출전 편성 <b>${selected.length} / 3</b></strong><button data-open="pet-team">${icon('paw')} 편성 바꾸기</button></div><div class="companion-roster" style="--team-columns:${selected.length}">${selected.map(id=>{const definition=UNITS[id],progress=roster[id],max=getUnitMaxHealth(id,progress),hp=Math.ceil(progress.health*max/100);return `<article class="companion-card ${hp===0?'companion-resting':''}" data-companion-card="${id}"><div class="companion-card-art">${companionPortrait(id)}</div><div class="companion-card-info"><strong>${definition.name}<small>Lv.${getUnitLevel(progress)}</small></strong><span>${definition.speciesLabel} · ${definition.roleLabel}</span><span class="animal-home-label">${animalHomeLabel(id)} · 1마리</span><b data-companion-hp="${id}">${hp} / ${max}</b><div class="companion-hp-track"><i style="width:${progress.health}%"></i></div>${hp===0?'<small class="companion-xp">돌봄 후 출전해요</small>':''}</div></article>`;}).join('')}</div></section>`;
  return `<section class="unit-team" aria-label="동물 전투 편성"><div class="unit-team-heading"><strong>우리 원정대 <b>${selected.length} / 3</b></strong><small>최대 3마리 · 교체할 동료를 먼저 빼 주세요</small></div><div class="companion-roster">${UNIT_IDS.map(id=>{
   const progress=roster[id],definition=UNITS[id],level=getUnitLevel(progress),max=getUnitMaxHealth(id,progress),hp=Math.ceil(progress.health*max/100),locked=!unlocked.includes(id),chosen=selected.includes(id);
   return `<button class="companion-card ${hp===0?'companion-resting':''} ${chosen?'unit-selected':''} ${locked?'unit-locked':''}" data-companion-card="${id}" data-team-toggle="${id}" aria-pressed="${chosen}" aria-label="${definition.name} ${locked?`데크 Lv.${definition.unlockDeck} 해금`:chosen?'편성에서 빼기':'편성하기'}" ${locked?'disabled':''}><div class="companion-card-art">${companionPortrait(id)}</div><div class="companion-card-info"><strong>${definition.name}<small>Lv.${level}</small></strong><span>${definition.speciesLabel} · ${definition.roleLabel}</span><span class="animal-home-label">${animalHomeLabel(id)} · 1마리</span><b data-companion-hp="${id}">${hp} / ${max}</b><div class="companion-hp-track" role="progressbar" aria-label="${definition.name} 체력" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${hp}"><i style="width:${progress.health}%"></i></div><small class="companion-xp">${locked?`데크 Lv.${definition.unlockDeck}에서 함께해요`:level===10?'최대 레벨':`다음 레벨까지 경험치 ${80-progress.xp%80}`}${!locked&&hp===0?' · 회복 필요':''}</small><span class="unit-selection-label">${locked?icon('paw'):chosen?icon('check'):icon('plus')}${locked?'아직 잠김':chosen?'편성 중':'편성하기'}</span></div><span class="unit-skill-description">${definition.skillLabel} · ${definition.skillDescription}</span></button>`;
@@ -893,7 +916,7 @@ function companionRosterCards(compact=false){
 const dialogThemes: Record<string, readonly [string, string]> = {
  welcome:['truck','로드헤이븐'], village:['truck','우리 트럭 마을'], quests:['flag','마을의 다음 이야기'],
  farm:['leaf','농장 생활'], seeds:['seeds','씨앗 가방'], 'farm-delivery':['food','우리 마을의 수확'], 'crop-ledger':['book','작물 이야기'],
- hunt:['shield','동물 원정대'], pet:['paw','우리의 작은 동료'], 'pet-passage':['paw','동물 통로'],
+ hunt:['shield','동물 원정대'], pet:['paw','우리의 작은 동료'], 'pet-team':['paw','동물 전투 편성'], 'pet-passage':['paw','동물 통로'],
  build:['hammer','트럭 건설'], expand:['expand','데크 확장'], floors:['truck','트럭 층 확장'],
  bag:['bag','생활 물자'], shop:['bag','트럭 상점'], 'shop-confirm':['bag','장보기 확인'],
  settings:['settings','게임 설정'], guide:['book','트럭 생활 안내'], journal:['book','우리의 생활 기록'],
@@ -959,6 +982,64 @@ function deliverFarmOrder(id:string){
 function groundArea(id:OutdoorSiteId){
  return getGatheringArea(state,id)!;
 }
+function requireOnFoot(){
+ const mounted=scene.getMountedAnimal();
+ if(mounted){toast(`${UNITS[mounted].name}와 산책을 마치고 왼쪽 아래 ‘내리기’를 눌러 주세요.`);return false;}
+ if(scene.isAnimalInteracting()){toast('동물과 함께하는 행동을 마친 뒤 이어가요.');return false;}
+ return true;
+}
+function closeAnimalContext(){animalContextId=null;document.querySelector<HTMLElement>('#animal-sheet')!.hidden=true;}
+function showAnimalContext(id:UnitId,focus=false){
+ if(actionBusy||battleView||startupPending||contentActivationPending)return;
+ if(scene.getMountedAnimal()){if(id===scene.getMountedAnimal())scene.focusAnimal(id);else requireOnFoot();return;}
+ scene.stopWalking();
+ if(currentModal)closeModal();
+ if(placement)cancelConstruction();
+ if(selectedFacilityId!==null)closeFacility();
+ if(farmMode)stopFarmMode();
+ if(farmTrayOpen)setFarmTray(false);
+ setGatheringTray(false);
+ animalContextId=id;
+ if(focus)scene.focusAnimal(id);
+ renderAnimalUI();
+}
+function renderAnimalUI(){
+ const mounted=scene.getMountedAnimal(),interacting=scene.isAnimalInteracting();
+ const card=document.querySelector('.scene-card')!;
+ card.classList.toggle('animal-riding',Boolean(mounted));card.classList.toggle('animal-interacting',interacting);
+ const views=scene.getAnimalInteractions(),sheet=document.querySelector<HTMLElement>('#animal-sheet')!,hud=document.querySelector<HTMLElement>('#animal-ride-hud')!;
+ const blocked=startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||farmTrayOpen||selectedFacilityId!==null;
+ hud.hidden=!mounted||blocked;
+ if(mounted&&!hud.hidden){
+  const view=views.find(animal=>animal.id===mounted),key=JSON.stringify([mounted,actionBusy,interacting,view?.canDismount]);
+  if(key!==animalRideKey){animalRideKey=key;hud.innerHTML=`<button class="animal-ride-follow" data-animal-follow="${mounted}" aria-label="${UNITS[mounted].name}와 주인공 보기">${companionPortrait(mounted)}<span><strong>${UNITS[mounted].name}와 산책 중</strong><small>${view?.canDismount?'지상 길을 누르면 함께 걸어요':'조금 더 넓은 공터로 이동해요'}</small></span></button><button class="animal-dismount" data-animal-dismount ${actionBusy||interacting?'disabled':''}>${icon('arrow')}<small>내리기</small></button>`;}
+ }else animalRideKey='';
+ if(blocked||actionBusy||interacting||mounted)closeAnimalContext();
+ const animal=animalContextId?views.find(view=>view.id===animalContextId):undefined;
+ sheet.hidden=!animal;
+ if(!animal){animalPanelKey='';return;}
+ const id=animal.id,definition=UNITS[id],rideable=id==='elephant'||id==='giraffe';
+ const key=JSON.stringify([animal,scene.getActiveFloor()]);if(key===animalPanelKey)return;animalPanelKey=key;
+ sheet.innerHTML=`<header class="animal-sheet-heading">${companionPortrait(id)}<div><strong>${definition.name}</strong><small>${definition.speciesLabel} · ${animal.surface==='road'?'지상에서 지내는 중':'트럭에서 지내는 중'}</small></div><button data-animal-dismiss aria-label="동물 메뉴 닫기">${icon('close')}</button></header><div class="animal-sheet-actions"><button data-animal-pet="${id}" ${animal.available?'':'disabled'}>${icon('paw')}<small>쓰다듬기</small></button>${rideable?`<button data-animal-ride="${id}" ${animal.mountable?'':'disabled'}>${icon('move')}<small>올라타기</small></button>`:''}</div><p>${!animal.available?'동물이 편히 쉴 수 있는 곳에서 다시 만나요.':rideable&&!animal.mountable?(animal.health<=0?'동료 돌보기로 체력을 회복해 주세요.':'지상에 내려와 있을 때 등에 탈 수 있어요.'):'곁으로 다가가 함께 시간을 보내요.'}</p>`;
+}
+async function interactWithAnimal(kind:'pet'|'mount'|'dismount',id:UnitId):Promise<boolean>{
+ if(actionBusy||battleView||startupPending||contentActivationPending)return false;
+ if(kind!=='dismount'&&!requireOnFoot())return false;
+ if(currentModal)closeModal();
+ cancelConstruction();closeFacility();if(farmMode)stopFarmMode();setFarmTray(false);closeAnimalContext();setGatheringTray(false);
+ animalActionKind=kind;actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
+ const status=document.querySelector<HTMLElement>('.chore-status')!;
+ status.innerHTML=`<span class="chore-pulse">${icon('paw')}</span><div><strong>${UNITS[id].name}와 함께<small data-animal-phase>${kind==='dismount'?'내려올 자리를 살피는 중':'곁으로 걸어가는 중'}</small></strong><span>${kind==='pet'?'손을 뻗어 다정하게 쓰다듬어요':kind==='mount'?'등에 올라 함께 지상 길을 산책해요':'주변을 살피고 안전한 땅으로 내려와요'}</span></div>`;status.hidden=false;
+ let ok=false;
+ try{
+  if(kind==='pet')await scene.playPetting(id);else if(kind==='mount')await scene.mountAnimal(id);else await scene.dismountAnimal();
+  if(kind==='pet')state={...state,morale:Math.min(100,state.morale+3),log:[`${UNITS[id].name}를 쓰다듬으며 잠깐 쉬었어요.`,...state.log].slice(0,30)};
+  persist();ping();ok=true;
+  toast(kind==='pet'?`${UNITS[id].name}와 다정한 시간을 보냈어요. 기분 +3`:kind==='mount'?`${UNITS[id].name} 등에 탔어요. 빈 지상 길을 눌러 이동해요.`:`${UNITS[id].name} 곁의 안전한 땅에 내렸어요.`);
+ }catch(error){toast(error instanceof Error?error.message:'동물에게 다가가지 못했어요. 주변 길을 비우고 다시 만나 주세요.');}
+ finally{animalActionKind=null;actionBusy=false;status.hidden=true;app.removeAttribute('aria-busy');render();finishDeferredUpdate();}
+ return ok;
+}
 function setGatheringTray(open:boolean){
  gatheringTrayOpen=open;
  const dock=document.querySelector<HTMLElement>('.gathering-dock')!,button=dock.querySelector<HTMLButtonElement>('[data-gather-toggle]')!;
@@ -970,7 +1051,7 @@ function setGatheringTray(open:boolean){
 }
 function renderGatheringDock(){
  const dock=document.querySelector<HTMLElement>('.gathering-dock')!;
- dock.hidden=!playerConfirmed||startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||selectedFacilityId!==null||farmTrayOpen||actionBusy||scene.getActiveFloor()!==1;
+ dock.hidden=!playerConfirmed||startupPending||orientationBlocked||contentActivationPending||Boolean(battleView)||Boolean(currentModal)||Boolean(placement)||selectedFacilityId!==null||farmTrayOpen||actionBusy||Boolean(scene.getMountedAnimal())||scene.getActiveFloor()!==1;
  if(dock.hidden){if(gatheringTrayOpen)setGatheringTray(false);return;}
  if(!gatheringTrayOpen)return;
  const now=Date.now();
@@ -1059,6 +1140,7 @@ function updatePetPassageControls(){
  const target=open?'close':'open';if(button.dataset.petPassageToggle!==target){button.dataset.petPassageToggle=target;button.innerHTML=`${icon('paw')} ${open?'문 닫으러 가기':'문 열러 가기'}`;}
 }
 async function operatePetPassage(open:boolean){
+ if(!requireOnFoot())return;
  if(actionBusy||battleView||startupPending||contentActivationPending)return;
  const before=setPetPassageOpen(state,open);if(!before.ok){toast(before.message);return;}
  if(!prepareRoadWalk())return;
@@ -1078,6 +1160,7 @@ async function roadsideAction(id:OutdoorSiteId):Promise<boolean>{
  const area=groundArea(id);return gatherGroundResource(area.next.node.id,true);
 }
 async function gatherGroundResource(id:GroundResourceId,focusTarget=false):Promise<boolean>{
+ if(!requireOnFoot())return false;
  if(actionBusy||battleView||startupPending||contentActivationPending)return false;
  if(currentModal==='outdoor-site'||currentModal==='roadside'||currentModal==='ground-region')closeModal();
  state=recoverEnergy(state);
@@ -1218,7 +1301,10 @@ function openModal(kind:string){
   modalShell('OUR ANIMAL EXPEDITION','우리 동물 원정대',`<p class="modal-description">동료 최대 3마리와 세 웨이브에 도전해요.<br>기본 공격은 자동 · 기술 버튼으로 도와주세요.</p><div class="explore-quick-links"><button data-zone="grove">${icon('axe')} 벌목장 둘러보기</button><button data-open="roadside">${icon('map')} 생활 물자 탐색</button></div><div class="stage-list">${stages.map(st=>`<button class="stage-card ${st.style} ${selectedStage===st.id?'selected':''}" data-stage="${st.id}" aria-pressed="${selectedStage===st.id}" style="--stage-art:url('${BATTLE_ART_URLS[st.id-1]}')"><span class="stage-number">${String(st.id).padStart(2,'0')}<span>STAGE</span></span><span class="stage-card-body"><small>${st.tag} · 3 WAVES</small><strong>${st.title}</strong><span>${st.desc}</span></span><span class="stage-check">${icon(selectedStage===st.id?'check':'chevron')}</span></button>`).join('')}</div>${companionRosterCards(true)}<p class="companion-party-note">${icon('paw')} 출전 동료: ${getReadyTeam(state).map(id=>UNITS[id].name).join(' · ')||'함께 쉬어 주세요'} <span>${icon('bolt')} 기력 ${Math.round(state.energy)}</span></p><div class="battle-reward-preview">${icon('food')} 승리 보상: 식량 ${6+selectedStage*2} · 고철 ${selectedStage*2} · 목재 2</div><button class="button full-width ${state.energy<16||!getReadyTeam(state).length?'unavailable':''}" data-start-hunt aria-disabled="${state.energy<16||!getReadyTeam(state).length}">${icon('hunt')} 전투 스테이지 입장 <span class="button-cost">기력 16</span></button>${huntRecoveryHint()}<p class="fine-print">승리하면 출전 동료가 경험치를 얻어요 · 한 동료가 지쳐도 다른 동료는 계속 싸워요<br>전투 중 앱을 종료하면 보상 없이 귀환해요</p>`,true);
  }
  if(kind==='quests'){modalShell('ONE STEP AT A TIME','작은 목표, 큰 하루',`<p class="modal-description">서두르지 않아도 괜찮아요. 하나씩 해 나가요.</p><div class="quest-list">${questList(state).map(q=>`<article class="quest-row ${q.complete?'completed':''}"><span class="quest-row-icon">${icon(q.complete?'check':'flag')}</span><div><h3>${escape(q.title)}</h3><p>${escape(q.description)}</p><small>${escape(q.reward)} · 달성 시 자동 지급</small><div class="quest-progress"><span style="width:${Math.min(100,q.current/q.target*100)}%"></span></div></div><b>${q.current}/${q.target}</b></article>`).join('')}</div>`);}
- if(kind==='pet'){modalShell('OUR LITTLE FAMILY','함께 성장하는 동물 동료',`${companionRosterCards()}<p class="modal-description">11종의 동물이 한 마리씩 함께 살아요.<br>큰 동물은 지상에서 지내고, 데크를 넓히면 동물 문을 통해 1층에 올라와요. 전투에는 원하는 동료를 최대 3마리 편성해요.</p><div class="bond-meter"><span>우리의 행복</span><strong>${Math.round(state.morale)} / 100</strong><div class="quest-progress"><span style="width:${state.morale}%"></span></div></div><button class="button full-width" data-action="rest">${icon('bed')} 동료 체력 돌보기</button><p class="fine-print">${state.resources.food>=1&&state.resources.water>=1?'식량 1 · 물 1 · 동료 체력 35% 회복':'물자가 없어도 동료 체력 10% 회복'}</p><button class="button button-light full-width activity-secondary" data-action="pet">${icon('paw')} 보리 쓰다듬기</button><button class="button button-light full-width activity-secondary" data-open="shop">${icon('bag')} 상점에서 동료 만나기</button><button class="text-button full-width" data-open="hunt">${icon('hunt')} 사냥 준비로 돌아가기</button>`);}
+ if(kind==='pet'){
+  modalShell('OUR LITTLE FAMILY','함께 살아가는 동물 친구들',`<p class="modal-description">동물 카드를 누르면 곁으로 가서 쓰다듬을 수 있어요.<br>지상에 있는 코끼리와 기린은 등에 타고 함께 산책해요.</p><div class="animal-meet-grid">${getUnlockedUnitIds(state).map(id=>`<button data-animal-focus="${id}" aria-label="${UNITS[id].name} ${UNITS[id].speciesLabel} 만나기">${companionPortrait(id)}<strong>${UNITS[id].name}</strong><small>${UNITS[id].speciesLabel}${id==='elephant'||id==='giraffe'?' · 지상 탑승':''}</small></button>`).join('')}</div><button class="button button-light full-width activity-secondary" data-open="pet-team">${icon('shield')} 전투 동료 편성하기</button><div class="bond-meter"><span>우리의 행복</span><strong>${Math.round(state.morale)} / 100</strong><div class="quest-progress"><span style="width:${state.morale}%"></span></div></div><button class="button full-width" data-action="rest">${icon('bed')} 동료 체력 돌보기</button><p class="fine-print">${state.resources.food>=1&&state.resources.water>=1?'식량 1 · 물 1 · 동료 체력 35% 회복':'물자가 없어도 동료 체력 10% 회복'}<br>11종이 한 마리씩 함께 살아요. 큰 동물은 데크 성장 후 승선해요.</p><button class="button button-light full-width activity-secondary" data-open="shop">${icon('bag')} 상점에서 동료 만나기</button>`);
+ }
+ if(kind==='pet-team')modalShell('OUR ANIMAL EXPEDITION','전투 동료 편성',`${companionRosterCards()}<button class="button button-light full-width activity-secondary" data-open="pet">${icon('paw')} 마을 동물 만나기</button><button class="button full-width activity-secondary" data-open="hunt">${icon('shield')} 원정 준비하기</button>`,true);
  if(kind==='character'||kind==='welcome'){selectedGender=state.gender;modalShell(kind==='welcome'?'YOUR STORY STARTS HERE':'MEET YOUR SURVIVOR',kind==='welcome'?'우리의 첫 번째 아침':'오늘의 나를 만나기',`<p class="modal-description">2187년, 좀비로 가득한 대한민국.<br> 커다란 트럭 위에서 당신만의 작은 일상을 시작하세요.</p><div class="character-choices"><button data-gender="female" class="character-choice ${selectedGender==='female'?'selected':''}">${portrait('female','',getEquippedOutfit(state,'female'))}<strong>여자 생존자</strong><span>다정하고 씩씩한 모험가</span></button><button data-gender="male" class="character-choice ${selectedGender==='male'?'selected':''}">${portrait('male','',getEquippedOutfit(state,'male'))}<strong>남자 생존자</strong><span>따뜻하고 든든한 모험가</span></button></div><label class="name-label" for="player-name">어떤 이름으로 불러 드릴까요?</label><input class="name-input" id="player-name" maxlength="16" value="${escape(state.name)}" placeholder="생존자의 이름" autocomplete="off"><button class="button full-width" data-start>${icon('sun')} ${kind==='welcome'?'우리집에서 시작하기':'변경 저장하기'}</button><p class="fine-print">캐릭터는 언제든 변경할 수 있어요 · 기기에 자동 저장</p>${kind==='welcome'&&showInstallHelp()&&isAppleMobileDevice()?`<details class="pwa-welcome-install" data-pwa-welcome-install><summary>아이폰 홈 화면에서 시작하는 방법</summary>${homeScreenInstructions()}<p>Safari와 홈 화면 앱의 진행은 별개일 수 있어요. 처음부터 홈 화면 아이콘으로 시작하면 좋아요.</p></details>`:''}`);}
  if(kind==='map'){activeRoadsideSite=null;currentModal='roadside';renderedRoadsideKey='';renderLiveRoadside();}
  if(kind==='journal'){modalShell('POSTCARDS FROM THE ROAD','우리의 여행 일지',`<div class="journal-day">DAY ${String(state.day).padStart(2,'0')}<span>도로 위에서 함께한 날들</span></div><div class="journal-stats"><div><b>${state.stats.harvests}</b><span>번의 수확</span></div><div><b>${state.stats.chops}</b><span>번의 벌목</span></div><div><b>${state.stats.battlesWon}</b><span>번의 전투 승리</span></div></div><div class="journal-entries">${state.log.slice(0,12).map(l=>`<div>${icon('leaf')}<p>${escape(l)}</p></div>`).join('')||'<p>작은 행동으로 첫 번째 이야기를 써 보세요.</p>'}</div>`);}
@@ -1263,22 +1349,22 @@ function setContentApplying(applying:boolean){
 }
 function onLiveUpdate(next:LiveUpdateState){liveUpdate=next;if(next.status==='error'&&contentActivationPending)setContentApplying(false);refreshUpdateUI();maybeApplyContentUpdate();}
 function maybeApplyContentUpdate(){
- if(startupPending||liveUpdate.status!=='ready'||contentActivationPending||!canActivateLiveUpdate()||document.hidden||actionBusy||scene.isWalking()||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return;
+ if(startupPending||liveUpdate.status!=='ready'||contentActivationPending||!canActivateLiveUpdate()||document.hidden||actionBusy||scene.isWalking()||scene.isAnimalInteracting()||scene.getMountedAnimal()||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return;
  if(!persist())return;
  setContentApplying(true);refreshUpdateUI();
  void activateLiveUpdate().then(accepted=>{if(!accepted){setContentApplying(false);refreshUpdateUI();}}).catch(()=>{setContentApplying(false);refreshUpdateUI();});
 }
 setWebUpdateActivationGuard(()=>{
  // Peer tabs freeze in memory; only the initiating tab writes the shared save.
- if(startupPending||contentActivationPending||actionBusy||scene.isWalking()||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return false;
+ if(startupPending||contentActivationPending||actionBusy||scene.isWalking()||scene.isAnimalInteracting()||scene.getMountedAnimal()||battleView||currentModal||placement||selectedFacilityId!==null||farmQueue.length||farmMode||farmTrayOpen||selectedZone!=='home')return false;
  return true;
 },applying=>{setContentApplying(applying);refreshUpdateUI();},()=>startupPending&&!stored?true:persist());
 async function requestAutomaticInstall(){
- if(actionBusy||scene.isWalking()||battleView){installAfterWork=true;if(runningFarm){afterFarm=null;stopFarmMode();}toast('지금 이동이나 작업을 마치면 준비된 앱 설치를 열어요.');return;}
+ if(actionBusy||scene.isWalking()||scene.isAnimalInteracting()||scene.getMountedAnimal()||battleView){installAfterWork=true;if(runningFarm){afterFarm=null;stopFarmMode();}toast('지금 이동이나 작업을 마치면 준비된 앱 설치를 열어요.');return;}
  if(!persist()){toast('진행 상황을 저장한 뒤 설치를 다시 시도해 주세요.');return;}
  installAfterWork=false;closeModal();try{onAutomaticUpdate(await installPreparedUpdate());}catch{onAutomaticUpdate({status:'error',progress:0,message:'설치를 열지 못했어요. 설정에서 다시 시도해 주세요.'});}
 }
-function finishDeferredUpdate(){if(installAfterWork&&!actionBusy&&!battleView)void requestAutomaticInstall();else maybeApplyContentUpdate();}
+function finishDeferredUpdate(){if(installAfterWork&&!actionBusy&&!battleView&&!scene.isAnimalInteracting()&&!scene.getMountedAnimal())void requestAutomaticInstall();else maybeApplyContentUpdate();}
 async function initializeUpdateSystem(){
  if(!updateInitializing)updateInitializing=(async()=>{if(isNativeUpdateSupported()){onAutomaticUpdate(await initializeAutoUpdates(onAutomaticUpdate));await runUpdate();}else refreshUpdateUI();})().catch(()=>{refreshUpdateUI();});
  return updateInitializing;
@@ -1289,7 +1375,7 @@ async function runUpdate(manual=false){
  refreshUpdateUI();if(manual&&currentModal!=='settings')toast(lastUpdate.message);
 }
 function navigateButton(t:HTMLElement){
- if(t.dataset.nav){const nav=t.dataset.nav;cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();if(nav==='home'||nav==='farm'||nav==='grove'){recenterMap();closeModal();setZone(nav==='grove'?'grove':'home',nav==='farm');if(nav==='farm'){if(!actionBusy)scene.setActiveFloor(1);selectPlot(preferredPlot()?.id??null);}else renderControls();}else openModal(nav);return true;}
+ if(t.dataset.nav){const nav=t.dataset.nav;if(['build','farm','hunt','grove'].includes(nav)&&!requireOnFoot())return true;cancelConstruction();closeFacility();if(!actionBusy)stopFarmMode();if(nav==='home'||nav==='farm'||nav==='grove'){recenterMap();closeModal();setZone(nav==='grove'?'grove':'home',nav==='farm');if(nav==='farm'){if(!actionBusy)scene.setActiveFloor(1);selectPlot(preferredPlot()?.id??null);}else renderControls();}else openModal(nav);return true;}
  if(t.dataset.open){if(t.dataset.open==='settlement-goals')openGrowthBoard();else openModal(t.dataset.open);return true;}
  if(t.dataset.zone){if(t.dataset.zone==='grove'){if(prepareRoadWalk())scene.focusResourceArea('grove');}else{recenterMap();cancelConstruction();closeFacility();stopFarmMode();closeModal();setZone('home');}renderControls();return true;}
  if(t.hasAttribute('data-look-grove')){if(prepareRoadWalk())scene.focusResourceArea('grove');renderControls();return true;}
@@ -1298,6 +1384,7 @@ function navigateButton(t:HTMLElement){
 }
 const pressedVillageTargets=new WeakMap<HTMLElement,{key:string;target:VillageTarget}>();
 document.addEventListener('pointerdown',event=>{
+ if(animalContextId&&!(event.target as Element).closest('.animal-sheet'))closeAnimalContext();
  if(gatheringTrayOpen&&!(event.target as Element).closest('.gathering-dock'))setGatheringTray(false);
  const button=(event.target as Element).closest<HTMLElement>('[data-village-advice],[data-next-goal]');
  if(!button||!button.closest('#app'))return;
@@ -1309,6 +1396,13 @@ document.addEventListener('pointercancel',event=>{
 },{capture:true});
 document.addEventListener('click',e=>{
  const t=(e.target as Element).closest<HTMLElement>('button,a');if(!t||!t.closest('#app')||startupPending||orientationBlocked||battleView||contentActivationPending)return;
+ if(t.hasAttribute('data-animal-dismiss')){closeAnimalContext();return;}
+ if(t.dataset.animalFocus&&isUnitId(t.dataset.animalFocus)){showAnimalContext(t.dataset.animalFocus,true);return;}
+ if(t.dataset.animalPet&&isUnitId(t.dataset.animalPet)){void interactWithAnimal('pet',t.dataset.animalPet);return;}
+ if(t.dataset.animalRide&&isUnitId(t.dataset.animalRide)){void interactWithAnimal('mount',t.dataset.animalRide);return;}
+ if(t.dataset.animalFollow&&isUnitId(t.dataset.animalFollow)){scene.focusAnimal(t.dataset.animalFollow);return;}
+ if(t.hasAttribute('data-animal-dismount')){const id=scene.getMountedAnimal();if(id)void interactWithAnimal('dismount',id);return;}
+ if((t.hasAttribute('data-road-walk')||t.hasAttribute('data-road-return')||t.hasAttribute('data-farm-toggle'))&&!requireOnFoot())return;
  if(t.hasAttribute('data-gather-toggle')){setGatheringTray(!gatheringTrayOpen);renderGatheringDock();return;}
  if(t.dataset.gatherResource){const resource=gatheringShortcuts.find(([id])=>id===t.dataset.gatherResource)?.[0];if(resource)gatherFromShortcut(resource);return;}
  if(t.hasAttribute('data-camera-player')){resumePlayerView();return;}
@@ -1379,6 +1473,7 @@ document.addEventListener('click',e=>{
  if(t.dataset.facilityReplace){openFacilityReplacement(Number(t.dataset.facilityReplace));return;}
  if(t.dataset.replaceType&&BUILDING_TYPES.includes(t.dataset.replaceType as BuildingType)){confirmFacilityReplacement(Number(t.dataset.replaceFacility),t.dataset.replaceType as BuildingType);return;}
  if(t.dataset.replaceConfirm&&BUILDING_TYPES.includes(t.dataset.replaceBuildingType as BuildingType)){
+  if(!requireOnFoot())return;
   if(actionBusy)return;const id=Number(t.dataset.replaceConfirm),building=getSettlement(state).buildings.find(item=>item.id===id);
   if(!building)return;
   const result=replaceFacility(state,id,t.dataset.replaceBuildingType as BuildingType);
@@ -1407,7 +1502,7 @@ document.addEventListener('click',e=>{
  if(t.dataset.stage){selectedStage=Number(t.dataset.stage);openModal('hunt');}
  if(t.dataset.teamToggle&&isUnitId(t.dataset.teamToggle)){
   const id=t.dataset.teamToggle,team=getSelectedTeam(state),next=team.includes(id)?team.filter(unit=>unit!==id):[...team,id];
-  const result=setCompanionTeam(state,next);if(result.ok){const scroll=document.querySelector<HTMLElement>('#modal-root .modal')?.scrollTop??0;state=result.state;persist();render();openModal(currentModal==='hunt'?'hunt':'pet');document.querySelector<HTMLElement>('#modal-root .modal')!.scrollTop=scroll;}toast(result.message);return;
+  const result=setCompanionTeam(state,next);if(result.ok){const scroll=document.querySelector<HTMLElement>('#modal-root .modal')?.scrollTop??0;state=result.state;persist();render();openModal(currentModal==='hunt'?'hunt':'pet-team');document.querySelector<HTMLElement>('#modal-root .modal')!.scrollTop=scroll;}toast(result.message);return;
  }
  if(t.hasAttribute('data-start-hunt'))startBattle();
  if(t.hasAttribute('data-close'))closeModal();
@@ -1431,7 +1526,7 @@ modalRoot.addEventListener('pointerdown',e=>{modalBackdropPointer=e.target===mod
 modalRoot.addEventListener('pointerup',e=>{modalBackdropClickPointer=modalBackdropPointer===e.pointerId&&e.target===modalRoot?e.pointerId:null;modalBackdropPointer=null;});
 modalRoot.addEventListener('pointercancel',()=>{modalBackdropPointer=null;modalBackdropClickPointer=null;});
 modalRoot.addEventListener('click',e=>{const backdropGesture=modalBackdropClickPointer!==null&&(!(e instanceof PointerEvent)||e.pointerId===modalBackdropClickPointer);modalBackdropClickPointer=null;if(!startupPending&&e.target===modalRoot&&backdropGesture)closeModal();});
-document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(gatheringTrayOpen){setGatheringTray(false);document.querySelector<HTMLButtonElement>('[data-gather-toggle]')!.focus();return;}if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
+document.addEventListener('keydown',e=>{if(startupPending||orientationBlocked||battleView||contentActivationPending)return;if(e.key==='Escape'){if(animalContextId){closeAnimalContext();return;}if(gatheringTrayOpen){setGatheringTray(false);document.querySelector<HTMLButtonElement>('[data-gather-toggle]')!.focus();return;}if(currentModal)closeModal();else if(placement)cancelConstruction();else if(selectedFacilityId!==null)closeFacility();else if(farmMode){afterFarm=null;stopFarmMode();}}if(actionBusy&&e.key!=='Tab')return;if(e.key==='Tab'&&currentModal){const els=Array.from(document.querySelectorAll<HTMLElement>('#modal-root button:not([disabled]), #modal-root input'));const first=els[0],last=els.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}});
 let saveCounter=0;
 setInterval(()=>{
  if(!startupPending&&!contentActivationPending&&playerConfirmed){
