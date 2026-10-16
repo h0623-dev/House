@@ -38,6 +38,7 @@ import { gatheringKindForResource, sampleGatheringMotion, gatheringFinalContactP
 import { sampleHammerMotion, hammerContactAt, HAMMER_STROKES, HAMMER_IMPACT_PHASE, HAMMER_CONTACT_END_PHASE } from './construction-motion';
 import { layoutGroundMarkers, type GroundMarker, type GroundMarkerInput } from './ground-marker-layout';
 import { drawGroundLandscape, drawGroundSprite, groundArtReady } from './ground-art';
+import { drawGatheringPond, drawGroundScrapCluster } from './ground-resource-art';
 import { GROUND_LANDSCAPE_BOUNDS, GROUND_BACKGROUND_BOUNDS, getGroundResourceVisual, getGroundVisualBounds, getGroundVisualPolygon } from './ground-visuals';
 import { getFarmPlotCare } from './farm-economy';
 import { getPetPassage, getPetPassageGeometry, PET_PASSAGE_LINK_ID } from './pet-passage';
@@ -398,7 +399,7 @@ export class Scene {
   constructor(private canvas: HTMLCanvasElement, private onSelect: (kind: Selectable, plotId?: number, placement?:FacilityPlacement) => void) {
     this.ctx = canvas.getContext('2d')!;
     canvas.style.touchAction = 'none';
-    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 빈 바닥을 눌러 길을 걸어요. 숲길의 나무와 땅 위의 고철, 씨앗 풀, 샘물을 각각 눌러 채집해 보세요.');
+    canvas.setAttribute('aria-label', '미래 대한민국의 트럭 집. 빈 바닥을 눌러 길을 걸어요. 숲길의 나무와 땅 위의 고철, 씨앗 풀, 큰 연못을 각각 눌러 채집해 보세요.');
     canvas.addEventListener('pointerdown', this.pointerDown);
     canvas.addEventListener('pointermove', this.pointerMove);
     canvas.addEventListener('pointerup', this.pointer);
@@ -958,6 +959,10 @@ export class Scene {
     // remain available for animal traffic, while the hero uses a clear side.
     const clearance=HERO_BODY_RADIUS+3,nearby:Point[]=[];
     for(const offsetY of [8,14,-2])nearby.push([node.bounds.left-clearance,node.point[1]+offsetY],[node.bounds.right+clearance,node.point[1]+offsetY]);
+    if(node.kind==='water'){
+      // Work on the shore; never route the survivor to the pond's centre.
+      for(const offsetX of [-42,0,42])nearby.push([node.point[0]+offsetX,node.bounds.top-clearance],[node.point[0]+offsetX,node.bounds.bottom+clearance]);
+    }
     nearby.sort((a,b)=>Math.hypot(a[0]-this.heroLocation.point[0],a[1]-this.heroLocation.point[1])-Math.hypot(b[0]-this.heroLocation.point[0],b[1]-this.heroLocation.point[1]));
     const approaches=[...nearby,...node.approaches].map(point=>({surface:'road' as const,point:[...point] as Point})),
       navigation=planWorkNavigation(this.navigationWorld(),this.heroLocation,approaches)??planWorkNavigation(this.choreWorld(),this.heroLocation,approaches);
@@ -2207,7 +2212,7 @@ export class Scene {
       const cropName = CROPS[this.action.cropId].name;
       const labels: Record<SceneAction, string> = { plant: `${cropName} 씨앗을 톡톡`, water: '물을 듬뿍', fertilize:'흙에 영양을 나눠요', harvest: `${cropName} 수확!`, chop: '나무를 차곡차곡', expand: '우리 트럭을 넓혀요', expandFarm: progress < .5 ? '새 밭에 흙을 채워요' : '튼튼하게 밭을 만들어요', gather: progress < .6 ? '쓸 만한 재료를 찾아요' : '가방에 차곡차곡', build: '새 시설을 튼튼하게', upgrade: '시설을 손보고 있어요', 'pet-gate':this.petGateClosing&&this.petsOnPassage().length?'친구가 지나가길 기다려요':this.petGatePendingOpen?'동물 문을 열어요':'동물 문을 닫아요',petting:'다정하게 쓰다듬어요',mount:'친구 등에 올라타요',dismount:'안전하게 내려와요' };
       const node=this.action.groundResourceId?getGroundResourceNode(this.action.groundResourceId):undefined;
-      const workLabels={tree:'도끼로 차근차근 벌목',scrap:'고철을 두드려 모아요',seed:'씨앗을 따서 담아요',water:'샘물을 떠서 담아요'};
+      const workLabels={tree:'도끼로 차근차근 벌목',scrap:'고철을 두드려 모아요',seed:'씨앗을 따서 담아요',water:'연못 물을 떠서 담아요'};
       const label = node?workLabels[node.kind]:labels[this.action.kind];
       const top = y - 128 * WORLD_HERO_SCALE - 32;
       this.round(x - 58, top, 116, 23, 11, '#fffae8e8', '#bda982');
@@ -2300,7 +2305,7 @@ export class Scene {
     this.line([[0,-25],[0,3]],'#7b7960',2.6);
     this.poly([[-29,-40],[28,-38],[30,-18],[-28,-20]],'#b0a385','#72735b',.85);
     this.line([[-23,-34],[23,-33]],'#d0c5a44d',.7);
-    const name=({'grove':'숲길','seed-meadow':'씨앗 풀밭','salvage':'고철 공터','spring':'숲 샘터','west-grove':'서쪽 숲','north-ruins':'북쪽 쉼터','east-creek':'동쪽 샘가','home-verge':'트럭 곁 숲','home-spring':'트럭 곁 샘가'}as Record<string,string>)[grove.id];
+    const name=({'grove':'숲길','seed-meadow':'씨앗 풀밭','salvage':'고철 공터','spring':'큰 연못','west-grove':'서쪽 숲','north-ruins':'북쪽 쉼터','east-creek':'동쪽 샘가','home-verge':'트럭 곁 숲','home-spring':'물가 길'}as Record<string,string>)[grove.id];
     this.label(name,0,-26,8,'#495744',700);this.ctx.restore();
     }
   }
@@ -2362,34 +2367,38 @@ export class Scene {
           painted=drawGroundSprite(this.ctx,'tree',0,0,art.width,art.height,alpha,art.variant)||painted;
           this.ctx.restore();
         }
+      }else if(node.kind==='water'){
+        painted=drawGatheringPond(this.ctx,node,this.time,{ready,reducedMotion:this.reducedMotion,
+          remaining:stock?.remainingUses??10,active});
+      }else if(node.kind==='scrap'){
+        const motion=active?sampleGatheringMotion(gatheringKindForResource(node.resource),this.actionProgress()):undefined;
+        painted=drawGroundScrapCluster(this.ctx,node,{ready,impact:this.reducedMotion?0:motion?.impact??0});
       }else if(ready){
         const motion=active?sampleGatheringMotion(gatheringKindForResource(node.resource),this.actionProgress()):undefined;
         this.ctx.save();this.ctx.translate(x,y);
-        if(motion&&!this.reducedMotion&&node.kind!=='water')
-          this.ctx.rotate(motion.impact*Math.sin((motion.phase-GATHERING_CONTACT_PHASE)*Math.PI*8)*(node.kind==='seed'?.045:.018));
+        if(motion&&!this.reducedMotion)
+          this.ctx.rotate(motion.impact*Math.sin((motion.phase-GATHERING_CONTACT_PHASE)*Math.PI*8)*.045);
         painted=drawGroundSprite(this.ctx,art.sprite,0,0,art.width,art.height,1,art.variant);
         this.ctx.restore();
-      }else if(node.kind==='water'){
-        // The rock-lined spring remains in the landscape while replenishing.
-        painted=drawGroundSprite(this.ctx,'water',x,y,art.width,art.height,.45,art.variant);
       }else{
         painted=drawGroundSprite(this.ctx,art.sprite,x,y,art.width,art.height,.55,art.variant);
       }
       if(!ready&&(active||this.resourceFocus?.nodeId===node.id))cooldownLabels.push({node,seconds:stock?.remainingSeconds??0});
       const hitBounds=getGroundVisualBounds(node,visual),polygon=getGroundVisualPolygon(node,visual),hit='ground-resource' as const;
       const target:Point=[(bounds[0]+bounds[2])/2,(bounds[1]+bounds[3])/2];
-      if(hit)this.hits.push({kind:hit,plotId:index,nodeId:node.id,siteId:node.siteId,x:target[0],y:target[1],radius:0,bounds:hitBounds,polygon});
+      if(node.kind!=='water'||ready)this.hits.push({kind:hit,plotId:index,nodeId:node.id,siteId:node.siteId,x:target[0],y:target[1],radius:0,bounds:hitBounds,polygon});
       this.pulse(`ground:${node.id}`,x,y,34*s);
       const screenBounds=bounds.map((value,i)=>(i%2?this.dy:this.dx)+value*this.scale);
       this.groundResourcePaint.push({id:node.id,index,siteId:node.siteId,regionId:node.regionId,kind:node.kind,resource:node.resource,
         point:{x,y},approaches:node.approaches,solidBounds:node.bounds,spriteBounds:bounds,screenBounds,hitBounds,hitPolygon:polygon,
         art:{sprite:art.sprite,variant:art.variant,width:art.width,height:art.height,ready:artReady,painted,sourceAtlas:'ground-props',anchor:{x,y},bounds:getGroundVisualBounds(node,visual)},
         x:this.dx+target[0]*this.scale,y:this.dy+target[1]*this.scale,ready,remainingSeconds:stock?.remainingSeconds??0,
-        yieldAmount:stock?.yieldAmount??null,energyCost:stock?.energyCost??null,visual,hit,active});
+        yieldAmount:stock?.yieldAmount??null,energyCost:stock?.energyCost??null,
+        remainingUses:stock?.remainingUses??null,capacity:stock?.capacity??null,visual,hit:node.kind==='water'&&!ready?null:hit,active});
     };
     // Feet decide depth on the ground, so an actor behind a trunk cannot
     // float over its crown. Deck and passage actors retain their own layers.
-    const order=GROUND_RESOURCE_NODES.map((node,index)=>({y:node.point[1],paint:()=>paintNode(node,index)}));
+    const order=GROUND_RESOURCE_NODES.map((node,index)=>({y:node.kind==='water'?Number.NEGATIVE_INFINITY:node.point[1],paint:()=>paintNode(node,index)}));
     if(heroLocation.surface==='road')order.push({y:heroLocation.point[1],paint:()=>this.hero()});
     this.ensurePets();
     for(const id of this.state?getUnlockedUnitIds(this.state):['dog','cat']as UnitId[]){
@@ -2463,10 +2472,10 @@ export class Scene {
       c.shadowBlur=0;c.shadowOffsetY=0;
       const itemArt=this.resourceIllustration(marker.resource,left+14,cy-1,20);
       this.label(marker.label,left+44,top+14,11,color,750);
-      const status=working?'작업 중':marker.status==='cooldown'?`${marker.remainingSeconds}초`:marker.status==='unaffordable'?'기력 부족':marker.count>1?`채집 ${marker.readyCount}/${marker.count}`:'터치 채집';
+      const node=GROUND_RESOURCE_NODES[marker.index],stock=this.state?getGatheringNode(this.state,node.id,now):undefined;
+      const status=working?'작업 중':marker.status==='cooldown'?`${marker.remainingSeconds}초`:marker.status==='unaffordable'?'기력 부족':node.kind==='water'?`${stock?.remainingUses??10}/${stock?.capacity??10}회 남음`:marker.count>1?`채집 ${marker.readyCount}/${marker.count}`:'터치 채집';
       this.label(status,left+44,top+27,8,color,600);
       const hitBounds=marker.hitScreenBounds.map((v,i)=>(v-(i%2?this.dy:this.dx))/this.scale)as[number,number,number,number];
-      const node=GROUND_RESOURCE_NODES[marker.index];
       this.hits.push({kind:'ground-resource',plotId:marker.index,nodeId:marker.nodeId,siteId:node.siteId,x:(cx-this.dx)/this.scale,y:(cy-this.dy)/this.scale,radius:0,bounds:hitBounds,marker:true});
       this.groundMarkerPaint.push({...marker,icon:marker.resource,itemArt});
     }

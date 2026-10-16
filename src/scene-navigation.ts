@@ -90,7 +90,8 @@ export function createNavigationWorld(level:number,plotCount:number,facilitySlot
   }
   else for(const slot of facilitySlots){const position=SETTLEMENT_POSITIONS[slot%16],floor=(Math.floor(slot/16)+1)as TruckFloor;
     if(position&&ids.includes(floor)){const[u,v]=position;obstacles.push({surface:'deck',floor,kind:'facility',bounds:{left:u-65,top:v-65,right:u+65,bottom:v+65}});}}
-  for(const node of GROUND_RESOURCE_NODES)obstacles.push({surface:'road',kind:node.kind==='tree'?'tree':'outdoor-site',bounds:{...node.bounds}});
+  for(const node of GROUND_RESOURCE_NODES)obstacles.push({surface:'road',kind:node.kind==='tree'?'tree':'outdoor-site',bounds:{...node.bounds},
+    ...(node.solidPolygon?{polygon:node.solidPolygon.map(point=>[...point] as NavigationPoint)}:{})});
   const body=getTruckGroundFootprint(level);obstacles.push({surface:'road',kind:'truck-body',...body});
   const access = getTruckAccessGeometry(level), ladder = { entry: access.entry, top: access.top, bottom: access.bottom };
   const links:NavigationLink[]=options.actor==='pet'

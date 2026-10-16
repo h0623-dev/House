@@ -129,7 +129,7 @@ contentApplyingNotice.innerHTML='<strong>게임 업데이트 적용 중</strong>
 const escape=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const navItems=[['hammer','건설','build'],['seeds','농사','farm'],['map','탐험','hunt'],['shop','상점','shop']];
 const quickItems=[['harvest','food','수확'],['water','water','물 주기'],['plant','seeds','씨앗 심기'],['fertilize','seeds','영양 주기'],['chop','axe','벌목'],['gather','scrap','고철']] as const;
-const gatheringShortcuts=[['wood','나무'],['scrap','고철'],['seeds','씨앗'],['water','샘물']] as const;
+const gatheringShortcuts=[['wood','나무'],['scrap','고철'],['seeds','씨앗'],['water','연못']] as const;
 type GatheringShortcutResource=typeof gatheringShortcuts[number][0];
 app.innerHTML=`
  <div class="shell game-shell village-shell">
@@ -1060,9 +1060,10 @@ function renderGatheringDock(){
   const views=GROUND_RESOURCE_NODES.filter(node=>node.resource===resource).map(node=>getGatheringNode(state,node.id,now)!);
   const ready=views.filter(view=>view.ready),remaining=Math.min(...views.map(view=>view.remainingSeconds));
   const button=dock.querySelector<HTMLButtonElement>(`[data-gather-resource="${resource}"]`)!;
-  const status=ready.length?`${ready.length}곳 준비`:`${remaining}초 후`;
+  const pond=resource==='water'?views[0]:undefined;
+  const status=ready.length?(pond?`${pond.remainingUses}/${pond.capacity}회 남음`:`${ready.length}곳 준비`):`${remaining}초 후`;
   button.disabled=ready.length===0;
-  button.setAttribute('aria-label',`${label} · 전체 채집지 ${ready.length}/${views.length}곳 준비 · ${ready.length?'가까운 곳에서 바로 채집':`${remaining}초 뒤 재생`}`);
+  button.setAttribute('aria-label',`${label} · ${pond?`${pond.remainingUses}/${pond.capacity}회 남음`:`전체 채집지 ${ready.length}/${views.length}곳 준비`} · ${ready.length?'가까운 곳에서 바로 채집':`${remaining}초 뒤 재생`}`);
   const text=button.querySelector('small')!;if(text.textContent!==status)text.textContent=status;
  }
 }
@@ -1078,27 +1079,30 @@ function gatherFromShortcut(resource:GatheringShortcutResource){
  setGatheringTray(false);
  void gatherGroundResource(target.node.id,true);
 }
-function areaStatus(id:OutdoorSiteId){const area=groundArea(id);return `${area.ready.length} / ${area.views.length}개 채집 가능${area.ready.length?'':` · ${area.next.remainingSeconds}초 뒤 재생`}`;}
+function gatheringNodeStatus(view:NonNullable<ReturnType<typeof getGatheringNode>>){
+ return view.ready?(view.node.kind==='water'?`${view.remainingUses}/${view.capacity}회 채집 가능`:'채집 가능'):`${view.remainingSeconds}초 뒤 재생`;
+}
+function areaStatus(id:OutdoorSiteId){const area=groundArea(id);return id==='spring'?gatheringNodeStatus(area.next):`${area.ready.length} / ${area.views.length}개 채집 가능${area.ready.length?'':` · ${area.next.remainingSeconds}초 뒤 재생`}`;}
 function gatheringReward(view:NonNullable<ReturnType<typeof getGatheringNode>>){
  return view.cropId?`${CROPS[view.cropId].seedName} ${view.yieldAmount}개`:`${resourceLabels[view.node.resource]} ${view.yieldAmount}${view.node.resource==='water'?' L':'개'}`;
 }
 function outdoorCard(id:OutdoorSiteId){
  const view=groundArea(id).next,zone=getGroundResourceZone(id)!;
  const art=icon(view.node.resource),reward=view.node.resource==='seeds'?`씨앗 ${view.yieldAmount}개 · 여러 품종`:gatheringReward(view);
- return `<article class="outdoor-card" data-roadside-card="${id}"><span class="outdoor-card-art">${art}</span><div><strong>${zone.name}</strong><span>한 곳당 ${reward} · 기력 ${view.energyCost}</span><small data-outdoor-status="${id}">${areaStatus(id)}</small></div><button data-outdoor-site="${id}">${icon('pin')} 장소 보기</button></article>`;
+ return `<article class="outdoor-card" data-roadside-card="${id}"><span class="outdoor-card-art">${art}</span><div><strong>${zone.name}</strong><span>${id==='spring'?'한 번에':'한 곳당'} ${reward} · 기력 ${view.energyCost}</span><small data-outdoor-status="${id}">${areaStatus(id)}</small></div><button data-outdoor-site="${id}">${icon('pin')} 장소 보기</button></article>`;
 }
 function groundNodeButton(id:GroundResourceId){
  const view=getGatheringNode(state,id)!;
- return `<button class="ground-node-choice" data-ground-node="${id}" aria-label="${escape(view.node.name)}에 직접 가서 ${view.node.kind==='tree'?'벌목':'채집'}하기">${view.cropId?cropIcon(view.cropId,'seed'):icon(view.node.resource)}<strong>${escape(view.node.name)}</strong><small data-ground-status="${id}">${view.ready?'채집 가능':`${view.remainingSeconds}초 뒤 재생`}</small></button>`;
+ return `<button class="ground-node-choice" data-ground-node="${id}" aria-label="${escape(view.node.name)}에 직접 가서 ${view.node.kind==='tree'?'벌목':'채집'}하기 · ${gatheringNodeStatus(view)}">${view.cropId?cropIcon(view.cropId,'seed'):icon(view.node.resource)}<strong>${escape(view.node.name)}</strong><small data-ground-status="${id}">${gatheringNodeStatus(view)}</small></button>`;
 }
 function regionStatus(id:GroundRegionId){
  const area=getGatheringRegion(state,id)!;
- return `${area.readyCount} / ${area.totalCount}곳 채집 가능${area.readyCount?'':` · ${area.remainingSeconds}초 뒤 재생`}`;
+ return id==='spring'?gatheringNodeStatus(area.next):`${area.readyCount} / ${area.totalCount}곳 채집 가능${area.readyCount?'':` · ${area.remainingSeconds}초 뒤 재생`}`;
 }
 function regionCard(id:GroundRegionId){
  const region=getGroundRegion(id)!,area=getGatheringRegion(state,id)!;
  const resources=(['wood','scrap','seeds','water']as const).filter(resource=>area.views.some(view=>view.node.resource===resource));
- return `<article class="ground-region-card" data-ground-region-card="${id}"><div class="ground-region-heading"><strong>${escape(region.name)}</strong><small data-region-status="${id}">${regionStatus(id)}</small></div><p>${escape(region.description)}</p><div class="ground-region-resources">${resources.map(resource=>`<span>${icon(resource)}${resource==='wood'?'나무':resource==='scrap'?'고철':resource==='seeds'?'씨앗':'샘물'} <b>${area.views.filter(view=>view.node.resource===resource).length}</b></span>`).join('')}</div><div class="ground-region-actions"><button class="button" data-region-focus="${id}">${icon('map')} 둘러보기</button><button class="button button-light" data-ground-region="${id}">${icon('bag')} 채집물 목록</button></div></article>`;
+ return `<article class="ground-region-card" data-ground-region-card="${id}"><div class="ground-region-heading"><strong>${escape(region.name)}</strong><small data-region-status="${id}">${regionStatus(id)}</small></div><p>${escape(region.description)}</p><div class="ground-region-resources">${resources.map(resource=>`<span>${icon(resource)}${resource==='wood'?'나무':resource==='scrap'?'고철':resource==='seeds'?'씨앗':'연못'} <b>${area.views.filter(view=>view.node.resource===resource).length}</b></span>`).join('')}</div><div class="ground-region-actions"><button class="button" data-region-focus="${id}">${icon('map')} 둘러보기</button><button class="button button-light" data-ground-region="${id}">${icon('bag')} 채집물 목록</button></div></article>`;
 }
 function renderLiveRoadside(){
  const key=JSON.stringify([currentModal,activeRoadsideSite,activeGroundRegion,state.gathering,state.resources]);
@@ -1110,8 +1114,8 @@ function renderLiveRoadside(){
    modalShell('A LITTLE PLACE TO EXPLORE',region.name,`<p class="modal-description">${escape(region.description)}<br>원하는 채집물을 고르면 직접 걸어가 작업해요.</p><button class="button full-width" data-region-focus="${region.id}">${icon('map')} 이 장소 둘러보기</button><div class="ground-node-grid">${area.views.map(view=>groundNodeButton(view.node.id)).join('')}</div><button class="text-button full-width" data-open="roadside">다른 채집 장소 보기</button>`,true);
   }else if(currentModal==='outdoor-site'&&activeRoadsideSite){
    const area=groundArea(activeRoadsideSite),zone=getGroundResourceZone(activeRoadsideSite)!;
-   modalShell('FOLLOW THE FOREST TRAIL',zone.name,`${outdoorCard(zone.id)}<p class="modal-description">${zone.id==='grove'?'숲속길을 따라 나무를 하나씩 골라 베어요.':'지상의 채집물을 하나씩 골라 모아요.'}<br>작업을 마친 곳마다 실제 180초 후 다시 생성돼요.</p><button class="button full-width" data-outdoor-walk="${zone.id}">${icon('map')} ${zone.name} 크게 보기</button><div class="ground-node-grid">${area.views.map(view=>groundNodeButton(view.node.id)).join('')}</div><button class="button button-light full-width activity-secondary" data-outdoor-collect="${zone.id}">${icon(area.next.node.resource)}<span data-outdoor-cta="${zone.id}">준비된 곳에서 채집하기</span></button><button class="text-button full-width" data-open="roadside">다른 채집 구역 보기</button>`,true);
-  }else modalShell('LIFE BEYOND THE TRUCK','지상 채집 지도',`<p class="modal-description">트럭 주변 일곱 장소를 둘러보세요.<br>서쪽 숲·북쪽 쉼터·동쪽 개울에서도 여러 자원을 모을 수 있어요.</p><div class="ground-region-cards">${(['north-ruins','west-grove','east-creek','grove','seed-meadow','salvage','spring']as const).map(id=>regionCard(id)).join('')}</div><div class="outdoor-modal-actions"><button class="button" data-road-walk>${icon('move')} 도로 걷기</button><button class="button button-light" data-road-return>${icon('truck')} 트럭으로</button></div><p class="fine-print">채집물 그림이나 작은 표식을 누르면 바로 작업해요.<br>모든 채집물은 각자 실제 180초 뒤 다시 준비돼요.</p>`,true);
+   modalShell('FOLLOW THE FOREST TRAIL',zone.name,`${outdoorCard(zone.id)}<p class="modal-description">${zone.id==='spring'?'큰 연못 가장자리에서 물을 길어요.<br>10번 채집하면 연못이 사라지고 180초 뒤 다시 차올라요.':`${zone.id==='grove'?'숲속길을 따라 나무를 하나씩 골라 베어요.':'지상의 채집물을 하나씩 골라 모아요.'}<br>작업을 마친 곳마다 실제 180초 후 다시 생성돼요.`}</p><button class="button full-width" data-outdoor-walk="${zone.id}">${icon('map')} ${zone.name} 크게 보기</button><div class="ground-node-grid">${area.views.map(view=>groundNodeButton(view.node.id)).join('')}</div><button class="button button-light full-width activity-secondary" data-outdoor-collect="${zone.id}">${icon(area.next.node.resource)}<span data-outdoor-cta="${zone.id}">준비된 곳에서 채집하기</span></button><button class="text-button full-width" data-open="roadside">다른 채집 구역 보기</button>`,true);
+  }else modalShell('LIFE BEYOND THE TRUCK','지상 채집 지도',`<p class="modal-description">트럭 주변 ${GROUND_REGIONS.length}개 장소를 둘러보세요.<br>숲길의 나무·군집 고철·씨앗 풀을 모으고, 남동쪽 큰 연못에서 물을 길어요.</p><div class="ground-region-cards">${GROUND_REGIONS.map(region=>regionCard(region.id)).join('')}</div><div class="outdoor-modal-actions"><button class="button" data-road-walk>${icon('move')} 도로 걷기</button><button class="button button-light" data-road-return>${icon('truck')} 트럭으로</button></div><p class="fine-print">채집물 그림이나 작은 표식을 누르면 바로 작업해요.<br>연못은 10회 채집 후, 다른 채집물은 한 번 채집 후 180초 뒤 다시 준비돼요.</p>`,true);
   document.querySelector<HTMLElement>('#modal-root .modal')!.scrollTop=scroll;
  }
  for(const region of GROUND_REGIONS){
@@ -1125,7 +1129,7 @@ function renderLiveRoadside(){
  }
  for(const node of GROUND_RESOURCE_NODES){
   const view=getGatheringNode(state,node.id)!;
-  document.querySelectorAll<HTMLElement>(`[data-ground-status="${node.id}"]`).forEach(status=>status.textContent=view.ready?'채집 가능':`${view.remainingSeconds}초 뒤 재생`);
+  document.querySelectorAll<HTMLElement>(`[data-ground-status="${node.id}"]`).forEach(status=>status.textContent=gatheringNodeStatus(view));
  }
 }
 function openRoadsideSite(id:OutdoorSiteId){activeRoadsideSite=id;openModal('outdoor-site');}
@@ -1168,7 +1172,7 @@ async function gatherGroundResource(id:GroundResourceId,focusTarget=false):Promi
  const before=performGatheringAction(state,id);if(!before.ok){toast(before.message);return false;}
  if(!prepareRoadWalk(true))return false;
  if(focusTarget)scene.focusGroundResource(id);
- const node=getGroundResourceNode(id)!;const gatheringLabels={tree:['도끼질하는 중','도끼로 나무를 베어 목재를 모아요'],scrap:['고철을 캐는 중','도구로 고철을 캐고 쓸 만한 부품을 챙겨요'],seed:['씨앗을 따는 중','몸을 숙여 씨앗을 따고 가방에 담아요'],water:['물을 뜨는 중','용기로 샘물을 떠서 생활용 물을 모아요']} as const;const [workLabel,workDescription]=gatheringLabels[node.kind];actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
+ const node=getGroundResourceNode(id)!;const gatheringLabels={tree:['도끼질하는 중','도끼로 나무를 베어 목재를 모아요'],scrap:['고철을 캐는 중','도구로 고철을 캐고 쓸 만한 부품을 챙겨요'],seed:['씨앗을 따는 중','몸을 숙여 씨앗을 따고 가방에 담아요'],water:['물을 뜨는 중','연못 가장자리에서 물을 떠요 · 10회 채집 후 180초 뒤 재생']} as const;const [workLabel,workDescription]=gatheringLabels[node.kind];actionBusy=true;app.setAttribute('aria-busy','true');renderControls();
  const status=document.querySelector<HTMLElement>('.chore-status')!;
  status.innerHTML=`<span class="chore-pulse">${icon(node.resource)}</span><div><strong>${escape(node.name)}<small data-chore-phase data-working-label="${workLabel}">이동 중</small></strong><span>${workDescription}</span><div class="chore-track" role="progressbar" aria-label="이동과 채집 진행" aria-valuemin="0" aria-valuemax="100"><i style="width:0%"></i></div></div>`;status.hidden=false;
  let failure:unknown;

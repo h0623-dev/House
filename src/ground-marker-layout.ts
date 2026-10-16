@@ -15,7 +15,7 @@ export interface GroundMarker {
 }
 export interface GroundMarkerViewport { left: number; top: number; right: number; bottom: number }
 export const GROUND_MARKER_LABELS: Record<GroundResourceKind, string> = {
-  tree: '나무', scrap: '고철', seed: '씨앗', water: '샘물',
+  tree: '나무', scrap: '고철', seed: '씨앗', water: '연못',
 };
 const WIDTH = 68, HEIGHT = 34, TOUCH_HEIGHT = 44;
 

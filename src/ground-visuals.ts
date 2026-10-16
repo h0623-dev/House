@@ -1,4 +1,4 @@
-import type { GroundResourceId, GroundResourceNode } from './ground-resources';
+import { GROUND_POND_SHORE_POLYGON, type GroundResourceId, type GroundResourceNode } from './ground-resources';
 
 export type GroundTreeVariant = 0 | 1 | 2;
 export type GroundSprite = 'tree' | 'stump' | 'scrap' | 'seed' | 'water' | 'underbrush';
@@ -168,12 +168,15 @@ export function getGroundContactShadow(sprite: GroundSprite, width: number, heig
 
 export function getGroundResourceVisual(node: GroundResourceNode, visual?: string): GroundResourceVisual {
   const variant = getGroundTreeVariant(node.id);
+  if (node.kind === 'water') return { sprite: 'water', variant,
+    width: node.bounds.right - node.bounds.left + 16, height: node.bounds.bottom - node.bounds.top + 23 };
+  if (node.kind === 'scrap') return { sprite: 'scrap', variant, width: 96 * node.scale, height: 78 * node.scale };
   if (node.kind === 'tree') {
     if (visual === 'stump') return { sprite: 'stump', variant, width: 46 * node.scale, height: 32 * node.scale };
     return { sprite: 'tree', variant, width: [111, 96, 120][variant] * node.scale,
       height: [146, 152, 146][variant] * node.scale };
   }
-  if (visual === 'depleted' && (node.kind === 'scrap' || node.kind === 'seed'))
+  if (visual === 'depleted' && node.kind === 'seed')
     return { sprite: 'underbrush', variant, width: 34 * node.scale, height: 22 * node.scale };
   const sprite = node.kind, frame = getGroundSpriteFrame(sprite);
   // Preserve the original ground-plane perspective within the prop budget.
@@ -189,6 +192,9 @@ export function getGroundSpriteBounds(sprite: GroundSprite, x: number, y: number
 }
 
 export function getGroundVisualBounds(node: GroundResourceNode, visual?: string): GroundVisualBounds {
+  if (node.kind === 'water') return [node.bounds.left - 8, node.bounds.top - 13, node.bounds.right + 8, node.bounds.bottom + 10];
+  if (node.kind === 'scrap') return [node.point[0] - 48 * node.scale, node.point[1] - 47 * node.scale,
+    node.point[0] + 48 * node.scale, node.point[1] + 31 * node.scale];
   const art = getGroundResourceVisual(node, visual);
   return getGroundSpriteBounds(art.sprite, node.point[0], node.point[1], art.width, art.height, art.variant);
 }
@@ -196,6 +202,9 @@ export function getGroundVisualBounds(node: GroundResourceNode, visual?: string)
 /** The painted silhouette can serve precise resource hit testing without
  * changing the much smaller physical trunk/prop collision footprint. */
 export function getGroundVisualPolygon(node: GroundResourceNode, visual?: string): [number, number][] {
+  if (node.kind === 'water') return GROUND_POND_SHORE_POLYGON.map(([x, y]) => [x, y]);
+  if (node.kind === 'scrap') return [[-42,-14],[-31,-43],[-11,-47],[38,-36],[48,10],[37,31],[-37,30],[-48,6]]
+    .map(([x, y]) => [node.point[0] + x * node.scale, node.point[1] + y * node.scale]);
   const art = getGroundResourceVisual(node, visual), frame = getGroundSpriteFrame(art.sprite, art.variant);
   return frame.contour.map(([x, y]) => [node.point[0] + (x - frame.anchor[0]) * art.width / frame.width,
     node.point[1] + (y - frame.anchor[1]) * art.height / frame.height]);

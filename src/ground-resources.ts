@@ -23,6 +23,8 @@ export interface GroundResourceNode {
   readonly point: GroundPoint;
   /** Only the physical trunk or ground prop is solid, never its high canopy. */
   readonly bounds: GroundBounds;
+  /** A pond follows its actual shore, so the dry corners stay walkable. */
+  readonly solidPolygon?: GroundPoint[];
   readonly approaches: GroundPoint[];
   readonly scale: number;
   /** One stable node receives the old site's depletion when a save migrates. */
@@ -49,8 +51,8 @@ export const GROUND_RESOURCE_ZONES: readonly GroundResourceZone[] = [
     path:[[647,930],[652,1025],[675,1110],[676,1180]],pathWidth:100},
   {id:'salvage',name:'고철 수거장',bounds:{left:830,top:840,right:1285,bottom:1250},
     path:[[1040,920],[1025,1010],[1080,1160]],pathWidth:100},
-  {id:'spring',name:'숲 샘터',bounds:{left:1200,top:830,right:1640,bottom:1260},
-    path:[[1400,900],[1390,995],[1435,1135],[1450,1180]],pathWidth:100},
+  {id:'spring',name:'숲속 큰 연못',bounds:{left:1200,top:830,right:1640,bottom:1260},
+    path:[[1350,900],[1250,950],[1230,1060],[1240,1205],[1430,1220]],pathWidth:100},
 ];
 export const GROUND_RESOURCE_BOUNDS: GroundBounds = {
   left: Math.min(...GROUND_REGIONS.map(region=>region.bounds.left)),
@@ -60,6 +62,15 @@ export const GROUND_RESOURCE_BOUNDS: GroundBounds = {
 };
 /** The largest existing animal keeps its complete body at every work stop. */
 export const GROUND_RESOURCE_APPROACH_RADIUS = 30.8;
+export const GROUND_POND_ID: GroundResourceId = 'water-01';
+export const GROUND_POND_CAPACITY = 10;
+export const GROUND_POND_POINT: GroundPoint = [1430,1080];
+export const GROUND_POND_BOUNDS: GroundBounds = {left:1280,top:990,right:1580,bottom:1170};
+/** The painted bank and navigation use this same authored, gently uneven shore. */
+export const GROUND_POND_SHORE_POLYGON: GroundPoint[] = [
+  [-150,-10],[-137,-48],[-95,-78],[-35,-90],[45,-85],[110,-65],
+  [145,-28],[150,14],[125,58],[65,83],[-10,90],[-83,75],[-133,44],
+].map(([x,y])=>[GROUND_POND_POINT[0]+x,GROUND_POND_POINT[1]+y] as GroundPoint);
 const APPROACH_MARGIN = GROUND_RESOURCE_APPROACH_RADIUS + 2;
 const maximumTruck = getTruckGroundFootprint(8).polygon;
 type NodeSpec = readonly [GroundResourceId, GroundPoint, number, GroundRegionId?];
@@ -116,9 +127,9 @@ const HOME_VERGE_SPECS: readonly NodeSpec[] = [
 ];
 const kindDetails: Record<GroundResourceKind,{siteId:OutdoorSiteId;resource:GroundResource;name:string;halfWidth:number;halfHeight:number}> = {
   tree:{siteId:'grove',resource:'wood',name:'숲 나무',halfWidth:18,halfHeight:12},
-  scrap:{siteId:'salvage',resource:'scrap',name:'고철 더미',halfWidth:20,halfHeight:15},
+  scrap:{siteId:'salvage',resource:'scrap',name:'고철 더미',halfWidth:40,halfHeight:27},
   seed:{siteId:'seed-meadow',resource:'seeds',name:'씨앗 풀',halfWidth:18,halfHeight:13},
-  water:{siteId:'spring',resource:'water',name:'샘물 웅덩이',halfWidth:21,halfHeight:15},
+  water:{siteId:'spring',resource:'water',name:'숲속 큰 연못',halfWidth:150,halfHeight:90},
 };
 const distanceToBounds = ([x,y]:GroundPoint,bounds:GroundBounds) =>
   Math.hypot(Math.max(bounds.left-x,x-bounds.right,0),Math.max(bounds.top-y,y-bounds.bottom,0));
@@ -133,15 +144,30 @@ const groundNode = ([id,point,scale,regionId]:NodeSpec):GroundResourceNode => {
 export const LEGACY_GROUND_RESOURCE_IDS: readonly GroundResourceId[] = [...TREE_SPECS,...PATCH_SPECS].map(([id])=>id);
 /** Exact pre-home catalog for save compatibility, in its original order. */
 export const PREVIOUS_GROUND_RESOURCE_IDS: readonly GroundResourceId[] = [...TREE_SPECS,...PATCH_SPECS,...REGIONAL_SPECS].map(([id])=>id);
-const nodes = [...TREE_SPECS,...PATCH_SPECS,...REGIONAL_SPECS,...HOME_VERGE_SPECS].map(groundNode);
+/** Exact published v0.48 catalog, including the twelve retired little springs. */
+export const V048_GROUND_RESOURCE_IDS: readonly GroundResourceId[] = [...TREE_SPECS,...PATCH_SPECS,...REGIONAL_SPECS,...HOME_VERGE_SPECS].map(([id])=>id);
+const nodes = [...TREE_SPECS,...PATCH_SPECS,...REGIONAL_SPECS,...HOME_VERGE_SPECS]
+  .filter(([id])=>!id.startsWith('water-')||id===GROUND_POND_ID)
+  .map(spec=>{
+    const node=groundNode(spec);
+    return node.kind==='water'?{...node,name:'숲속 큰 연못',point:[...GROUND_POND_POINT] as GroundPoint,scale:1,
+      regionId:'spring' as const,bounds:{...GROUND_POND_BOUNDS},solidPolygon:GROUND_POND_SHORE_POLYGON.map(point=>[...point] as GroundPoint)}:node;
+  });
 const homeNodeIds = new Set(HOME_VERGE_SPECS.map(([id])=>id));
 const reservedAccessBounds = Array.from({length:8},(_,index)=>getTruckAccessGeometry(index+1).bounds);
 /** Eight surrounding candidates let people approach the nearest clear side.
  * Authoring filters reserve the full animal circle around every living trunk
  * and prop, including the selected one, plus the maximum truck silhouette. */
 export const GROUND_RESOURCE_NODES: readonly GroundResourceNode[] = nodes.map(node=>{
-  const stopDistance=node.kind==='tree'?66:68,
-    candidates=Array.from({length:8},(_,index)=>{
+  const stopDistance=node.kind==='tree'?66:node.kind==='scrap'?96:68,
+    candidates:GroundPoint[]=node.kind==='water'?[
+      [node.bounds.left-APPROACH_MARGIN,node.point[1]],[node.bounds.right+APPROACH_MARGIN,node.point[1]],
+      [node.point[0],node.bounds.top-APPROACH_MARGIN],[node.point[0],node.bounds.bottom+APPROACH_MARGIN],
+      [node.bounds.left-APPROACH_MARGIN,node.bounds.top-APPROACH_MARGIN],
+      [node.bounds.right+APPROACH_MARGIN,node.bounds.top-APPROACH_MARGIN],
+      [node.bounds.left-APPROACH_MARGIN,node.bounds.bottom+APPROACH_MARGIN],
+      [node.bounds.right+APPROACH_MARGIN,node.bounds.bottom+APPROACH_MARGIN],
+    ]:Array.from({length:8},(_,index)=>{
       const angle=index*Math.PI/4;
       return [node.point[0]+Math.cos(angle)*stopDistance,node.point[1]+Math.sin(angle)*stopDistance] as GroundPoint;
     }),approaches=candidates.filter(point=>getConvexPolygonClearance(maximumTruck,point)>=APPROACH_MARGIN
