@@ -41,6 +41,8 @@ https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/content/roa
 
 v0.54 콘텐츠의 네이티브 호환 범위는 42~54입니다. 가로 앱 v0.42~v0.53은 APK를 다시 설치하지 않고 이번 게임 콘텐츠를 받을 수 있습니다. 후속 게임 콘텐츠도 새 앱의 동일한 콘텐츠 개인키로 서명하여 해당 독립 채널에 게시합니다. 호환 콘텐츠는 기존 시작 패치 화면과 안전한 저장·적용 절차로 자동 반영됩니다. Android 앱 자체 기능을 바꿀 때는 같은 APK 서명키로 앱 버전 코드를 올려 제공하며, 최종 설치 확인은 Android에서 진행합니다.
 
+`landscape-release.json`의 `minimumNativeVersionCode`는 콘텐츠 호환 최소 버전(42), `minimumFeatureNativeVersionCode`는 APK 기능 안내 기준(54)입니다. v0.54의 폴드 화면·시스템 글꼴 대응은 Android 코드 변경이므로, 42~53 앱은 호환 UI 패치를 받으면서 앱 기능 업데이트 안내도 받습니다. 이후 콘텐츠만 업데이트할 때도 기능 최소 버전 54를 유지해 같은 APK 설치를 반복해서 요구하지 않습니다.
+
 새 APK와 같은 버전의 콘텐츠를 제작할 때 `node scripts/create-landscape-release.mjs WEB_DIRECTORY SIGNED_APK`를 사용합니다. 별도 앱 설정과 실제 APK 서명·앱 ID·네이티브 공개키를 맞춘 다음 전용 staging 폴더에 APK·서명된 콘텐츠 ZIP·두 메타데이터만 준비합니다. 공개 전에는 APK·ZIP·메타데이터가 모두 같은 릴리스인지 확인하고 `landscape-releases`에 게시합니다. 개인키 백업을 배포 staging에 넣지 않습니다.
 
 새 콘텐츠는 항상 가로 앱용 `VITE_UPDATE_MANIFEST_URL`로 빌드해야 합니다. 기존 앱용 번들이 가로 앱의 APK 업데이트 주소를 덮어쓰지 않도록 합니다. 공개 `landscape-release.json`에는 개인키나 암호가 없으며, 앞으로도 같은 인증서·콘텐츠 공개키를 유지합니다.

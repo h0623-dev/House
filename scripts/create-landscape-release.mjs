@@ -17,8 +17,12 @@ const { version } = jsonFile(join(root, 'package.json'));
 const { versionCode } = jsonFile(join(root, 'release-version.json'));
 const config = jsonFile(join(root, 'landscape-release.json'));
 const minimumNativeVersionCode = config.minimumNativeVersionCode ?? 42;
+// Content can remain compatible with older shells while a new Android-only
+// feature still needs an APK offer. Keep that offer in later content releases.
+const minimumFeatureNativeVersionCode = config.minimumFeatureNativeVersionCode ?? minimumNativeVersionCode;
 requireRelease(typeof version === 'string' && /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version) && version.length <= 48, 'Landscape release requires a safe package version without filename-unsafe build metadata.');
 requireRelease([versionCode, minimumNativeVersionCode].every(value => Number.isSafeInteger(value) && value >= 42 && value <= 2100000000) && minimumNativeVersionCode <= versionCode, 'Landscape native compatibility must start at 42 or later and not exceed the release version code.');
+requireRelease(Number.isSafeInteger(minimumFeatureNativeVersionCode) && minimumFeatureNativeVersionCode >= minimumNativeVersionCode && minimumFeatureNativeVersionCode <= versionCode, 'Landscape APK feature minimum must stay within the native content compatibility range.');
 requireRelease(config.branch === 'landscape-releases' && config.applicationId === 'com.roadhaven.landscape', 'Landscape releases must use their separate app ID and landscape-releases branch.');
 requireRelease(typeof config.appName === 'string' && config.appName.length > 0, 'Landscape release must specify its app label.');
 requireRelease(/^[a-f0-9]{64}$/.test(config.apkCertificateSha256 || '') && /^[a-f0-9]{64}$/.test(config.contentPublicKeySha256 || ''), 'Landscape signing fingerprints must be recorded before packaging.');
@@ -108,7 +112,7 @@ const contentSignature = sign('sha256', payload, privateKey);
 requireRelease(verify('sha256', payload, publicKey, contentSignature), 'Content signature could not be authenticated with the pinned landscape key.');
 copyFileSync(apk, join(output, 'downloads', apkName));
 writeJson(join(output, 'game-update.json'), { payload: payload.toString('base64'), signature: contentSignature.toString('base64') });
-writeJson(join(output, 'update.json'), { version, versionCode, minimumNativeVersionCode,
+writeJson(join(output, 'update.json'), { version, versionCode, minimumNativeVersionCode: minimumFeatureNativeVersionCode,
   apkUrl: `${endpoint}/downloads/${apkName}`, sha256: sha256(readFileSync(apk)),
   notes: process.env.LANDSCAPE_RELEASE_NOTES || `로드헤이븐 가로 ${version} 업데이트 · 기존 앱과 별도로 설치되는 가로 화면 앱이에요.`, publishedAt });
 console.log(JSON.stringify({ output, applicationId: config.applicationId, version, versionCode,

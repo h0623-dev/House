@@ -3,6 +3,7 @@
   "appName": "로드헤이븐 가로",
   "branch": "landscape-releases",
   "minimumNativeVersionCode": 42,
+  "minimumFeatureNativeVersionCode": 54,
   "apkCertificateSha256": "eaff1ecb1e2c11c3a7ec43936e454caacac7e641e38ee765a71c1d1f8b5fa267",
   "contentPublicKeyBase64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYhB4jjjSp7Lk9oWdFYkDQqBrzqLSmaq9Q90maMkX1FWEoEHETbqHusVDDTxR+b9Bc5+QjQeR/VK17TAsiO/gNg==",
   "contentPublicKeySha256": "e91919928140e9b09488d90146011bf60e721e8b2bd8292d70cd63341fb2e2e1"
