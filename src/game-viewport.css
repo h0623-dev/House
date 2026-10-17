@@ -1,0 +1,38 @@
+/* The safe rectangle belongs to the shell once. HUD sizes adapt within it. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html[data-game-layout],
+html[data-game-layout] body {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html[data-game-layout] #app {
+  position: fixed;
+  inset: auto;
+  left: var(--game-viewport-left, 0px);
+  top: var(--game-viewport-top, 0px);
+  width: var(--game-viewport-width, 100vw);
+  height: var(--game-viewport-height, 100dvh);
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+html[data-game-layout] #app .game-shell.village-shell {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: var(--game-safe-top, 0px) var(--game-safe-right, 0px) var(--game-safe-bottom, 0px) var(--game-safe-left, 0px);
+  overflow: hidden;
+}

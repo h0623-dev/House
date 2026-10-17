@@ -1,0 +1,527 @@
+/* Size the interface from the available CSS pixels, including when a foldable
+   changes its window size. The world canvas keeps its own camera coordinates. */
+:root {
+  --ui-short-side: min(var(--game-usable-width, 100vw), var(--game-usable-height, 100dvh));
+  --ui-font-body: clamp(13px, calc(var(--ui-short-side) * .022), 15px);
+  --ui-font-label: clamp(12px, calc(var(--ui-short-side) * .020), 14px);
+  --ui-font-small: clamp(10px, calc(var(--ui-short-side) * .017), 12px);
+  --ui-touch: clamp(44px, calc(var(--ui-short-side) * .072), 48px);
+  --ui-gap: clamp(6px, calc(var(--ui-short-side) * .013), 10px);
+  --ui-edge: clamp(6px, calc(var(--ui-short-side) * .015), 12px);
+  --ui-header-height: clamp(52px, calc(var(--ui-short-side) * .095), 64px);
+  --ui-total-header-height: calc(var(--ui-header-height) + 44px);
+  --ui-nav-height: clamp(68px, calc(var(--ui-short-side) * .125), 82px);
+  font-family: 'Noto Sans KR Variable', 'DM Sans Variable', sans-serif;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body { font-size: var(--ui-font-body); }
+button, input, select, textarea { font-family: inherit; }
+
+/* These rows occupy the shell's content box. The viewport foundation already
+   reserves display cutouts and the Android/iOS system bars once. */
+#app .game-shell.village-shell {
+  --landscape-header: var(--ui-header-height);
+  --landscape-nav: var(--ui-nav-height);
+  --landscape-panel: clamp(268px, calc(var(--game-usable-width, 100vw) * .32), 360px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--ui-header-height) 44px minmax(0, 1fr) var(--ui-nav-height);
+  min-width: 0;
+  min-height: 0;
+}
+
+#app .village-shell .game-topbar {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px var(--ui-edge);
+  gap: var(--ui-gap);
+}
+#app .village-shell :is(.profile-button, .village-menu) {
+  flex: 0 0 var(--ui-touch);
+  width: var(--ui-touch);
+  height: var(--ui-touch);
+  min-width: var(--ui-touch);
+  min-height: var(--ui-touch);
+}
+#app .village-shell .village-menu > .icon { width: 27px; height: 27px; }
+#app .village-shell .survivor-name {
+  flex: 1 1 62px;
+  min-width: 0;
+  gap: 2px;
+}
+#app .village-shell .survivor-name > strong {
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--ui-font-label);
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#app .village-shell .survivor-name > span {
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--ui-font-small);
+  line-height: 1.4;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#app .village-shell .survivor-name i { margin: 0 3px; }
+#app .village-shell .vitals {
+  flex: 0 0 clamp(108px, calc(var(--ui-short-side) * .19), 136px);
+  width: auto;
+  min-width: 0;
+  min-height: var(--ui-touch);
+  margin-left: auto;
+  justify-content: center;
+  gap: 3px;
+  padding: 0;
+}
+#app .village-shell .vital { min-width: 0; gap: 4px; }
+#app .village-shell .vital > span .icon { width: 13px; height: 13px; }
+#app .village-shell .vital .meter { min-width: 20px; height: 6px; }
+#app .village-shell .vitals strong {
+  flex: 0 0 25px;
+  width: 25px;
+  font-size: var(--ui-font-small);
+  line-height: 1.25;
+}
+#app .village-shell .energy-auto-rate {
+  font-size: var(--ui-font-small);
+  line-height: 1.1;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+#app .village-shell .resource-bar {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--ui-edge);
+  border-left: 0;
+}
+#app .village-shell .resource {
+  min-width: 0;
+  min-height: 0;
+  padding: 2px;
+  flex-direction: row;
+  gap: clamp(3px, calc(var(--ui-short-side) * .008), 6px);
+}
+#app .village-shell .resource-icon,
+#app .village-shell .resource-icon > .icon {
+  flex: 0 0 clamp(26px, calc(var(--ui-short-side) * .05), 34px);
+  width: clamp(26px, calc(var(--ui-short-side) * .05), 34px);
+  height: clamp(26px, calc(var(--ui-short-side) * .05), 34px);
+}
+#app .village-shell .resource strong {
+  min-width: 0;
+  font-size: var(--ui-font-label);
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+#app .village-shell .game-main {
+  grid-column: 1 / -1;
+  grid-row: 3 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+#app .village-shell .scene-card {
+  --hud-floor-width: calc(var(--ui-touch) + 80px);
+  --ui-panel-top: calc(var(--ui-edge) + var(--ui-touch) + 12px);
+  container: game-scene / inline-size;
+  min-width: 0;
+  min-height: 0;
+}
+#app .village-shell .scene-card:has(.truck-floor-controls[data-floor-count="2"]) {
+  --hud-floor-width: calc(var(--ui-touch) * 2 + 84px);
+}
+#app .village-shell .scene-card:has(.truck-floor-controls[data-floor-count="3"]),
+#app .village-shell .scene-card:has(.truck-floor-controls.show-locked-floors) {
+  --hud-floor-width: calc(var(--ui-touch) * 3 + 88px);
+}
+
+/* Floor labels stay horizontal; the expansion button has room for its icon
+   and the complete Korean word instead of forcing each syllable to a line. */
+#app .village-shell .scene-card .truck-floor-controls {
+  top: var(--ui-edge);
+  right: auto;
+  bottom: auto;
+  left: var(--ui-edge);
+  width: max-content;
+  max-width: calc(100% - var(--ui-edge) * 2);
+  padding: 2px;
+  gap: 3px;
+}
+#app .village-shell .scene-card .truck-floor-controls > button {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--ui-touch);
+  height: var(--ui-touch);
+  min-height: var(--ui-touch);
+  padding: 3px 6px;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--ui-font-label);
+  line-height: 1.25;
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  letter-spacing: 0;
+}
+#app .village-shell .scene-card .truck-floor-controls > button small {
+  flex: 0 0 auto;
+  font-size: var(--ui-font-small);
+  line-height: 1.25;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+#app .village-shell .scene-card .truck-floor-controls > button[data-open="floors"] {
+  min-width: 70px;
+  flex-direction: row;
+  gap: 4px;
+}
+#app .village-shell .scene-card .truck-floor-controls > button[data-open="floors"] small {
+  font-size: var(--ui-font-label);
+  font-weight: 650;
+}
+#app .village-shell .scene-card .truck-floor-controls > button > .icon {
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
+}
+
+#app .village-shell .scene-card .settlement-objective {
+  top: var(--ui-edge);
+  right: var(--ui-edge);
+  bottom: auto;
+  left: auto;
+  width: clamp(230px, 30%, 360px);
+  max-width: calc(100% - var(--hud-floor-width) - var(--ui-edge) * 3);
+  height: calc(var(--ui-touch) + 6px);
+  min-height: calc(var(--ui-touch) + 6px);
+  padding: 4px 5px 4px 9px;
+  gap: 7px;
+  align-items: center;
+}
+#app .village-shell .scene-card .settlement-objective > span { display: none; }
+#app .village-shell .scene-card .settlement-objective > div {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  overflow: hidden;
+}
+#app .village-shell .scene-card .settlement-objective strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  font-size: var(--ui-font-label);
+  line-height: 1.4;
+  font-weight: 800;
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
+  letter-spacing: -.02em;
+}
+#app .village-shell .scene-card .settlement-objective p {
+  display: block;
+  margin: 2px 0 0;
+  font-size: var(--ui-font-small);
+  line-height: 1.35;
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#app .village-shell .scene-card .objective-cta {
+  flex: 0 0 auto;
+  min-width: 68px;
+  max-width: none;
+  min-height: var(--ui-touch);
+  padding: 4px 7px;
+  font-size: var(--ui-font-small);
+  line-height: 1.3;
+  white-space: nowrap;
+  word-break: keep-all;
+  letter-spacing: 0;
+}
+
+#app .village-shell .scene-card .road-controls {
+  top: var(--ui-edge);
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(var(--ui-touch) + 6px);
+  max-width: calc(var(--ui-touch) + 6px);
+  padding: 2px;
+  gap: 2px;
+}
+#app .village-shell .scene-card .road-controls > button {
+  flex: 0 0 var(--ui-touch);
+  min-width: var(--ui-touch);
+  width: var(--ui-touch);
+  height: var(--ui-touch);
+  min-height: var(--ui-touch);
+  padding: 2px 0;
+  gap: 1px;
+}
+#app .village-shell .scene-card .road-controls > button > small {
+  font-size: var(--ui-font-small);
+  line-height: 1.25;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+#app .village-shell .scene-card.travel-open .road-controls {
+  width: calc(var(--ui-touch) * 3 + 10px);
+  max-width: calc(var(--ui-touch) * 3 + 10px);
+}
+
+/* Four menu buttons float between the left activity dock and the map tools.
+   Their labels never get stretched to match a larger tablet canvas. */
+#app .village-shell .game-nav {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  align-self: end;
+  justify-self: center;
+  z-index: 8;
+  width: clamp(224px, calc(100% - 272px), 520px);
+  max-width: calc(100% - 136px);
+  height: var(--ui-nav-height);
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ui-gap);
+  padding: 4px 5px var(--ui-edge);
+  pointer-events: none;
+}
+#app .village-shell .game-nav .nav-button {
+  min-width: var(--ui-touch);
+  min-height: var(--ui-touch);
+  height: 100%;
+  padding: 3px 2px;
+  gap: 2px;
+  flex-direction: column;
+  pointer-events: auto;
+}
+#app .village-shell .game-nav .nav-button > .icon {
+  width: clamp(29px, calc(var(--ui-short-side) * .052), 36px);
+  height: clamp(28px, calc(var(--ui-short-side) * .05), 34px);
+}
+#app .village-shell .game-nav .nav-button > span {
+  font-size: var(--ui-font-label);
+  line-height: 1.3;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+#app .village-shell .scene-card .village-hub {
+  left: var(--ui-edge);
+  right: auto;
+  bottom: calc(var(--ui-edge) + var(--ui-touch) + var(--ui-gap));
+  width: auto;
+  max-width: calc(100% - var(--ui-edge) * 2);
+}
+#app .village-shell .scene-card .village-hub-dock {
+  min-height: var(--ui-touch);
+  padding: 0;
+}
+#app .village-shell .scene-card .village-hub-heading,
+#app .village-shell .scene-card .village-hub-dock[data-village-activity-count="0"] .village-hub-heading {
+  height: var(--ui-touch);
+  padding: 0;
+}
+#app .village-shell .scene-card :is(.village-hub-heading > span, .village-activity-list) { display: none; }
+#app .village-shell .scene-card .village-hub-heading > button,
+#app .village-shell .scene-card .village-hub-dock[data-village-activity-count="0"] .village-hub-heading > button {
+  position: static;
+  width: auto;
+  min-width: 112px;
+  height: var(--ui-touch);
+  min-height: var(--ui-touch);
+  flex-direction: row;
+  padding: 4px 8px;
+  gap: 5px;
+  border: 0;
+}
+#app .village-shell .scene-card .village-hub-heading > button strong {
+  font-size: var(--ui-font-label);
+  line-height: 1.3;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+#app .village-shell .scene-card .village-hub-heading > button > .icon:first-child { width: 27px; height: 27px; }
+#app .village-shell .scene-card .gathering-dock { left: var(--ui-edge); bottom: var(--ui-edge); }
+#app .village-shell .scene-card .gathering-toggle {
+  min-width: 96px;
+  min-height: var(--ui-touch);
+  height: var(--ui-touch);
+  padding: 4px 7px;
+  gap: 5px;
+}
+#app .village-shell .scene-card .gathering-toggle strong {
+  font-size: var(--ui-font-label);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+#app .village-shell .scene-card .gathering-tray {
+  left: 0;
+  bottom: calc(var(--ui-touch) + var(--ui-gap));
+  width: 256px;
+  max-width: calc(var(--game-usable-width, 100vw) - var(--ui-edge) * 2);
+  max-height: calc(var(--game-usable-height, 100dvh) - var(--ui-header-height) - 86px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 5px;
+  padding: 7px;
+}
+#app .village-shell .scene-card .gathering-tray > button {
+  min-width: var(--ui-touch);
+  min-height: var(--ui-touch);
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 5px;
+}
+#app .village-shell .scene-card .gathering-tray > button > span { min-width: 0; align-items: flex-start; }
+#app .village-shell .scene-card .gathering-tray strong { font-size: var(--ui-font-label); }
+#app .village-shell .scene-card .gathering-tray small { font-size: var(--ui-font-small); }
+#app .village-shell .scene-card .cozy-life-tool {
+  left: var(--ui-edge);
+  bottom: calc(var(--ui-edge) + var(--ui-touch) * 2 + var(--ui-gap) * 2);
+  min-width: var(--ui-touch);
+  width: calc(var(--ui-touch) + 8px);
+  min-height: calc(var(--ui-touch) + 5px);
+  padding: 4px;
+}
+#app .village-shell .scene-card .cozy-life-tool > small { font-size: var(--ui-font-small); line-height: 1.25; white-space: nowrap; }
+
+#app .village-shell .scene-card .camera-tool {
+  right: var(--ui-edge);
+  bottom: var(--ui-edge);
+  width: calc(var(--ui-touch) + 4px);
+  min-height: calc(var(--ui-touch) + 16px);
+}
+#app .village-shell .scene-card .camera-tool > span { width: var(--ui-touch); height: var(--ui-touch); }
+#app .village-shell .scene-card .camera-tool > small { font-size: var(--ui-font-small); line-height: 1.25; white-space: nowrap; }
+#app .village-shell .scene-card:not(.camera-open) .map-controls {
+  right: calc(var(--ui-edge) + 2px);
+  bottom: calc(var(--ui-edge) + var(--ui-touch) + 24px);
+  width: var(--ui-touch);
+  gap: var(--ui-gap);
+}
+#app .village-shell .scene-card:not(.camera-open) .map-controls > button[data-map-zoom] {
+  width: var(--ui-touch);
+  min-width: var(--ui-touch);
+  min-height: var(--ui-touch);
+  height: var(--ui-touch);
+}
+#app .village-shell .scene-card.camera-open .map-controls {
+  right: var(--ui-edge);
+  bottom: calc(var(--ui-nav-height) + var(--ui-edge));
+  height: auto;
+  max-width: calc(100% - var(--ui-edge) * 2);
+  flex-wrap: wrap;
+}
+#app .village-shell .scene-card.camera-open .map-controls > button {
+  min-width: var(--ui-touch);
+  min-height: var(--ui-touch);
+  height: var(--ui-touch);
+  width: auto;
+  padding: 2px 5px;
+}
+#app .village-shell .scene-card.camera-open .map-controls > button small { font-size: var(--ui-font-small); line-height: 1.25; }
+#app .village-shell .scene-card.camera-open .map-move-tool {
+  top: auto;
+  left: auto;
+  right: var(--ui-edge);
+  bottom: calc(var(--ui-nav-height) + var(--ui-touch) + 24px);
+  width: calc(var(--ui-touch) + 6px);
+  min-height: calc(var(--ui-touch) + 12px);
+}
+#app .village-shell .scene-card.camera-open .map-move-tool > small { font-size: var(--ui-font-small); line-height: 1.25; white-space: nowrap; }
+#app .village-shell .scene-card:is(.work-view, .farm-tray-open, .facility-selected, .construction-mode, .planning-catalog, .planning-expansion).camera-open :is(.map-controls, .map-move-tool) {
+  right: calc(var(--landscape-panel) + var(--ui-edge) * 2);
+}
+
+@media (orientation: landscape) and (min-width: 600px) {
+  :root { --ui-total-header-height: var(--ui-header-height); }
+  #app .game-shell.village-shell {
+    grid-template-columns: minmax(280px, 35%) minmax(0, 1fr);
+    grid-template-rows: var(--ui-header-height) minmax(0, 1fr) var(--ui-nav-height);
+  }
+  #app .village-shell .game-topbar { grid-column: 1; grid-row: 1; }
+  #app .village-shell .resource-bar { grid-column: 2; grid-row: 1; padding-inline: 3px; border-left: 1px solid #c4aa77; }
+  #app .village-shell .game-main { grid-row: 2 / -1; }
+  #app .village-shell .game-nav { grid-row: 3; }
+}
+
+/* On a compact window expanded travel uses its own row. The quest title stays
+   on one line with an ellipsis, while the whole card still opens the full goal. */
+@container game-scene (max-width: 959px) {
+  #app .village-shell .scene-card.travel-open .road-controls { top: calc(var(--ui-edge) + var(--ui-touch) + 12px); }
+}
+@container game-scene (max-width: 649px) {
+  #app .village-shell .scene-card .road-controls { top: calc(var(--ui-edge) + var(--ui-touch) + 12px); }
+  #app .village-shell .scene-card .settlement-objective { padding-left: 7px; gap: 5px; }
+  #app .village-shell .scene-card .settlement-objective p { display: none; }
+  #app .village-shell .scene-card .objective-cta { min-width: 64px; padding-inline: 5px; }
+}
+@container game-scene (max-width: 479px) {
+  #app .village-shell .scene-card .settlement-objective {
+    top: calc(var(--ui-edge) + var(--ui-touch) + 12px);
+    left: var(--ui-edge);
+    width: auto;
+    max-width: none;
+  }
+  #app .village-shell .scene-card .road-controls,
+  #app .village-shell .scene-card.travel-open .road-controls {
+    top: var(--ui-edge);
+    left: auto;
+    right: var(--ui-edge);
+    transform: none;
+  }
+  #app .village-shell .scene-card.travel-open .road-controls { top: calc(var(--ui-edge) + var(--ui-touch) * 2 + 24px); }
+  #app .village-shell .scene-card .village-hub-heading > button,
+  #app .village-shell .scene-card .village-hub-dock[data-village-activity-count="0"] .village-hub-heading > button { min-width: 102px; padding-inline: 5px; }
+  #app .village-shell .scene-card .village-hub-heading > button strong { font-size: var(--ui-font-small); }
+}
+
+@media (orientation: landscape) and (max-height: 359px) {
+  #app .village-shell .energy-auto-rate { display: none; }
+  #app .village-shell .scene-card .cozy-life-tool {
+    left: calc(var(--ui-edge) + 118px);
+    bottom: calc(var(--ui-nav-height) + var(--ui-edge));
+    min-height: var(--ui-touch);
+    width: var(--ui-touch);
+  }
+  #app .village-shell .scene-card .cozy-life-tool > .icon { width: 19px; height: 19px; }
+  #app .village-shell .scene-card .cozy-life-tool > small { font-size: 10px; }
+}
+
+/* A browser may allow continuing in portrait. Keep the full-width menu in its
+   own row there, so its buttons do not cover the left activity dock. */
+@media (orientation: portrait) {
+  #app .village-shell .game-main { grid-row: 3; }
+  #app .village-shell .game-nav {
+    width: min(520px, calc(100% - var(--ui-edge) * 2));
+    max-width: calc(100% - var(--ui-edge) * 2);
+  }
+}
+
+/* Keep the keyboard inside its own visual viewport without converting a text
+   entry into a different game layout or auto-zooming the world. */
+html[data-game-keyboard="open"] #app .village-shell .game-nav,
+html[data-game-keyboard="open"] #app .village-shell .scene-card :is(.gathering-dock, .village-hub, .cozy-life-tool, .camera-tool, .map-controls) { visibility: hidden; }

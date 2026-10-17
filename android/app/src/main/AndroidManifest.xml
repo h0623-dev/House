@@ -11,9 +11,10 @@
         android:theme="@style/AppTheme">
 
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale"
             android:name="com.roadhaven.game.MainActivity"
             android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="true"
             android:label="@string/road_haven_app_label"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"

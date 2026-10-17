@@ -1,0 +1,326 @@
+/* Menus use the available CSS viewport, including a fold or an on-screen keyboard. */
+:root {
+  --panel-window-height: min(var(--game-viewport-height, 100dvh), var(--game-visible-height, 100dvh));
+  --panel-body-size: var(--ui-font-body, 13px);
+  --panel-label-size: var(--ui-font-label, 12px);
+  --panel-small-size: var(--ui-font-small, 11px);
+  --panel-touch: var(--ui-touch, 44px);
+  --panel-edge: var(--ui-edge, 10px);
+  --panel-side-width: clamp(268px, calc(var(--game-usable-width, 100vw) * .32), 360px);
+}
+
+#modal-root {
+  position: fixed;
+  inset: auto;
+  top: var(--game-visible-top, var(--game-viewport-top, 0px));
+  left: var(--game-visible-left, var(--game-viewport-left, 0px));
+  width: var(--game-visible-width, var(--game-viewport-width, 100vw));
+  height: var(--panel-window-height);
+  min-width: 0;
+  min-height: 0;
+}
+
+#modal-root:not(.planning-catalog):not(.planning-expansion) {
+  padding: max(var(--panel-edge), var(--game-safe-top, env(safe-area-inset-top)))
+    max(var(--panel-edge), var(--game-safe-right, env(safe-area-inset-right)))
+    max(var(--panel-edge), var(--game-safe-bottom, env(safe-area-inset-bottom)))
+    max(var(--panel-edge), var(--game-safe-left, env(safe-area-inset-left)));
+  overflow: hidden;
+}
+
+#modal-root .modal {
+  --dialog-gutter: clamp(14px, 2.2vw, 24px);
+  container: game-dialog / inline-size;
+  min-width: 0;
+  width: min(540px, 100%);
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  font-size: var(--panel-body-size);
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  scroll-padding-block: 84px 18px;
+}
+
+#modal-root .modal:is(.modal-wide, .modal-cozy-life) { width: min(800px, 100%); }
+#modal-root .modal:is(.modal-activity, .modal-energy, .modal-shop-confirm, .modal-reset) { width: min(460px, 100%); }
+#modal-root .modal .game-dialog-heading {
+  position: sticky;
+  top: 0;
+  min-height: 64px;
+  padding: 8px 10px 8px var(--dialog-gutter);
+  gap: var(--ui-gap, 8px);
+}
+#modal-root .game-dialog-heading h2 {
+  font-size: clamp(18px, calc(var(--panel-body-size) + 6px), 21px);
+  line-height: 1.4;
+  letter-spacing: -.35px;
+}
+#modal-root .game-dialog-heading .eyebrow { font-size: var(--panel-small-size); letter-spacing: 0; }
+#modal-root .game-dialog-heading .modal-close {
+  flex: 0 0 var(--panel-touch);
+  min-width: var(--panel-touch);
+  min-height: var(--panel-touch);
+  width: var(--panel-touch);
+  height: var(--panel-touch);
+}
+#modal-root .modal :is(button, summary) {
+  min-height: var(--panel-touch);
+  line-height: 1.45;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+#modal-root .modal :is(.button, .text-button, .shop-buy, .shop-confirm-button, .shop-cancel-button, .farm-deliver-button) {
+  font-size: var(--panel-label-size);
+  white-space: normal;
+}
+#modal-root .modal :is(.modal-description, .settings-row p, .guide-list p, .pet-dialogue, .release-notes, .shop-confirm-detail, .growth-help p, .growth-history-content > p) {
+  font-size: var(--panel-body-size);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+#modal-root .modal :is(.fine-print, .info-note, .inventory-item p, .inventory-item small, .plot-state, .seed-card > small, .seed-card-count, .seed-card-note, .shop-stock, .shop-crop-yield, .shop-pet-detail, .companion-xp, .unit-skill-description, .farm-care-help, .farm-knowledge-note) {
+  font-size: var(--panel-small-size);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+#modal-root .modal :is(.seed-card > strong, .plot-card h3, .inventory-item strong, .shop-product h3, .quest-row h3, .settings-row strong, .guide-list h3, .companion-card-info > strong) {
+  font-size: var(--panel-label-size);
+  line-height: 1.5;
+}
+#modal-root .modal :is(.quest-row p, .quest-row small, .update-box > p, .update-box > small, .exploration-list small, .farm-care-help p, .farm-ledger-note, .farm-delivery-shortage, .farm-delivery-preview-copy > span, .farm-delivery-preview-copy > small, .farm-next-step small) { font-size: var(--panel-small-size); line-height: 1.65; }
+#modal-root .modal :is(.farm-delivery-request p, .farm-care-help > summary, .farm-next-step strong, .farm-growth-links > button) { font-size: var(--panel-label-size); line-height: 1.5; }
+#modal-root .modal :is(.cost-row, .shop-quantity, .shop-wallet, .farm-delivery-heading, .growth-simple-overview, .unit-team-heading) { flex-wrap: wrap; }
+#modal-root .modal .cost-row > span { flex: 1 1 130px; min-width: 0; font-size: var(--panel-label-size); }
+#modal-root .modal .cost-row strong { font-size: inherit; }
+#modal-root .modal :is(.seed-inventory, .farm-grid, .inventory-grid, .shop-product-grid, .animal-meet-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: var(--ui-gap, 10px);
+}
+#modal-root .modal :is(.seed-card, .plot-card, .inventory-item, .shop-product, .companion-card, .ground-node-choice) { min-width: 0; }
+#modal-root .modal .farm-crop-stock-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr)); }
+#modal-root .modal :is(.farm-crop-stock-grid strong, .farm-crop-stock-grid span, .farm-delivery-rewards small) { font-size: var(--panel-small-size); line-height: 1.5; }
+#modal-root .modal :is(.shop-tabs > button > span, .shop-quantity > span, .shop-buy > span, .shop-sale-button > span, .farm-delivery-preview-copy > strong) {
+  font-size: var(--panel-label-size);
+  line-height: 1.5;
+}
+#modal-root .modal :is(.shop-tabs, .cozy-tabs) { gap: 5px; }
+#modal-root .modal .shop-tabs > button { padding: 5px 3px; flex-direction: column; }
+#modal-root .modal .shop-outfit-card { grid-template-columns: minmax(104px, 38%) minmax(0, 1fr); }
+#modal-root .modal .shop-sale-button { min-width: 88px; width: auto; padding-inline: 10px; }
+#modal-root .modal .shop-sale-copy { overflow-wrap: anywhere; }
+#modal-root .modal .name-input { max-width: 100%; min-height: var(--panel-touch); font-size: 16px; scroll-margin-block: 90px 24px; }
+#modal-root .modal :is(.growth-current-instruction, .growth-all-complete h3) { font-size: clamp(17px, calc(var(--panel-body-size) + 4px), 20px); line-height: 1.6; }
+#modal-root .modal :is(.growth-history-title, .growth-help > summary, .growth-all-goals > summary, .growth-quest-count) { font-size: var(--panel-label-size); }
+
+/* Small cards grow taller when text needs space; Korean labels stay together. */
+#modal-root .modal .cozy-tabs > button { font-size: var(--panel-label-size); padding: 8px 5px; }
+#modal-root .modal :is(.cozy-action-button, .cozy-detail-link) {
+  /* Older cozy controls declare an important font size; override only those controls. */
+  font-size: var(--panel-label-size) !important;
+  min-height: var(--panel-touch);
+  min-width: 72px;
+  max-width: none;
+  white-space: normal;
+  padding: 8px;
+}
+#modal-root .modal .cozy-friend-grid { grid-template-columns: 1fr; }
+#modal-root .modal .cozy-decor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#modal-root .modal :is(.cozy-dialogue, .cozy-day-heading p, .cozy-section-intro p, .cozy-goal-copy > p, .cozy-decor-copy > p, .cozy-action-copy > p) {
+  font-size: var(--panel-body-size);
+  line-height: 1.65;
+}
+#modal-root .modal :is(.cozy-goal-copy h4, .cozy-decor-copy h3, .cozy-action-copy > strong, .cozy-day-links strong) { font-size: var(--panel-label-size); line-height: 1.5; }
+#modal-root .modal :is(.cozy-note, .cozy-likes, .cozy-friend-activity, .cozy-friend-card > header small, .cozy-affinity strong, .cozy-action-copy > span > small, .cozy-cost, .cozy-day-links small) { font-size: var(--panel-small-size); line-height: 1.6; }
+#modal-root .modal .cozy-decor-card > footer { flex-wrap: wrap; }
+#modal-root .modal .cozy-decor-card > footer > button { flex: 1 1 80px; }
+#modal-root .modal .cozy-goal-copy > div:first-child { flex-wrap: wrap; gap: 3px 8px; }
+
+@container game-dialog (min-width: 580px) {
+  #modal-root .modal .cozy-friend-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #modal-root .modal .cozy-decor-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #modal-root .modal .shop-tabs > button { flex-direction: row; }
+}
+@container game-dialog (max-width: 330px) {
+  #modal-root .modal :is(.seed-inventory, .farm-grid, .inventory-grid, .shop-product-grid, .animal-meet-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #modal-root .modal .cozy-tabs > button { flex-direction: column; gap: 3px; }
+  #modal-root .modal .cozy-day-goal { flex-wrap: wrap; }
+  #modal-root .modal .cozy-day-goal > .cozy-action-button { margin-left: auto; }
+  #modal-root .modal .cozy-friend-action { grid-template-columns: minmax(0, 1fr); }
+  #modal-root .modal .cozy-friend-action > button { justify-self: start; }
+  #modal-root .modal .shop-outfit-card { grid-template-columns: 1fr; }
+  #modal-root .modal .shop-outfit-pair { justify-content: center; }
+}
+@container game-dialog (max-width: 250px) {
+  #modal-root .modal :is(.seed-inventory, .farm-grid, .inventory-grid, .shop-product-grid, .animal-meet-grid, .cozy-decor-grid, .cozy-day-links) { grid-template-columns: 1fr; }
+  #modal-root .modal .shop-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #modal-root .modal .cozy-tabs { grid-template-columns: 1fr; }
+  #modal-root .modal .cozy-tabs > button { flex-direction: row; }
+}
+
+/* Context menus stay bounded by the scene, with a persistent dismiss row. */
+.village-shell .scene-card :is(#farm-tray, .facility-sheet, .animal-sheet, .construction-bar) {
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scroll-padding-block: 72px 12px;
+  font-size: var(--panel-body-size);
+  line-height: 1.5;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.village-shell .scene-card :is(.farm-tray-heading, .facility-sheet-heading, .animal-sheet-heading) {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  min-height: calc(var(--panel-touch) + 8px);
+  gap: 7px;
+  background: #fff8e6;
+}
+.village-shell .scene-card .panel-dismiss {
+  flex: 0 0 auto;
+  min-width: 72px;
+  min-height: var(--panel-touch);
+  height: auto;
+  white-space: nowrap;
+}
+.village-shell .scene-card .panel-dismiss > small { font-size: var(--panel-small-size); }
+.village-shell .scene-card :is(.farm-tray-heading > strong, .facility-sheet-heading h3, .animal-sheet-heading strong, .construction-info > strong, .plot-selector strong, .planting-selection strong) { font-size: var(--panel-body-size); line-height: 1.45; }
+.village-shell .scene-card :is(.facility-production > span, .facility-recipe, .facility-sheet-heading small, .animal-sheet-heading small, .animal-sheet > p, .decor-context-description, .plot-selector span, .planting-selection small, .construction-info small, .construction-info .construction-valid, .construction-info .construction-invalid, .construction-size, .construction-cost) { font-size: var(--panel-small-size); line-height: 1.55; }
+.village-shell .scene-card :is(.quick-action > small, .context-action small, .context-direction small, .context-details small, .planting-tool small, .facility-secondary small, .animal-sheet-actions small) {
+  font-size: var(--panel-small-size);
+  line-height: 1.4;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+.village-shell .scene-card :is(.facility-primary, .facility-repeat) { min-height: var(--panel-touch); font-size: var(--panel-label-size); line-height: 1.5; }
+.village-shell .scene-card :is(.facility-secondary, .quick-action, .planting-tool, .context-action, .context-direction, .context-details) { min-height: calc(var(--panel-touch) + 10px); padding: 5px; }
+.village-shell .scene-card .facility-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.village-shell .scene-card .facility-primary { grid-column: 1 / -1; }
+.village-shell .scene-card #decor-sheet .facility-sheet-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.village-shell .scene-card #decor-sheet .facility-primary { grid-column: auto; }
+.village-shell .scene-card :is(.facility-secondary, .facility-primary, .animal-sheet-actions > button) { min-width: 0; white-space: normal; word-break: keep-all; }
+.village-shell .scene-card .animal-sheet .cozy-friend-action { grid-template-columns: minmax(0, 1fr); }
+.village-shell .scene-card .animal-sheet .cozy-friend-action > button { justify-self: stretch; max-width: none; }
+.village-shell .scene-card .animal-sheet :is(.cozy-action-button, .cozy-detail-link) { font-size: var(--panel-label-size) !important; min-height: var(--panel-touch); }
+.village-shell .scene-card .animal-sheet :is(.cozy-dialogue, .cozy-action-copy > strong) { font-size: var(--panel-label-size); line-height: 1.6; }
+.village-shell .scene-card .animal-sheet :is(.cozy-action-copy > p, .cozy-action-copy > span > small, .cozy-affinity strong, .cozy-cost) { font-size: var(--panel-small-size); line-height: 1.55; }
+.village-shell .scene-card .construction-bar :is(.placement-confirm, .placement-cancel, .placement-rotate) { min-height: calc(var(--panel-touch) + 8px); }
+.village-shell .scene-card .construction-bar :is(.placement-confirm, .placement-cancel, .placement-rotate) small { font-size: var(--panel-small-size); line-height: 1.35; }
+
+@media (orientation: landscape) {
+  .village-shell .scene-card {
+    --panel-scene-top: var(--ui-panel-top, calc(var(--panel-edge) + var(--panel-touch) + 12px));
+  }
+  .village-shell .scene-card :is(#farm-tray, .facility-sheet, .animal-sheet),
+  .village-shell .scene-card.construction-mode .construction-bar {
+    left: auto;
+    right: var(--panel-edge);
+    top: var(--panel-scene-top);
+    bottom: auto;
+    width: var(--landscape-panel, var(--panel-side-width));
+    max-width: calc(100% - var(--panel-edge) * 2);
+    max-height: calc(100% - var(--panel-scene-top) - var(--ui-nav-height, 68px) - var(--panel-edge));
+    margin: 0;
+    padding: 8px;
+  }
+  .village-shell .scene-card #farm-tray { bottom: calc(var(--ui-nav-height, 68px) + var(--panel-edge)); }
+  .village-shell .scene-card .animal-sheet-heading > :is(.companion-portrait, .pet-portrait) { width: 44px; height: 48px; flex-basis: 44px; }
+  .village-shell .scene-card.construction-mode .construction-bar { min-height: 0; }
+  #modal-root:is(.planning-catalog, .planning-expansion) > .modal,
+  #modal-root.planning-catalog > .modal-village {
+    --dialog-gutter: 10px;
+    left: auto;
+    right: max(var(--panel-edge), var(--game-safe-right, 0px));
+    top: calc(var(--ui-total-header-height, var(--ui-header-height, 56px)) + var(--panel-edge) + var(--game-safe-top, 0px));
+    bottom: calc(var(--ui-nav-height, 72px) + var(--panel-edge) + var(--game-safe-bottom, 0px));
+    width: var(--panel-side-width);
+    max-width: calc(100% - 100px - var(--game-safe-left, 0px) - var(--game-safe-right, 0px));
+    max-height: none;
+    padding: 10px;
+  }
+  #modal-root:is(.planning-catalog, .planning-expansion) .game-dialog-heading { top: -10px; min-height: 54px; margin: -10px -10px 10px; padding: 4px 7px 4px 10px; }
+  #modal-root:is(.planning-catalog, .planning-expansion) .game-dialog-heading h2 { font-size: 16px; }
+  #modal-root.planning-catalog :is(.building-select, .building-output, .building-cost, .building-placement-guide, .building-placement-guide small, .building-unlock) { font-size: var(--panel-small-size); line-height: 1.5; }
+  #modal-root.planning-catalog .building-card { min-width: 148px; flex-basis: 148px; min-height: 184px; }
+  #modal-root.planning-catalog .building-select { min-height: var(--panel-touch); }
+}
+
+/* Battles follow the same text/touch sizes and can scroll their command column. */
+.battle-screen {
+  inset: auto;
+  left: var(--game-viewport-left, 0px);
+  top: var(--game-viewport-top, 0px);
+  width: var(--game-viewport-width, 100vw);
+  height: var(--panel-window-height);
+  padding: var(--game-safe-top, env(safe-area-inset-top)) var(--game-safe-right, env(safe-area-inset-right)) var(--game-safe-bottom, env(safe-area-inset-bottom)) var(--game-safe-left, env(safe-area-inset-left));
+  font-size: var(--panel-body-size);
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.battle-screen .battle-shell { height: 100%; max-height: 100%; min-height: 0; }
+.battle-screen .battle-heading > span { font-size: var(--panel-small-size); letter-spacing: .3px; }
+.battle-screen .battle-heading > h2 { font-size: var(--panel-body-size); line-height: 1.4; }
+.battle-screen :is(.battle-circle, .battle-auto, .battle-result-card button, .battle-retreat-layer button, .battle-pause-layer button) { min-height: var(--panel-touch); }
+.battle-screen :is(.battle-heading, .battle-ally-info, .battle-result-ally > div, .battle-skill-text) { min-width: 0; }
+.battle-screen :is(.battle-command-panel, .battle-retreat-layer > div, .battle-result-card) { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.battle-screen :is(.battle-result-card, .battle-retreat-layer > div) { max-width: 100%; max-height: 100%; }
+.battle-screen :is(.battle-result-card p, .battle-retreat-layer p, .battle-pause-layer > span, .battle-loot, .battle-result-note) { font-size: var(--panel-label-size); line-height: 1.65; }
+.battle-screen :is(.battle-result-ally strong, .battle-skill-text strong, .battle-ally-name strong) { font-size: var(--panel-label-size); line-height: 1.4; }
+.battle-screen :is(.battle-result-ally small, .battle-ally-name span, .battle-ally-health-row > b, .battle-ally-health-row > span, .battle-skill-owner, .battle-skill-cooldown, .battle-help, .battle-team-health, .battle-team-health > b, .battle-location b, .battle-boss-label) { font-size: var(--panel-small-size); line-height: 1.5; }
+.battle-screen :is(.battle-skill-text strong, .battle-result-ally small) { white-space: normal; word-break: keep-all; overflow-wrap: break-word; }
+.battle-screen .battle-result-card button { font-size: var(--panel-label-size); }
+.battle-screen :is(.battle-pause-layer, .battle-retreat-layer, .battle-result-layer) { min-height: 0; padding: var(--panel-edge); }
+
+@media (orientation: landscape) {
+  .battle-screen .battle-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(246px, calc(var(--game-usable-width, 100vw) * .3), 360px);
+    grid-template-rows: calc(var(--panel-touch) + 12px) 32px minmax(0, 1fr);
+    border: 0;
+    border-radius: 0;
+  }
+  .battle-screen .battle-topbar { grid-column: 1 / -1; grid-row: 1; padding: 5px 10px; gap: 8px; min-width: 0; }
+  .battle-screen .battle-progress { grid-column: 1; grid-row: 2; padding: 5px 12px; gap: 8px; }
+  .battle-screen .battle-progress > span { font-size: var(--panel-small-size); letter-spacing: .3px; }
+  .battle-screen .battle-arena { grid-column: 1; grid-row: 3; min-height: 0; }
+  .battle-screen .battle-command-panel { grid-column: 2; grid-row: 2 / 4; display: flex; flex-direction: column; justify-content: flex-start; gap: 7px; padding: 8px; min-width: 0; min-height: 0; border-top: 0; border-left: 2px solid #be9b60; }
+  .battle-screen .battle-command-panel > * { flex: 0 0 auto; }
+  .battle-screen .battle-party { width: 100%; gap: 5px; }
+  .battle-screen .battle-roster { gap: 4px; }
+  .battle-screen .battle-ally { display: flex; flex-direction: column; align-items: center; padding: 5px 3px; gap: 3px; text-align: center; }
+  .battle-screen .battle-ally-portrait { width: 30px; height: 30px; flex-basis: 30px; margin: 0; }
+  .battle-screen .battle-ally-info { width: 100%; }
+  .battle-screen .battle-ally-name { justify-content: center; flex-wrap: wrap; gap: 0 3px; }
+  .battle-screen .battle-ally-info > small { display: none; }
+  .battle-screen .battle-ally-health-row { flex-wrap: wrap; justify-content: center; gap: 0 3px; margin: 3px 0; }
+  .battle-screen .battle-team-health { width: 100%; margin: 0; gap: 5px; }
+  .battle-screen .battle-skills { display: flex; flex-direction: column; width: 100%; gap: 7px; }
+  .battle-screen .battle-skill { flex-direction: row; justify-content: flex-start; text-align: left; gap: 8px; min-height: 72px; padding: 21px 8px 22px; }
+  .battle-screen .battle-skill-art, .battle-screen .battle-skill-art > .icon { width: 30px; height: 30px; flex-basis: 30px; }
+  .battle-screen .battle-skill-text { margin: 0; }
+  .battle-screen .battle-skill-text small { display: none; }
+  .battle-screen .battle-skill-owner { left: 8px; right: auto; top: 4px; }
+  .battle-screen .battle-skill-cooldown { left: 46px; right: auto; bottom: 4px; }
+  .battle-screen .battle-skill kbd { display: none; }
+  .battle-screen .battle-help { margin: 0; }
+  .battle-screen .battle-result-roster { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+}
+
+@media (max-width: 380px) {
+  #modal-root .modal .cozy-decor-grid { grid-template-columns: 1fr; }
+  #modal-root .modal .cozy-day-heading { flex-wrap: wrap; }
+  #modal-root .modal .cozy-day-stamp { margin-left: auto; }
+}
+
+html[data-game-keyboard="open"] #modal-root:not(.planning-catalog):not(.planning-expansion) { align-items: flex-start; }

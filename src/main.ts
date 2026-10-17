@@ -63,7 +63,12 @@ import './landscape.css';
 import './gathering-dock.css';
 import './animal-interactions.css';
 import './haven-visuals.css';
+import { initializeGameViewport } from './game-viewport';
+import './adaptive-hud.css';
+import './adaptive-panels.css';
 
+const gameViewport=initializeGameViewport();
+if(import.meta.hot)import.meta.hot.dispose(()=>gameViewport.destroy());
 const stored = loadGame();
 let state = stored ?? createGame('female', '하루');
 // Anchor old site cooldowns to the original saved time before normal offline
