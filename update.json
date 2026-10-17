@@ -1,9 +1,9 @@
 {
-  "version": "0.53.0",
-  "versionCode": 53,
-  "minimumNativeVersionCode": 42,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.53.0.apk",
-  "sha256": "fdee5db3a313e3085e418280c293a6fbf3ef5b08e43638b534c0691690752d48",
-  "notes": "v0.53.0 · 동물의 전방 보행과 정지 회전·코너 감속을 교정했어요. 회전 시 형태, 토끼·올빼미 홉, 사슴 걸음, 탑승 좌석과 전투 돌진 거리도 조정했어요.",
-  "publishedAt": "2026-10-16T13:53:59.218Z"
+  "version": "0.54.0",
+  "versionCode": 54,
+  "minimumNativeVersionCode": 54,
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.54.0.apk",
+  "sha256": "7188ba5838dfdc1b3d16c92f80f538608a7166bf75af02ffa376b0eef49d4392",
+  "notes": "v0.54.0 · 접힘·펼침과 화면 크기에 맞춰 글자·상단 정보·퀘스트·층·작업창·키보드 배치를 조정했어요. 화면 UI는 자동 패치되며 Android 글자 크기·구성 변경 지원은 APK 54 업데이트로 적용돼요.",
+  "publishedAt": "2026-10-17T00:11:50.190Z"
 }
