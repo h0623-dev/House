@@ -1,9 +1,9 @@
 {
-  "version": "0.56.0",
-  "versionCode": 56,
+  "version": "0.56.1",
+  "versionCode": 57,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.56.0.apk",
-  "sha256": "460d7a3488b0cf9820cae7935affbf8af12529fb3fb13c9dcf0b35edcbb0c632",
-  "notes": "v0.56.0 · 도로 쉼터에 여행자 연두가 찾아와 의뢰와 이야기, 꽃화분·이름표·손수레 장식으로 마을 일상을 이어갑니다. 보존된 저장으로 바로 이어집니다.",
-  "publishedAt": "2026-10-18T01:27:46.919Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.56.1.apk",
+  "sha256": "3b0e50f63c4ceec0a2ea0b64416b81b5751886658fec6086beba627fd020c9c1",
+  "notes": "v0.56.1 · 채집 상세 시점에서 여행자 연두에게 이동할 때 채집·동물 카메라 초점이 남는 문제를 수정했습니다. 현재 위치와 수동 배율을 유지한 도로 시점으로 돌아갑니다.",
+  "publishedAt": "2026-10-18T01:35:14.855Z"
 }
