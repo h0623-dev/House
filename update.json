@@ -1,9 +1,9 @@
 {
-  "version": "0.61.1",
-  "versionCode": 65,
+  "version": "0.62.0",
+  "versionCode": 66,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.61.1.apk",
-  "sha256": "b08e4ba6aad63f6eedb1b7bdab5a03c7fdbb752c92cb5e681696e6cf99c92507",
-  "notes": "v0.61.1 · 생활·채집 지역의 좀비와 충돌 제거 · 생활 지역 밤사이 좀비 피해 제거 · 좀비는 위험 구역 전투에만 등장 · 기존 마을 저장 유지",
-  "publishedAt": "2026-10-18T07:16:15.417Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.62.0.apk",
+  "sha256": "98b8617a9c8e56620b092d6a1aecefdf752ce561b50214f8e67afaa551a2832e",
+  "notes": "v0.62.0 · 풍경을 가리지 않는 투명 생활 HUD · 그림 아이콘·이름·수량 간격 정리 · 확대·축소 버튼 제거 및 핀치·휠 유지 · 기존 마을 저장 유지",
+  "publishedAt": "2026-10-18T07:54:19.629Z"
 }
