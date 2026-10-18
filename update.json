@@ -1,9 +1,9 @@
 {
-  "version": "0.58.0",
-  "versionCode": 60,
+  "version": "0.59.0",
+  "versionCode": 61,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.58.0.apk",
-  "sha256": "6776e2ca7572b5268efe425307595c8dad16522ef19751eeeb151551bf29b5bf",
-  "notes": "v0.58.0 · 트럭 마을을 그대로 싣고 숲길과 바다여울을 오가는 지역 여행을 추가했습니다. 해온의 물자 부탁, 해안 채집과 표지판·쉼터·정원 복구, 바다유리 조명 제작을 이어갑니다. 기존 농사·생산·동물·연못 생활과 저장은 유지됩니다.",
-  "publishedAt": "2026-10-18T03:58:25.779Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.59.0.apk",
+  "sha256": "a4745947664ce37f34608053df9988188d82c31d960bb41e655053dbb5bd7036",
+  "notes": "v0.59.0 · 숲길과 바다여울 채집 원화와 지면 접점 개선 · 기존 저장과 보상·재생 시간 유지",
+  "publishedAt": "2026-10-18T04:31:18.712Z"
 }
