@@ -1,4 +1,4 @@
-/* Road Haven atomic web content 0.55.0 */
+/* Road Haven atomic web content 0.56.0 */
 (function serviceWorkerRuntime(manifest) {
   const base = new URL(manifest.base, self.location.origin).href;
   const prefix = `road-haven-web:${manifest.base}:`;
@@ -6,9 +6,46 @@
   const controlName = `road-haven-web-control:${manifest.base}`;
   const completeURL = new URL('.road-haven-complete', base).href;
   const clientURL = id => new URL('.road-haven-client/' + encodeURIComponent(id), base).href;
+  const bootstrapClients = new Set();
   let transaction;
   const reply = (event, value) => event.ports?.[0]?.postMessage(value);
   const hex = buffer => [...new Uint8Array(buffer)].map(n => n.toString(16).padStart(2, '0')).join('');
+  const logicalURL = file => {
+    const url = new URL(file.path, base);
+    if (url.origin !== self.location.origin || !url.href.startsWith(base)
+      || !/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(file.path)
+      || file.path.split('/').some(part => part === '.' || part === '..')) throw Error('Invalid release file path');
+    return url;
+  };
+  const downloadURL = file => {
+    const logical = logicalURL(file);
+    if (!file.sourceUrl) return logical;
+    const source = manifest.remoteSource;
+    if (source?.repository !== 'h0623-dev/House' || !/^[a-f0-9]{40}$/.test(source.commit)
+      || !/^play\/(?:assets|fonts)\//.test(file.path)) throw Error('Invalid remote asset source');
+    const expected = `https://cdn.jsdelivr.net/gh/h0623-dev/House@${source.commit}/${file.path.slice(5)}`;
+    if (file.sourceUrl !== expected) throw Error('Remote asset host, repository or immutable commit changed');
+    return new URL(expected);
+  };
+  const mediaType = name => name.endsWith('.js') ? 'application/javascript' : name.endsWith('.css') ? 'text/css'
+    : name.endsWith('.png') ? 'image/png' : name.endsWith('.webp') ? 'image/webp'
+    : name.endsWith('.ttf') ? 'font/ttf' : name.endsWith('.woff2') ? 'font/woff2'
+    : name.endsWith('.txt') ? 'text/plain' : undefined;
+  const fetchFile = async source => {
+    const external = source.origin !== self.location.origin;
+    const controller = new AbortController();
+    // Includes response-body reads: a connected but stalled CDN must not leave
+    // the first-visit loading screen waiting forever.
+    const timer = setTimeout(() => controller.abort(), 180000);
+    try {
+      const response = await fetch(new Request(source.href, { cache: 'no-store',
+        mode: external ? 'cors' : 'same-origin', credentials: external ? 'omit' : 'same-origin',
+        redirect: 'error', signal: controller.signal }));
+      if (!response.ok || response.type === 'opaque' || response.redirected) throw Error('Release download failed');
+      const bytes = await response.clone().arrayBuffer();
+      return { response, bytes };
+    } finally { clearTimeout(timer); }
+  };
   const scopedClients = async () => (await self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
     .filter(client => client.url.startsWith(base));
   const broadcast = async data => { for (const client of await scopedClients()) client.postMessage(data); };
@@ -31,6 +68,10 @@
       const previous = await marker(cacheName);
       existingComplete = !!previous;
       const cache = await caches.open(cacheName);
+      for (const file of manifest.files) {
+        logicalURL(file); downloadURL(file);
+        if (!Number.isSafeInteger(file.bytes) || file.bytes < 0 || !/^[a-f0-9]{64}$/.test(file.sha256)) throw Error('Invalid release file metadata');
+      }
       if (previous) {
         if (previous.buildId !== manifest.buildId) throw Error('Cache release mismatch');
         for (const file of manifest.files) {
@@ -51,12 +92,16 @@
       await broadcast({ type: 'WEB_UPDATE_STATE', state: { status: 'downloading', progress: 0, version: manifest.version, contentVersion: manifest.contentVersion, message: '새로운 게임을 안전하게 준비하고 있어요.' }, buildId: manifest.buildId });
       // Sequential reads bound Safari memory while the previous complete cache stays untouched.
       for (const file of manifest.files) {
-        const url = new URL(file.path, base);
-        if (url.origin !== self.location.origin || !url.href.startsWith(base) || file.path.includes('..')) throw Error('Invalid release file path');
-        let response;
+        const url = logicalURL(file), source = downloadURL(file);
+        let response, downloaded;
         for (const previous of previousReleases) {
-          if (!previous.release.files.some(old => old.path === file.path && old.sha256 === file.sha256 && old.bytes === file.bytes)) continue;
-          const candidate = await previous.cache.match(url.href);
+          // CDN-backed releases use the old compatibility path as their real
+          // logical URL. Reuse identical images/fonts from canonical old caches.
+          const old = previous.release.files.find(old => (old.path === file.path
+            || (file.sourceUrl && old.path === file.path.slice(5)))
+            && old.sha256 === file.sha256 && old.bytes === file.bytes);
+          if (!old) continue;
+          const candidate = await previous.cache.match(new URL(old.path, base).href);
           if (!candidate) continue;
           const bytes = await candidate.clone().arrayBuffer();
           if (bytes.byteLength === file.bytes && hex(await crypto.subtle.digest('SHA-256', bytes)) === file.sha256) {
@@ -64,12 +109,21 @@
           }
         }
         if (!response) {
-          response = await fetch(new Request(url.href, { cache: 'no-store', credentials: 'same-origin' }));
+          const result = await fetchFile(source); response = result.response; downloaded = result.bytes;
           downloadedBytes += file.bytes;
         }
         if (!response.ok || response.type === 'opaque' || response.redirected) throw Error('Release download failed: ' + file.path);
-        const bytes = await response.clone().arrayBuffer();
+        const bytes = downloaded ?? await response.clone().arrayBuffer();
         if (bytes.byteLength !== file.bytes || hex(await crypto.subtle.digest('SHA-256', bytes)) !== file.sha256) throw Error('Release file verification failed: ' + file.path);
+        if (file.sourceUrl) {
+          const wantedType = mediaType(file.path), receivedType = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
+          if (!wantedType || (receivedType !== wantedType
+            && !(wantedType === 'application/javascript' && receivedType === 'text/javascript'))) throw Error('Remote file MIME type mismatch: ' + file.path);
+          // CORS granted access to the bytes. A fresh basic response keeps
+          // same-origin image/canvas/font requests safe, including getImageData.
+          response = new Response(bytes, { status: 200, headers: { 'Content-Type': wantedType,
+            'Cache-Control': 'public, max-age=31536000, immutable' } });
+        }
         await cache.put(url.href, response);
         bytesDone += file.bytes;
         await broadcast({ type: 'WEB_UPDATE_STATE', state: { status: 'downloading', progress: Math.min(99, Math.floor(bytesDone / total * 100)), version: manifest.version, contentVersion: manifest.contentVersion, message: '새로운 게임을 안전하게 준비하고 있어요.' }, buildId: manifest.buildId });
@@ -77,7 +131,8 @@
       await cache.put(completeURL, new Response(JSON.stringify({ ...manifest, firstInstall: !self.registration.active, downloadedBytes, reusedBytes })));
     } catch (error) {
       if (!existingComplete) await caches.delete(cacheName);
-      await broadcast({ type: 'WEB_UPDATE_STATE', state: { status: 'error', progress: 0, message: '연결되면 새 게임을 다시 준비해요. 지금 마을은 그대로 이어갈 수 있어요.' }, buildId: manifest.buildId });
+      await broadcast({ type: 'WEB_UPDATE_STATE', state: { status: 'error', progress: 0, message: '연결되면 새 게임을 다시 준비해요. 지금 마을은 그대로 이어갈 수 있어요.' }, buildId: manifest.buildId,
+        reason: error?.name === 'QuotaExceededError' || error?.name === 'SecurityError' ? 'storage' : 'download' });
       throw error;
     }
   })()));
@@ -115,7 +170,13 @@
     clearTimeout(current.timer);
     let clients = await scopedClients();
     if (accepted && clients.some(client => current.votes.get(client.id) !== true)) { accepted = false; reason = 'Another game is not ready'; }
-    if (accepted) {
+    if (accepted && current.bootstrap) {
+      // A bootstrap never opens or writes the shared game save. It may replace
+      // an old worker only while every document is a declared bootstrap. A
+      // real game is never asked to discard its in-memory save by this path.
+      clients = await scopedClients();
+      if (clients.some(client => !bootstrapClients.has(client.id) || current.votes.get(client.id) !== true)) { accepted = false; reason = 'Another game must save first'; }
+    } else if (accepted) {
       // Peers can hold older in-memory saves and must not overwrite shared
       // primary storage. The frozen initiating tab is the canonical writer.
       const initiator = clients.find(client => client.id === current.initiator);
@@ -153,20 +214,32 @@
       reply(event, { buildId: manifest.buildId, installStats: completed ? { downloadedBytes: completed.downloadedBytes, reusedBytes: completed.reusedBytes } : undefined, state: { status: completed && data.waiting ? 'ready' : 'idle', progress: completed ? 100 : 0, version: manifest.version, contentVersion: manifest.contentVersion, message: completed && data.waiting ? '새 게임이 준비됐어요. 안전하게 저장한 뒤 자동으로 이어갈게요.' : '최신 게임으로 여행하고 있어요.' } });
     })());
     if (data.type === 'WEB_UPDATE_BOOT' || data.type === 'WEB_UPDATE_ACK') event.waitUntil((async () => {
+      bootstrapClients.delete(event.source?.id);
       await pin(event.source?.id, data.buildId, data.type === 'WEB_UPDATE_ACK');
       if (data.type === 'WEB_UPDATE_ACK') await cleanAcknowledgedCaches();
       reply(event, { accepted: true });
     })());
-    if (data.type === 'WEB_UPDATE_ACTIVATE') event.waitUntil((async () => {
+    if (data.type === 'WEB_UPDATE_BOOTSTRAP_HELLO' || data.type === 'WEB_UPDATE_BOOTSTRAP_EXIT') event.waitUntil((async () => {
+      if (!manifest.remoteSource || data.buildId !== manifest.buildId || !event.source?.id
+        || !event.source.url.startsWith(base)) { reply(event, { accepted: false }); return; }
+      if (data.type === 'WEB_UPDATE_BOOTSTRAP_HELLO') bootstrapClients.add(event.source.id);
+      else bootstrapClients.delete(event.source.id);
+      reply(event, { accepted: true });
+    })());
+    if (data.type === 'WEB_UPDATE_ACTIVATE' || data.type === 'WEB_UPDATE_BOOTSTRAP_ACTIVATE') event.waitUntil((async () => {
       if (transaction || !(await marker(cacheName)) || !event.source?.id) { reply(event, { accepted: false }); return; }
       const clients = await scopedClients();
+      const bootstrap = data.type === 'WEB_UPDATE_BOOTSTRAP_ACTIVATE';
+      if (bootstrap && (!manifest.remoteSource || data.buildId !== manifest.buildId
+        || !bootstrapClients.has(event.source.id)
+        || clients.some(client => !bootstrapClients.has(client.id)))) { reply(event, { accepted: false, reason: 'Another game must save first' }); return; }
       // Two tabs can cross the asynchronous cache/client lookups together.
       // Reserve the transaction only after a second synchronous ownership check.
       if (transaction) { reply(event, { accepted: false }); return; }
       const token = data.token;
       let resolve;
       const result = new Promise(done => { resolve = done; });
-      transaction = { token, initiator: event.source.id, votes: new Map([[event.source.id, true]]), resolve,
+      transaction = { token, initiator: event.source.id, bootstrap, votes: new Map([[event.source.id, true]]), resolve,
         timer: setTimeout(() => { void finishTransaction(false, 'Another game has not saved yet'); }, 6000) };
       for (const client of clients) {
         if (client.id === event.source.id) continue;
@@ -193,8 +266,14 @@
     const relative = url.pathname.slice(new URL(base).pathname.length);
     if (relative === 'sw.js' || relative === 'web-update.json') return;
     event.respondWith((async () => {
+      const historicalMatch = relative.match(/^play-v(\d+)\.(\d+)\.(\d+)\.html$/);
+      const currentVersion = manifest.version.split('.').map(Number);
+      const historicalVersion = historicalMatch?.slice(1).map(Number);
+      const historicalEntry = manifest.remoteSource && historicalVersion && historicalVersion.every(Number.isSafeInteger)
+        && (historicalVersion[0] < currentVersion[0] || (historicalVersion[0] === currentVersion[0]
+          && (historicalVersion[1] < currentVersion[1] || (historicalVersion[1] === currentVersion[1] && historicalVersion[2] <= currentVersion[2]))));
       if (request.mode === 'navigate' && (relative === '' || relative === 'index.html' || relative === 'play.html'
-        || relative === 'play-v' + manifest.version + '.html')) {
+        || relative === 'play-v' + manifest.version + '.html' || historicalEntry)) {
         await pin(event.resultingClientId, manifest.buildId);
         return await (await caches.open(cacheName)).match(new URL('index.html', base).href)
           || new Response('The verified game cache is unavailable.', { status: 503 });
@@ -214,4 +293,4 @@
       return fetch(request);
     })());
   });
-})({"schema":1,"buildId":"350e4328ff6a55613b7ee39d22f7176404661420334f9b5243534fd4864eb513","version":"0.55.0","contentVersion":55,"base":"/House/","files":[{"path":".nojekyll","bytes":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},{"path":"assets/battle-bridge-CshNqkaE.png","bytes":3680793,"sha256":"371c397ced7ca06ce87cc4638d7140988573c78f29ff70c713c0a8a9b9c499a0"},{"path":"assets/battle-checkpoint-DRTJ197s.png","bytes":3604385,"sha256":"fad9daef2c707dddf4f37fbc81ba20106b3fb16132dc612d8bceda53b87b59b0"},{"path":"assets/battle-forest-C51K6LMV.png","bytes":3873328,"sha256":"acce40107ff1dd6f4f7d5567c6e2a934c500aaf9890a55616b817761f5b5d391"},{"path":"assets/companions-cat-anime-DLqNb3YX.png","bytes":1697241,"sha256":"cd7531285cb2d7ac072fd84df4a76626ecdf54befd27706955fda2d091419a5e"},{"path":"assets/creatures-anime-DdNIkJKd.png","bytes":2493525,"sha256":"5d1cf1176a79a677bdd135316f2f24d5abda68748747d78e28e9b16c8e03b060"},{"path":"assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2","bytes":18228,"sha256":"a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49"},{"path":"assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2","bytes":36932,"sha256":"9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"},{"path":"assets/haven-companions-cat-4rV17IN9.png","bytes":1231350,"sha256":"039df732c96633a8b57d7325551d7fb284c7be39304cc9602a31b214f90b1e3e"},{"path":"assets/haven-companions-dog-C_Avxq7A.png","bytes":1190045,"sha256":"06638659fcac56a8627ad152f5f926bbebbd91cd8347418b4dd1d033e02d069e"},{"path":"assets/haven-companions-reserve-CxrKZcaR.png","bytes":1068795,"sha256":"bd0e1d1eaa3db362e10292819da4f9d7d53e8420a87745a3349bfa3b2e751396"},{"path":"assets/haven-companions-safari-DNVy2oTC.png","bytes":1405068,"sha256":"e57b867628279dd2a64f0280eb445896e319d9142bd3d237ee3f3a3a031dd585"},{"path":"assets/haven-crops-growth-v047-Cv41UhXq.png","bytes":1801043,"sha256":"b719458c528a4d64c368d9a947291aa837c088099504d58be430cab688407f0d"},{"path":"assets/haven-crops-inventory-v047-DXmSSy5k.png","bytes":1989167,"sha256":"db91a19b1236d84224cc420ac5f0400c0cfef0dfbaf066aea60fc61debc0b871"},{"path":"assets/haven-facilities-v047-BhSn5R0l.png","bytes":2739855,"sha256":"70199098851b3e6d5ab6e718286f237b2b29d7628a097e66b82b7f7473af48a8"},{"path":"assets/haven-ground-landscape-RYW0cYT7.png","bytes":3873656,"sha256":"5fbdb3070149b5cc2e1a30ec3f1e5cf1c6322b838348d393d9f22a7aded9171a"},{"path":"assets/haven-ground-props-CwPWevi3.png","bytes":2564318,"sha256":"bba973f06c22bc69d19909d71c35aed1132fccecbac100f92dc0c1e01b3833c0"},{"path":"assets/haven-hero-actions-3fYZ4U9d.webp","bytes":1218026,"sha256":"53dd17bf1dcd5119f76175056a5df90d0858a5cdbf4775c8570dca2bf6afc921"},{"path":"assets/haven-hero-gathering-DD8A19bE.webp","bytes":1090974,"sha256":"ccaf91335771ae23bdba8b4c8b0320462174b9da082bbc443355e386a35ee329"},{"path":"assets/haven-hero-locomotion-_aPy7ZT_.webp","bytes":1190408,"sha256":"305f9430462782224edf2cc0b867f869f2a9c716344f80c825e1976ed4600154"},{"path":"assets/haven-hero-survivors-B2sShSwV.webp","bytes":1167606,"sha256":"f50c3d64b081dfbeb2bada9ee032e6ba73ce0ffd29da2b3e4a1aeaaea32a4e1d"},{"path":"assets/haven-infected-miniature-C5ZFEKhB.webp","bytes":482444,"sha256":"19f42092e741ae6532b0a0efaecaeebfef6e0dbecd52e7d01509212a6ac77111"},{"path":"assets/haven-items-miniature-CWyvCdAf.png","bytes":2296104,"sha256":"ac7202af9c9ce885b4a2d8d211f502929cf6e4101d948d37fc5bef90575c3e1a"},{"path":"assets/haven-truck-miniature-BEm5SmxQ.png","bytes":1851066,"sha256":"639db3e773a00df8e81a86636197465d212e715bf7ce419cb9f703a6dc89e207"},{"path":"assets/index-BDPMYtbR.js","bytes":753087,"sha256":"380f521330585063590d78384986a28cc570d6110e3b2490c9d2c8928f4238c1"},{"path":"assets/index-DwOZns0L.css","bytes":329956,"sha256":"61c00e560fce4be50b2891c607b0cb4c402445d19fdb23476bda5df1d0e42983"},{"path":"assets/pwa/road-haven-icon.png","bytes":3288409,"sha256":"8727a08b900599142a9882fa61e8f4c617ba8b8fc7df6292e182432be871991d"},{"path":"assets/skills-farm-anime-yMjBbn83.png","bytes":2786844,"sha256":"8c1c807a3c14355038ec31b552e14368818b18e8993f98424bb4670c4a02c933"},{"path":"assets/world-atlas-anime-j_pxBRxb.png","bytes":2951449,"sha256":"67f9c68491f282743b8245898b7e6c04e7f4072829cdf66639bec59ae7d2a57f"},{"path":"assets/world-parts-anime-CnA5nLkl.png","bytes":2821651,"sha256":"304e0e30cb1525a5a899057f7e00427061de2e5317012bbdbc457e7f840fb32c"},{"path":"assets/world-road-anime-CqYNuSrz.png","bytes":3665828,"sha256":"57384e426b7df1967ea42dd0e05b098315618ed35cd219dbd9ca04679877c78a"},{"path":"fonts/NotoSansKR-Variable.ttf","bytes":10414588,"sha256":"194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252"},{"path":"fonts/OFL-DMSans.txt","bytes":4502,"sha256":"6fbd040a29c2037a765dfb9f2561e9965b5c95c6dcb5dce516089d63d5f17af7"},{"path":"fonts/OFL-NotoSansKR.txt","bytes":4388,"sha256":"1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9"},{"path":"index.html","bytes":1280,"sha256":"27f6bf9ca053aad3f0dd90ea392791c876ebf76683fa509e76558c459add2a0f"},{"path":"manifest.webmanifest","bytes":540,"sha256":"ba64070d12c73e525aefbc3c8e041c05e5c37907675377f7391f2f3cd960b731"}]});
+})({"schema":2,"buildId":"ba1f5c142afd4c8224f76ab683f5c182b821edc89571a5d5c57ff15beb4e85e7","version":"0.56.0","contentVersion":56,"base":"/House/","remoteSource":{"repository":"h0623-dev/House","commit":"076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1"},"files":[{"path":"index.html","bytes":13999,"sha256":"606ad468f095fb534825e5e1769c49a045aceafbb05ade6224f804b404724ac4"},{"path":"manifest.webmanifest","bytes":545,"sha256":"712d5880e09deb03da1762135a545618fc160a77cbbeaac482d2c8521f638203"},{"path":"play/assets/battle-bridge-CshNqkaE.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/battle-bridge-CshNqkaE.png","bytes":3680793,"sha256":"371c397ced7ca06ce87cc4638d7140988573c78f29ff70c713c0a8a9b9c499a0"},{"path":"play/assets/battle-checkpoint-DRTJ197s.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/battle-checkpoint-DRTJ197s.png","bytes":3604385,"sha256":"fad9daef2c707dddf4f37fbc81ba20106b3fb16132dc612d8bceda53b87b59b0"},{"path":"play/assets/battle-forest-C51K6LMV.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/battle-forest-C51K6LMV.png","bytes":3873328,"sha256":"acce40107ff1dd6f4f7d5567c6e2a934c500aaf9890a55616b817761f5b5d391"},{"path":"play/assets/companions-cat-anime-DLqNb3YX.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/companions-cat-anime-DLqNb3YX.png","bytes":1697241,"sha256":"cd7531285cb2d7ac072fd84df4a76626ecdf54befd27706955fda2d091419a5e"},{"path":"play/assets/creatures-anime-DdNIkJKd.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/creatures-anime-DdNIkJKd.png","bytes":2493525,"sha256":"5d1cf1176a79a677bdd135316f2f24d5abda68748747d78e28e9b16c8e03b060"},{"path":"play/assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/dm-sans-latin-ext-wght-normal-BOFOeGcA.woff2","bytes":18228,"sha256":"a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49"},{"path":"play/assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/dm-sans-latin-wght-normal-Xz1IZZA0.woff2","bytes":36932,"sha256":"9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"},{"path":"play/assets/haven-companions-cat-4rV17IN9.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-companions-cat-4rV17IN9.png","bytes":1231350,"sha256":"039df732c96633a8b57d7325551d7fb284c7be39304cc9602a31b214f90b1e3e"},{"path":"play/assets/haven-companions-dog-C_Avxq7A.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-companions-dog-C_Avxq7A.png","bytes":1190045,"sha256":"06638659fcac56a8627ad152f5f926bbebbd91cd8347418b4dd1d033e02d069e"},{"path":"play/assets/haven-companions-reserve-CxrKZcaR.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-companions-reserve-CxrKZcaR.png","bytes":1068795,"sha256":"bd0e1d1eaa3db362e10292819da4f9d7d53e8420a87745a3349bfa3b2e751396"},{"path":"play/assets/haven-companions-safari-DNVy2oTC.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-companions-safari-DNVy2oTC.png","bytes":1405068,"sha256":"e57b867628279dd2a64f0280eb445896e319d9142bd3d237ee3f3a3a031dd585"},{"path":"play/assets/haven-crops-growth-v047-Cv41UhXq.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-crops-growth-v047-Cv41UhXq.png","bytes":1801043,"sha256":"b719458c528a4d64c368d9a947291aa837c088099504d58be430cab688407f0d"},{"path":"play/assets/haven-crops-inventory-v047-DXmSSy5k.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-crops-inventory-v047-DXmSSy5k.png","bytes":1989167,"sha256":"db91a19b1236d84224cc420ac5f0400c0cfef0dfbaf066aea60fc61debc0b871"},{"path":"play/assets/haven-facilities-v047-BhSn5R0l.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-facilities-v047-BhSn5R0l.png","bytes":2739855,"sha256":"70199098851b3e6d5ab6e718286f237b2b29d7628a097e66b82b7f7473af48a8"},{"path":"play/assets/haven-ground-landscape-RYW0cYT7.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-ground-landscape-RYW0cYT7.png","bytes":3873656,"sha256":"5fbdb3070149b5cc2e1a30ec3f1e5cf1c6322b838348d393d9f22a7aded9171a"},{"path":"play/assets/haven-ground-props-CwPWevi3.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-ground-props-CwPWevi3.png","bytes":2564318,"sha256":"bba973f06c22bc69d19909d71c35aed1132fccecbac100f92dc0c1e01b3833c0"},{"path":"play/assets/haven-hero-actions-3fYZ4U9d.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-hero-actions-3fYZ4U9d.webp","bytes":1218026,"sha256":"53dd17bf1dcd5119f76175056a5df90d0858a5cdbf4775c8570dca2bf6afc921"},{"path":"play/assets/haven-hero-gathering-DD8A19bE.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-hero-gathering-DD8A19bE.webp","bytes":1090974,"sha256":"ccaf91335771ae23bdba8b4c8b0320462174b9da082bbc443355e386a35ee329"},{"path":"play/assets/haven-hero-locomotion-_aPy7ZT_.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-hero-locomotion-_aPy7ZT_.webp","bytes":1190408,"sha256":"305f9430462782224edf2cc0b867f869f2a9c716344f80c825e1976ed4600154"},{"path":"play/assets/haven-hero-survivors-B2sShSwV.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-hero-survivors-B2sShSwV.webp","bytes":1167606,"sha256":"f50c3d64b081dfbeb2bada9ee032e6ba73ce0ffd29da2b3e4a1aeaaea32a4e1d"},{"path":"play/assets/haven-infected-miniature-C5ZFEKhB.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-infected-miniature-C5ZFEKhB.webp","bytes":482444,"sha256":"19f42092e741ae6532b0a0efaecaeebfef6e0dbecd52e7d01509212a6ac77111"},{"path":"play/assets/haven-items-miniature-CWyvCdAf.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-items-miniature-CWyvCdAf.png","bytes":2296104,"sha256":"ac7202af9c9ce885b4a2d8d211f502929cf6e4101d948d37fc5bef90575c3e1a"},{"path":"play/assets/haven-traveler-cart-v056-Dbr70YZj.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-traveler-cart-v056-Dbr70YZj.webp","bytes":85160,"sha256":"ac69d5a9713aa1b699bf6c4c47d929ccfa503bde1eb19d4434b2206d5b8f8644"},{"path":"play/assets/haven-traveler-flowerpot-v056-B3ATqdX_.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-traveler-flowerpot-v056-B3ATqdX_.webp","bytes":39806,"sha256":"53a94b7d8300ff78f851fa9b6824223e49b91c800b66d98ab61656d30f8fadd4"},{"path":"play/assets/haven-traveler-nameplate-v056-D926XsTL.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-traveler-nameplate-v056-D926XsTL.webp","bytes":39492,"sha256":"1042100a3922a4c30f1912fc75c4fe715dedd3ceb5358b2e56b7be0701d19a2f"},{"path":"play/assets/haven-traveler-yeondu-portrait-v056-CX_QEtwn.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-traveler-yeondu-portrait-v056-CX_QEtwn.webp","bytes":11140,"sha256":"43ee592c4112a4993eb5e8cb7a30403f88f3ac2039c6754297f602207a50b09d"},{"path":"play/assets/haven-traveler-yeondu-v056-DhtoYDaD.webp","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-traveler-yeondu-v056-DhtoYDaD.webp","bytes":60956,"sha256":"4dcbbda979843ba9fa382eb3709db64816a6415e334bb8dbe8a9410fcf5a49c1"},{"path":"play/assets/haven-truck-miniature-BEm5SmxQ.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/haven-truck-miniature-BEm5SmxQ.png","bytes":1851066,"sha256":"639db3e773a00df8e81a86636197465d212e715bf7ce419cb9f703a6dc89e207"},{"path":"play/assets/index-DBvZalnP.css","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/index-DBvZalnP.css","bytes":342505,"sha256":"a0cac1596169f33a091ea08d6bf07c6e214336e45e0e38872791932e21aeed2b"},{"path":"play/assets/index-DsdLdHKI.js","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/index-DsdLdHKI.js","bytes":792562,"sha256":"64d1754e3de6802b5d4e5365acd05badd65e192c8d99723102639330fafe6d57"},{"path":"play/assets/pwa/road-haven-icon.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/pwa/road-haven-icon.png","bytes":3288409,"sha256":"8727a08b900599142a9882fa61e8f4c617ba8b8fc7df6292e182432be871991d"},{"path":"play/assets/skills-farm-anime-yMjBbn83.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/skills-farm-anime-yMjBbn83.png","bytes":2786844,"sha256":"8c1c807a3c14355038ec31b552e14368818b18e8993f98424bb4670c4a02c933"},{"path":"play/assets/world-atlas-anime-j_pxBRxb.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/world-atlas-anime-j_pxBRxb.png","bytes":2951449,"sha256":"67f9c68491f282743b8245898b7e6c04e7f4072829cdf66639bec59ae7d2a57f"},{"path":"play/assets/world-parts-anime-CnA5nLkl.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/world-parts-anime-CnA5nLkl.png","bytes":2821651,"sha256":"304e0e30cb1525a5a899057f7e00427061de2e5317012bbdbc457e7f840fb32c"},{"path":"play/assets/world-road-anime-CqYNuSrz.png","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/assets/world-road-anime-CqYNuSrz.png","bytes":3665828,"sha256":"57384e426b7df1967ea42dd0e05b098315618ed35cd219dbd9ca04679877c78a"},{"path":"play/fonts/NotoSansKR-Variable.ttf","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/fonts/NotoSansKR-Variable.ttf","bytes":10414588,"sha256":"194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252"},{"path":"play/fonts/OFL-DMSans.txt","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/fonts/OFL-DMSans.txt","bytes":4502,"sha256":"6fbd040a29c2037a765dfb9f2561e9965b5c95c6dcb5dce516089d63d5f17af7"},{"path":"play/fonts/OFL-NotoSansKR.txt","sourceUrl":"https://cdn.jsdelivr.net/gh/h0623-dev/House@076c1ad4af4495c9e73a24bd7dc1786fc6dd2ff1/fonts/OFL-NotoSansKR.txt","bytes":4388,"sha256":"1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9"}]});
