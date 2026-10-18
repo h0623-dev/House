@@ -1,9 +1,9 @@
 {
-  "version": "0.55.0",
-  "versionCode": 55,
+  "version": "0.56.0",
+  "versionCode": 56,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.55.0.apk",
-  "sha256": "e46ac5c92084b560768ceb1f6b1f3d3e2c4bd550d1976aa1d827446db4a51751",
-  "notes": "v0.55.0 · 성장 단계에 맞춰 이어지는 마을 성장 퀘스트를 추가했습니다. 새로운 탐험·생활 콘텐츠 PDF와 그림은 검토용 기획안이며 아직 게임에 구현되지 않았습니다.",
-  "publishedAt": "2026-10-18T01:03:06.962Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.56.0.apk",
+  "sha256": "460d7a3488b0cf9820cae7935affbf8af12529fb3fb13c9dcf0b35edcbb0c632",
+  "notes": "v0.56.0 · 도로 쉼터에 여행자 연두가 찾아와 의뢰와 이야기, 꽃화분·이름표·손수레 장식으로 마을 일상을 이어갑니다. 보존된 저장으로 바로 이어집니다.",
+  "publishedAt": "2026-10-18T01:27:46.919Z"
 }
