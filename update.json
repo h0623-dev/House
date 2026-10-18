@@ -1,9 +1,9 @@
 {
-  "version": "0.60.1",
-  "versionCode": 63,
+  "version": "0.61.0",
+  "versionCode": 64,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.60.1.apk",
-  "sha256": "3601c1135e2b5f8c9b4b10b7324bd54514d6a0dd7ce7f0709eb9f85983ecfc07",
-  "notes": "v0.60.1 · 확대·축소를 직접 조작할 때만 지도 배율 변경 · 이동·채집·여행·화면 변경 시 수동 배율 유지",
-  "publishedAt": "2026-10-18T05:34:36.247Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.61.0.apk",
+  "sha256": "f6f98a36d8ccaaf14521fbded698da17a1fabf772cbff536e7694a6547d654b2",
+  "notes": "v0.61.0 · 생활 화면 메뉴·도구·팝업 정리 · 주변 좀비 표시 비율과 움직임 개선 · 농사·건설·채집 시 직접 정한 지도 배율 유지",
+  "publishedAt": "2026-10-18T06:34:38.261Z"
 }
