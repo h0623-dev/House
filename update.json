@@ -1,9 +1,9 @@
 {
-  "version": "0.62.0",
-  "versionCode": 66,
-  "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.62.0.apk",
-  "sha256": "98b8617a9c8e56620b092d6a1aecefdf752ce561b50214f8e67afaa551a2832e",
-  "notes": "v0.62.0 · 풍경을 가리지 않는 투명 생활 HUD · 그림 아이콘·이름·수량 간격 정리 · 확대·축소 버튼 제거 및 핀치·휠 유지 · 기존 마을 저장 유지",
-  "publishedAt": "2026-10-18T07:54:19.629Z"
+  "version": "0.63.0",
+  "versionCode": 67,
+  "minimumNativeVersionCode": 67,
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.63.0.apk",
+  "sha256": "aa10ad1c1300637b9a499e2d0469ec8193472ecca98b7f2952b3028c668828ba",
+  "notes": "로드헤이븐으로 이름 통일 · 트럭과 동물의 새 앱 아이콘 · 애니메이션 시작 화면. 설치 이름과 아이콘은 APK 업데이트 후 적용되며 기존 마을과 자동 콘텐츠 패치를 유지합니다.",
+  "publishedAt": "2026-10-18T09:15:29.199Z"
 }
