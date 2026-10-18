@@ -1,9 +1,9 @@
 {
-  "version": "0.65.0",
-  "versionCode": 71,
+  "version": "0.66.0",
+  "versionCode": 72,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.65.0.apk",
-  "sha256": "5b30e923d8c8f13457f8ffd51cf718ef205e4c44aba8c63bdc96f8de0df16e71",
-  "notes": "큰 그림의 상점 카드 · 고정 분류와 닫기 · 구매 확인에 잔액과 보유 수량 표시 · 건설 전체·생산·생활·지은 시설 분류 · 상세 선택 후 지도에 놓기 · 가로 휴대폰과 폴드 화면 대응. APK68 이상은 자동 콘텐츠 패치로 적용됩니다.",
-  "publishedAt": "2026-10-18T12:26:45.304Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.66.0.apk",
+  "sha256": "1f23750474179811623241e4fc5726552ae8f9adcfc673d2ed98d4c37435686c",
+  "notes": "공용 도로 만남 쉼터·채널 선택·실시간 이동과 인사 기능 준비. 실제 유저 만남은 별도 서버 연결 후 활성화됩니다.",
+  "publishedAt": "2026-10-18T13:33:46.267Z"
 }
