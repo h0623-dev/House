@@ -1,9 +1,9 @@
 {
-  "version": "0.63.2",
-  "versionCode": 69,
+  "version": "0.64.0",
+  "versionCode": 70,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.63.2.apk",
-  "sha256": "c56cc53177c24713d5b9c31e78f79b61eaa5eb83b2888f05a094b3a8ab123f53",
-  "notes": "휴대폰 회전 안내 화면 제거 · 트럭 정원과 동물 일러스트로 로딩 통일 · 잔잔한 구름·잎사귀 시작 연출. APK68 이상은 자동 콘텐츠 패치로 적용됩니다.",
-  "publishedAt": "2026-10-18T10:57:06.282Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.64.0.apk",
+  "sha256": "c02fa89887cf79fb5139d2727d3970b2bc190cc5fae7b99ddf7615c8fc0fb202",
+  "notes": "11종 동물의 쓰다듬기 손 접촉과 종별 반응 · 코끼리·기린의 단계별 올라타기·내리기와 안정된 앉은 자세 · 안전영역 왼쪽 아래 내리기 버튼. APK68 이상은 자동 콘텐츠 패치로 적용됩니다.",
+  "publishedAt": "2026-10-18T11:38:25.483Z"
 }
