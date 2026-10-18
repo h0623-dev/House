@@ -1,9 +1,9 @@
 {
-  "version": "0.60.0",
-  "versionCode": 62,
+  "version": "0.60.1",
+  "versionCode": 63,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.60.0.apk",
-  "sha256": "8af88d1081e6cb4033ed4e33cc09e13a0d4e921d519eb42ded93347bb212895d",
-  "notes": "v0.60.0 · 숲길·바다여울 지면 원화 교체 · 월드 기준 나무 크기와 불투명도·축소 이미지 개선 · 기존 저장과 채집 규칙 유지",
-  "publishedAt": "2026-10-18T04:51:36.933Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.60.1.apk",
+  "sha256": "3601c1135e2b5f8c9b4b10b7324bd54514d6a0dd7ce7f0709eb9f85983ecfc07",
+  "notes": "v0.60.1 · 확대·축소를 직접 조작할 때만 지도 배율 변경 · 이동·채집·여행·화면 변경 시 수동 배율 유지",
+  "publishedAt": "2026-10-18T05:34:36.247Z"
 }
