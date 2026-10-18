@@ -1,9 +1,9 @@
 {
-  "version": "0.54.0",
-  "versionCode": 54,
+  "version": "0.55.0",
+  "versionCode": 55,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.54.0.apk",
-  "sha256": "7188ba5838dfdc1b3d16c92f80f538608a7166bf75af02ffa376b0eef49d4392",
-  "notes": "v0.54.0 · 접힘·펼침과 화면 크기에 맞춰 글자·상단 정보·퀘스트·층·작업창·키보드 배치를 조정했어요. 화면 UI는 자동 패치되며 Android 글자 크기·구성 변경 지원은 APK 54 업데이트로 적용돼요.",
-  "publishedAt": "2026-10-17T00:11:50.190Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.55.0.apk",
+  "sha256": "e46ac5c92084b560768ceb1f6b1f3d3e2c4bd550d1976aa1d827446db4a51751",
+  "notes": "v0.55.0 · 성장 단계에 맞춰 이어지는 마을 성장 퀘스트를 추가했습니다. 새로운 탐험·생활 콘텐츠 PDF와 그림은 검토용 기획안이며 아직 게임에 구현되지 않았습니다.",
+  "publishedAt": "2026-10-18T01:03:06.962Z"
 }
