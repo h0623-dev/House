@@ -1,9 +1,9 @@
 {
-  "version": "0.63.0",
-  "versionCode": 67,
-  "minimumNativeVersionCode": 67,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.63.0.apk",
-  "sha256": "aa10ad1c1300637b9a499e2d0469ec8193472ecca98b7f2952b3028c668828ba",
-  "notes": "로드헤이븐으로 이름 통일 · 트럭과 동물의 새 앱 아이콘 · 애니메이션 시작 화면. 설치 이름과 아이콘은 APK 업데이트 후 적용되며 기존 마을과 자동 콘텐츠 패치를 유지합니다.",
-  "publishedAt": "2026-10-18T09:15:29.199Z"
+  "version": "0.63.1",
+  "versionCode": 68,
+  "minimumNativeVersionCode": 68,
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.63.1.apk",
+  "sha256": "a3da69f0358d19201c152324b89cec04d625bfa10fd8bc9d4986ed6091d0764e",
+  "notes": "화면 크기·폴드 상태에 맞춘 UI 배치 · Android 전체 화면 및 여백 수정 · 노치 안전영역 적용. 전체 화면 수정은 새 APK 설치 후 적용되며 기존 마을과 자동 패치를 유지합니다.",
+  "publishedAt": "2026-10-18T10:19:12.194Z"
 }
