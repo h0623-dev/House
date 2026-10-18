@@ -1,9 +1,9 @@
 {
-  "version": "0.59.0",
-  "versionCode": 61,
+  "version": "0.60.0",
+  "versionCode": 62,
   "minimumNativeVersionCode": 54,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.59.0.apk",
-  "sha256": "a4745947664ce37f34608053df9988188d82c31d960bb41e655053dbb5bd7036",
-  "notes": "v0.59.0 · 숲길과 바다여울 채집 원화와 지면 접점 개선 · 기존 저장과 보상·재생 시간 유지",
-  "publishedAt": "2026-10-18T04:31:18.712Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.60.0.apk",
+  "sha256": "8af88d1081e6cb4033ed4e33cc09e13a0d4e921d519eb42ded93347bb212895d",
+  "notes": "v0.60.0 · 숲길·바다여울 지면 원화 교체 · 월드 기준 나무 크기와 불투명도·축소 이미지 개선 · 기존 저장과 채집 규칙 유지",
+  "publishedAt": "2026-10-18T04:51:36.933Z"
 }
