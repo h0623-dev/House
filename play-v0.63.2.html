@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#173e36" />
+    <link rel="icon" type="image/png" href="/House/play/assets/pwa/road-haven-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" data-pwa-only />
+    <meta name="apple-mobile-web-app-title" content="로드헤이븐" data-pwa-only />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" data-pwa-only />
+    <link rel="manifest" href="/House/manifest.webmanifest" data-pwa-only />
+    <link rel="apple-touch-icon" href="/House/play/assets/pwa/road-haven-icon.png" data-pwa-only />
+    <meta name="description" content="도로 위에서 피어나는 작은 일상. 먼 미래 대한민국, 거대한 트럭 위에서 함께 살아가는 생존 생활 게임." />
+    <title>로드헤이븐</title>
+    
+    
+  <meta name="road-haven-build" content="dd9dc27e568783b5e5e015a6921579c957e72cdea2ab9393ba0df6fd924fa668"><meta name="road-haven-version" content="0.63.2"></head>
+  <body><div id="app"></div><style id="road-haven-bootstrap-style">
+html,body{margin:0;min-height:100%;background:#e5f5ee;color:#2e5547;font-family:system-ui,sans-serif}
+#road-haven-bootstrap{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;box-sizing:border-box;overflow:hidden;padding:max(16px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));background:radial-gradient(ellipse at 72% 14%,#fff3d2 0,transparent 46%),linear-gradient(#e5f5ee,#f4f9e9);text-align:center}
+#road-haven-bootstrap:before,#road-haven-bootstrap:after{content:"";position:absolute;width:140%;height:38%;bottom:-20%;border-radius:50%;background:#c9dfbd;transform:rotate(-5deg)}
+#road-haven-bootstrap:after{bottom:-28%;left:-30%;height:43%;background:#b6d3a4;transform:rotate(6deg)}
+#road-haven-bootstrap section{position:relative;z-index:1;display:grid;justify-items:center;align-content:center;gap:8px;box-sizing:border-box;width:min(680px,100%);max-height:100%;overflow:auto;animation:road-haven-bootstrap-arrive .65s ease-out both}
+#road-haven-bootstrap .bootstrap-cloud{position:absolute;top:15%;left:8%;width:125px;height:28px;border-radius:50%;background:#ffffff80;box-shadow:26px -12px 0 -2px #ffffff80,56px -2px 0 -3px #ffffff80;animation:road-haven-bootstrap-cloud 9s ease-in-out infinite alternate}
+#road-haven-bootstrap .bootstrap-cloud.cloud-near{top:34%;left:76%;width:88px;height:20px;opacity:.7;animation-delay:-4s;animation-direction:alternate-reverse}
+#road-haven-bootstrap .bootstrap-emblem{position:relative;width:min(62vw,340px,49dvh);aspect-ratio:1;margin:0 auto}
+#road-haven-bootstrap .bootstrap-emblem:after{content:"";position:absolute;left:15%;right:15%;bottom:3%;height:5%;border-radius:50%;background:#66855720;animation:road-haven-bootstrap-shadow 4s ease-in-out infinite}
+#road-haven-bootstrap img{position:relative;z-index:1;display:block;width:100%;height:100%;object-fit:contain;animation:road-haven-bootstrap-drift 4s ease-in-out infinite}
+#road-haven-bootstrap .bootstrap-leaf{position:absolute;z-index:2;width:16px;height:9px;border-radius:100% 0 100% 0;background:#8eb877;animation:road-haven-bootstrap-leaf 5s ease-in-out infinite}
+#road-haven-bootstrap .bootstrap-leaf:first-of-type{left:2%;top:33%;rotate:-28deg}
+#road-haven-bootstrap .bootstrap-leaf:last-of-type{right:3%;top:12%;width:12px;height:7px;background:#d7ba72;rotate:18deg;animation-delay:-2s}
+#road-haven-bootstrap h1{margin:0;color:#2e5547;font-size:clamp(30px,5vw,42px);font-weight:850;letter-spacing:-.06em;line-height:1.2;text-shadow:0 2px #ffffffe0}
+#road-haven-bootstrap .bootstrap-status{width:min(380px,100%);padding:0 4px 4px;box-sizing:border-box}
+#road-haven-bootstrap p{min-height:2.8em;margin:0 0 12px;color:#486b59;font-size:14px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere}
+#road-haven-bootstrap progress{display:block;box-sizing:border-box;width:100%;height:8px;overflow:hidden;border:0;border-radius:8px;background:#d4e3ca;accent-color:#4f8e75}
+#road-haven-bootstrap progress::-webkit-progress-bar{border-radius:8px;background:#d4e3ca}
+#road-haven-bootstrap progress::-webkit-progress-value{border-radius:8px;background:linear-gradient(90deg,#8eb877,#4f8e75);transition:width .25s ease}
+#road-haven-bootstrap progress::-moz-progress-bar{border-radius:8px;background:#4f8e75}
+#road-haven-bootstrap button{min-height:44px;margin-top:14px;padding:10px 24px;border:0;border-radius:14px;background:#315f4c;color:#fffdf0;font:700 14px system-ui,sans-serif;cursor:pointer}
+#road-haven-bootstrap button:focus-visible{outline:3px solid #a27d35;outline-offset:3px}
+#road-haven-bootstrap [hidden]{display:none}
+@keyframes road-haven-bootstrap-arrive{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes road-haven-bootstrap-drift{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes road-haven-bootstrap-shadow{0%,100%{transform:scaleX(1);opacity:1}50%{transform:scaleX(.88);opacity:.65}}
+@keyframes road-haven-bootstrap-leaf{0%,100%{transform:translate(0,0) rotate(0)}50%{transform:translate(5px,-7px) rotate(12deg)}}
+@keyframes road-haven-bootstrap-cloud{from{transform:translateX(-12px)}to{transform:translateX(18px)}}
+@media(max-height:500px) and (min-width:560px){#road-haven-bootstrap section{width:min(760px,100%);grid-template-columns:minmax(190px,1fr) minmax(210px,.85fr);gap:8px 26px;align-items:center}#road-haven-bootstrap h1{grid-column:1/-1;justify-self:start;font-size:32px}#road-haven-bootstrap .bootstrap-emblem{width:min(38vw,64dvh,300px)}#road-haven-bootstrap .bootstrap-status{text-align:left}#road-haven-bootstrap p{font-size:13px;min-height:3em}#road-haven-bootstrap button{margin-top:12px}}
+@media(prefers-reduced-motion:reduce){#road-haven-bootstrap section,#road-haven-bootstrap img,#road-haven-bootstrap .bootstrap-emblem:after,#road-haven-bootstrap .bootstrap-leaf,#road-haven-bootstrap .bootstrap-cloud{animation:none}#road-haven-bootstrap progress::-webkit-progress-value{transition:none}}
+</style><div id="road-haven-bootstrap" role="status" aria-live="polite"><i class="bootstrap-cloud" aria-hidden="true"></i><i class="bootstrap-cloud cloud-near" aria-hidden="true"></i><section><h1>로드헤이븐</h1><div class="bootstrap-emblem" aria-hidden="true"><img src="https://cdn.jsdelivr.net/gh/h0623-dev/House@f5562675f1214729aa5b1dc7e3a9c900b591d333/assets/app-brand-v063.webp" alt="" width="340" height="340"><i class="bootstrap-leaf"></i><i class="bootstrap-leaf"></i></div><div class="bootstrap-status"><p id="road-haven-bootstrap-message">작은 쉼터와 친구들을 준비하고 있어요.</p><progress id="road-haven-bootstrap-progress" aria-label="게임 준비 진행" max="100" value="0"></progress><button id="road-haven-bootstrap-retry" hidden>다시 준비하기</button></div></section></div><script>(function remoteWebBootstrap(config) {
+  // The game intro shares this clock, so downloading never adds a second wait.
+  if (!window.__ROAD_HAVEN_ENTRY__ || !Number.isFinite(window.__ROAD_HAVEN_ENTRY__.startedAt)) {
+    window.__ROAD_HAVEN_ENTRY__ = { startedAt: Date.now(), done: false };
+  }
+  const expected = document.querySelector('meta[name="road-haven-build"]')?.content;
+  const message = document.getElementById('road-haven-bootstrap-message');
+  const progress = document.getElementById('road-haven-bootstrap-progress');
+  const retry = document.getElementById('road-haven-bootstrap-retry');
+  const service = navigator.serviceWorker;
+  let registration, running = false, navigating = false, busy = false, stopped = false;
+  let peerToken, activationToken, committedBuild, peerTimer;
+  let lastAttempt = 0, checkTimer;
+  const watched = new Set();
+  const declaredBootstraps = new Map();
+  const show = (text, value) => { message.textContent = text; if (value !== undefined) progress.value = value; };
+  const fail = text => { stopped = true; clearTimeout(checkTimer); show(text); retry.hidden = false; };
+  retry.addEventListener('click', () => {
+    const url = new URL(location.href); url.searchParams.delete('_rh_boot'); location.replace(url.href);
+  });
+  if (!expected || !/^[a-f0-9]{64}$/.test(expected) || !isSecureContext || !service || !globalThis.caches) {
+    fail('이 브라우저에서는 게임 파일을 저장할 수 없어요. Chrome 또는 Safari에서 링크를 열어 주세요.'); return;
+  }
+  const request = (worker, data) => new Promise((resolve, reject) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => { channel.port1.close(); reject(Error('Worker response timeout')); }, 9000);
+    channel.port1.onmessage = event => { clearTimeout(timer); channel.port1.close(); resolve(event.data); };
+    try { worker.postMessage(data, [channel.port2]); } catch (error) { clearTimeout(timer); channel.port1.close(); reject(error); }
+  });
+  function reenter(buildId, version = config.version) {
+    if (navigating || running) return;
+    const url = new URL(config.base + 'play-v' + version + '.html', location.origin);
+    url.searchParams.set('_rh_boot', buildId);
+    if (location.pathname === url.pathname && new URL(location.href).searchParams.get('_rh_boot') === buildId) {
+      fail('브라우저가 게임 저장소에 연결하지 못했어요. 저장 공간을 확인한 뒤 다시 준비해 주세요.'); return;
+    }
+    navigating = true; location.replace(url.href);
+  }
+  async function launch() {
+    if (running || stopped || navigating || peerToken || committedBuild) return;
+    running = true; clearTimeout(checkTimer); show('준비가 끝났어요. 우리 마을로 들어가요.', 100);
+    try {
+      const roles = new Map(declaredBootstraps); roles.set(service.controller, expected);
+      for (const [worker, buildId] of roles) {
+        if (worker.state === 'redundant') continue;
+        const result = await request(worker, { type: 'WEB_UPDATE_BOOTSTRAP_EXIT', buildId });
+        if (!result.accepted) throw Error('Bootstrap role could not be released');
+      }
+      declaredBootstraps.clear();
+      await Promise.all(config.styles.map(href => new Promise((resolve, reject) => {
+        const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = href;
+        link.onload = resolve; link.onerror = () => reject(Error('Game styles unavailable')); document.head.append(link);
+      })));
+      const script = document.createElement('script'); script.type = 'module'; script.src = config.modules[0];
+      script.onload = () => {
+        window.__ROAD_HAVEN_ENTRY__.done = true;
+        document.getElementById('road-haven-bootstrap')?.remove();
+        document.getElementById('road-haven-bootstrap-style')?.remove();
+      };
+      script.onerror = () => fail('게임 파일을 열지 못했어요. 연결 상태를 확인한 뒤 다시 준비해 주세요.');
+      document.head.append(script);
+    } catch { fail('게임 화면을 준비하지 못했어요. 다시 준비하기를 눌러 주세요.'); }
+  }
+  function watch(worker) {
+    if (!worker || watched.has(worker)) return; watched.add(worker);
+    const candidate = worker === registration?.installing || worker === registration?.waiting;
+    worker.addEventListener('statechange', () => {
+      if (candidate && worker.state === 'redundant' && !running) fail('게임 파일을 저장하지 못했어요. 저장 공간과 연결 상태를 확인한 뒤 다시 준비해 주세요.');
+      else schedule(0);
+    });
+  }
+  function schedule(delay = 1500) {
+    if (running || stopped || navigating) return;
+    clearTimeout(checkTimer); checkTimer = setTimeout(() => { void inspect(); }, delay);
+  }
+  async function inspect() {
+    if (busy || running || stopped || navigating || !registration) return;
+    busy = true;
+    try {
+      watch(registration.installing); watch(registration.waiting); watch(registration.active);
+      const controller = service.controller;
+      if (controller) {
+        const current = await request(controller, { type: 'WEB_UPDATE_GET_STATE', waiting: false });
+        if (committedBuild && current.buildId === committedBuild && /^\d+\.\d+\.\d+$/.test(current.state?.version)) {
+          reenter(current.buildId, current.state.version); return;
+        }
+        if (current.buildId === expected && !peerToken && !committedBuild) { await launch(); return; }
+        if (current.state?.contentVersion > config.contentVersion && /^[a-f0-9]{64}$/.test(current.buildId) && /^\d+\.\d+\.\d+$/.test(current.state.version)) {
+          reenter(current.buildId, current.state.version); return;
+        }
+      }
+      if (registration.waiting) {
+        const waiting = registration.waiting;
+        const next = await request(waiting, { type: 'WEB_UPDATE_GET_STATE', waiting: true });
+        if (next.state?.status === 'ready') {
+          // Remember even a lost reply: the waiting worker may have received
+          // HELLO. Every such role must be released before opening a real save.
+          declaredBootstraps.set(waiting, next.buildId);
+          await request(waiting, { type: 'WEB_UPDATE_BOOTSTRAP_HELLO', buildId: next.buildId });
+        }
+        if (!peerToken && !committedBuild && next.state?.status === 'ready' && Date.now() - lastAttempt > 6000) {
+          lastAttempt = Date.now();
+          activationToken = crypto.randomUUID?.() ?? String(Date.now()) + Math.random();
+          const result = await request(waiting, { type: 'WEB_UPDATE_BOOTSTRAP_ACTIVATE', buildId: next.buildId, token: activationToken });
+          if (!result.accepted) show('열려 있는 마을이 안전하게 저장되면 자동으로 이어갈게요.', 100);
+        }
+      } else if (registration.active && !registration.installing) {
+        const active = await request(registration.active, { type: 'WEB_UPDATE_GET_STATE', waiting: false });
+        if (active.buildId === expected) reenter(expected);
+        else if (active.state?.contentVersion > config.contentVersion && /^[a-f0-9]{64}$/.test(active.buildId) && /^\d+\.\d+\.\d+$/.test(active.state.version)) reenter(active.buildId, active.state.version);
+      }
+    } catch { if (!running) show('연결을 기다리고 있어요. 게임 파일이 준비되면 자동으로 시작해요.'); }
+    finally { busy = false; schedule(); }
+  }
+  service.addEventListener('message', event => {
+    if (!registration || ![registration.installing, registration.waiting, registration.active].includes(event.source)) return;
+    const data = event.data || {};
+    if (data.type === 'WEB_UPDATE_STATE' && !running) {
+      const state = data.state || {};
+      if (state.status === 'error') fail(navigator.onLine === false
+        ? '지금은 오프라인이에요. 인터넷에 연결한 뒤 다시 준비하면 우리 트럭으로 돌아올 수 있어요.' : data.reason === 'storage'
+        ? '브라우저 저장 공간을 사용할 수 없어요. 비공개 모드를 끄거나 저장 공간을 확보한 뒤 다시 준비해 주세요.'
+        : '게임 파일을 준비하지 못했어요. 연결 상태와 저장 공간을 확인한 뒤 다시 준비해 주세요.');
+      else if (typeof state.message === 'string') show(state.message, Number.isFinite(state.progress) ? state.progress : undefined);
+    }
+    // This document has never opened a save. It may freeze as a passive peer,
+    // but must never become the canonical writer for an already running game.
+    if (data.type === 'WEB_UPDATE_PREPARE' && !running && typeof data.token === 'string') {
+      peerToken = data.token; clearTimeout(peerTimer);
+      peerTimer = setTimeout(() => { if (!committedBuild) { peerToken = undefined; schedule(0); } }, 16000);
+      event.source.postMessage({ type: 'WEB_UPDATE_VOTE', token: data.token, ready: true });
+    }
+    if (data.type === 'WEB_UPDATE_ABORT' && (data.token === peerToken || data.token === activationToken)) {
+      peerToken = undefined; activationToken = undefined; committedBuild = undefined; clearTimeout(peerTimer);
+    }
+    if (data.type === 'WEB_UPDATE_COMMIT' && (data.token === peerToken || data.token === activationToken)
+      && /^[a-f0-9]{64}$/.test(data.buildId)) {
+      committedBuild = data.buildId; clearTimeout(peerTimer);
+    }
+    if (['WEB_UPDATE_ACTIVATED', 'WEB_UPDATE_COMMIT', 'WEB_UPDATE_ABORT'].includes(data.type)) schedule(0);
+  });
+  service.addEventListener('controllerchange', () => schedule(0));
+  void (async () => {
+    try {
+      // A complete offline game must remain playable even when storage is now
+      // full and cannot accept another probe or update.
+      if (service.controller) {
+        const current = await request(service.controller, { type: 'WEB_UPDATE_GET_STATE', waiting: false });
+        if (current.buildId === expected) { await launch(); return; }
+      }
+      // A failed cache write gets an explicit screen instead of a reload loop.
+      const probe = await caches.open('road-haven-web-bootstrap:' + config.base);
+      const probeURL = new URL(config.base + '.road-haven-storage-probe', location.origin).href;
+      await probe.put(probeURL, new Response('ready')); await probe.delete(probeURL);
+      registration = await service.register(config.base + 'sw.js', { scope: config.base, updateViaCache: 'none' });
+      registration.addEventListener('updatefound', () => { watch(registration.installing); schedule(0); });
+      watch(registration.installing); watch(registration.waiting); watch(registration.active);
+      void registration.update().catch(() => {}); await inspect();
+    } catch { fail('브라우저에서 게임 파일을 저장할 수 없어요. 저장 공간을 확인하거나 Chrome·Safari에서 다시 열어 주세요.'); }
+  })();
+})({"base":"/House/","version":"0.63.2","contentVersion":69,"modules":["/House/play/assets/index-I-3URtQP.js"],"styles":["/House/play/assets/index-DNIgitgE.css"]});</script><small aria-label="실행 게임 버전" style="position:fixed;right:8px;bottom:calc(env(safe-area-inset-bottom,0px) + 3px);z-index:12;pointer-events:none;color:#345b47;background:#fff7dfd9;border-radius:4px;padding:2px 5px;font:10px sans-serif">v0.63.2</small></body>
+</html>

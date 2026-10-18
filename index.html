@@ -14,35 +14,39 @@
     <title>로드헤이븐</title>
     
     
-  <meta name="road-haven-build" content="e6d17a5567956fa79b959961a78f29d329822e26355ec44fbf83a6295c5a733a"><meta name="road-haven-version" content="0.63.1"></head>
+  <meta name="road-haven-build" content="dd9dc27e568783b5e5e015a6921579c957e72cdea2ab9393ba0df6fd924fa668"><meta name="road-haven-version" content="0.63.2"></head>
   <body><div id="app"></div><style id="road-haven-bootstrap-style">
-html,body{margin:0;min-height:100%;background:#edf2df;color:#254d3b;font-family:system-ui,sans-serif}
-#road-haven-bootstrap{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;box-sizing:border-box;padding:20px;background:radial-gradient(ellipse at 50% 15%,#fff9df 0,#f4f4e5 45%,#e3ecd6 100%);text-align:center}
-#road-haven-bootstrap section{position:relative;isolation:isolate;box-sizing:border-box;width:min(440px,calc(100vw - 40px));max-height:calc(100dvh - 40px);overflow:auto;padding:26px 30px 24px;border:1px solid #d4ddbe;border-radius:32px;background:#fffef3;box-shadow:0 16px 50px #526b391a;animation:road-haven-bootstrap-arrive .65s ease-out both}
-#road-haven-bootstrap small{display:block;color:#778563;font-size:11px;font-weight:600;letter-spacing:.12em}
-#road-haven-bootstrap .bootstrap-emblem{position:relative;width:128px;height:128px;margin:16px auto 0}
-#road-haven-bootstrap .bootstrap-emblem:before{content:"";position:absolute;inset:-10px;border-radius:50%;background:radial-gradient(circle,#f8e9b7 0,#edf2d7 56%,transparent 72%)}
-#road-haven-bootstrap .bootstrap-emblem:after{content:"";position:absolute;left:22px;right:22px;bottom:0;height:11px;border-radius:50%;background:#8ca77925;animation:road-haven-bootstrap-shadow 4s ease-in-out infinite}
-#road-haven-bootstrap img{position:relative;z-index:1;display:block;width:116px;height:116px;margin:0 auto;border-radius:29px;box-shadow:0 8px 20px #536b3920;animation:road-haven-bootstrap-drift 4s ease-in-out infinite}
-#road-haven-bootstrap .bootstrap-leaf{position:absolute;z-index:2;width:16px;height:9px;border-radius:100% 0 100% 0;background:#86a865;animation:road-haven-bootstrap-leaf 4s ease-in-out infinite}
-#road-haven-bootstrap .bootstrap-leaf:first-of-type{left:-4px;top:38px;rotate:-28deg}
-#road-haven-bootstrap .bootstrap-leaf:last-of-type{right:-2px;top:12px;width:12px;height:7px;background:#c8ad65;rotate:18deg;animation-delay:-1.5s}
-#road-haven-bootstrap h1{margin:16px 0 8px;color:#254d3b;font-size:clamp(26px,5vw,34px);font-weight:800;letter-spacing:-.055em;line-height:1.2}
-#road-haven-bootstrap p{min-height:3em;margin:10px 0 18px;color:#6a7b58;font-size:14px;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}
-#road-haven-bootstrap progress{display:block;box-sizing:border-box;width:100%;height:10px;overflow:hidden;border:0;border-radius:8px;background:#e7ebd6;accent-color:#80a665}
-#road-haven-bootstrap progress::-webkit-progress-bar{border-radius:8px;background:#e7ebd6}
-#road-haven-bootstrap progress::-webkit-progress-value{border-radius:8px;background:linear-gradient(90deg,#8eb56c,#658e53);transition:width .25s ease}
-#road-haven-bootstrap progress::-moz-progress-bar{border-radius:8px;background:#80a665}
-#road-haven-bootstrap button{margin-top:18px;padding:12px 24px;border:0;border-radius:14px;background:#315f46;color:#fffdf0;font:600 14px system-ui,sans-serif;cursor:pointer}
-#road-haven-bootstrap button:focus-visible{outline:3px solid #bc9852;outline-offset:4px}
+html,body{margin:0;min-height:100%;background:#e5f5ee;color:#2e5547;font-family:system-ui,sans-serif}
+#road-haven-bootstrap{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;box-sizing:border-box;overflow:hidden;padding:max(16px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));background:radial-gradient(ellipse at 72% 14%,#fff3d2 0,transparent 46%),linear-gradient(#e5f5ee,#f4f9e9);text-align:center}
+#road-haven-bootstrap:before,#road-haven-bootstrap:after{content:"";position:absolute;width:140%;height:38%;bottom:-20%;border-radius:50%;background:#c9dfbd;transform:rotate(-5deg)}
+#road-haven-bootstrap:after{bottom:-28%;left:-30%;height:43%;background:#b6d3a4;transform:rotate(6deg)}
+#road-haven-bootstrap section{position:relative;z-index:1;display:grid;justify-items:center;align-content:center;gap:8px;box-sizing:border-box;width:min(680px,100%);max-height:100%;overflow:auto;animation:road-haven-bootstrap-arrive .65s ease-out both}
+#road-haven-bootstrap .bootstrap-cloud{position:absolute;top:15%;left:8%;width:125px;height:28px;border-radius:50%;background:#ffffff80;box-shadow:26px -12px 0 -2px #ffffff80,56px -2px 0 -3px #ffffff80;animation:road-haven-bootstrap-cloud 9s ease-in-out infinite alternate}
+#road-haven-bootstrap .bootstrap-cloud.cloud-near{top:34%;left:76%;width:88px;height:20px;opacity:.7;animation-delay:-4s;animation-direction:alternate-reverse}
+#road-haven-bootstrap .bootstrap-emblem{position:relative;width:min(62vw,340px,49dvh);aspect-ratio:1;margin:0 auto}
+#road-haven-bootstrap .bootstrap-emblem:after{content:"";position:absolute;left:15%;right:15%;bottom:3%;height:5%;border-radius:50%;background:#66855720;animation:road-haven-bootstrap-shadow 4s ease-in-out infinite}
+#road-haven-bootstrap img{position:relative;z-index:1;display:block;width:100%;height:100%;object-fit:contain;animation:road-haven-bootstrap-drift 4s ease-in-out infinite}
+#road-haven-bootstrap .bootstrap-leaf{position:absolute;z-index:2;width:16px;height:9px;border-radius:100% 0 100% 0;background:#8eb877;animation:road-haven-bootstrap-leaf 5s ease-in-out infinite}
+#road-haven-bootstrap .bootstrap-leaf:first-of-type{left:2%;top:33%;rotate:-28deg}
+#road-haven-bootstrap .bootstrap-leaf:last-of-type{right:3%;top:12%;width:12px;height:7px;background:#d7ba72;rotate:18deg;animation-delay:-2s}
+#road-haven-bootstrap h1{margin:0;color:#2e5547;font-size:clamp(30px,5vw,42px);font-weight:850;letter-spacing:-.06em;line-height:1.2;text-shadow:0 2px #ffffffe0}
+#road-haven-bootstrap .bootstrap-status{width:min(380px,100%);padding:0 4px 4px;box-sizing:border-box}
+#road-haven-bootstrap p{min-height:2.8em;margin:0 0 12px;color:#486b59;font-size:14px;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere}
+#road-haven-bootstrap progress{display:block;box-sizing:border-box;width:100%;height:8px;overflow:hidden;border:0;border-radius:8px;background:#d4e3ca;accent-color:#4f8e75}
+#road-haven-bootstrap progress::-webkit-progress-bar{border-radius:8px;background:#d4e3ca}
+#road-haven-bootstrap progress::-webkit-progress-value{border-radius:8px;background:linear-gradient(90deg,#8eb877,#4f8e75);transition:width .25s ease}
+#road-haven-bootstrap progress::-moz-progress-bar{border-radius:8px;background:#4f8e75}
+#road-haven-bootstrap button{min-height:44px;margin-top:14px;padding:10px 24px;border:0;border-radius:14px;background:#315f4c;color:#fffdf0;font:700 14px system-ui,sans-serif;cursor:pointer}
+#road-haven-bootstrap button:focus-visible{outline:3px solid #a27d35;outline-offset:3px}
 #road-haven-bootstrap [hidden]{display:none}
 @keyframes road-haven-bootstrap-arrive{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-@keyframes road-haven-bootstrap-drift{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-5px) rotate(1deg)}}
+@keyframes road-haven-bootstrap-drift{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 @keyframes road-haven-bootstrap-shadow{0%,100%{transform:scaleX(1);opacity:1}50%{transform:scaleX(.88);opacity:.65}}
-@keyframes road-haven-bootstrap-leaf{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-@media(max-height:440px){#road-haven-bootstrap{padding:12px}#road-haven-bootstrap section{width:min(500px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:17px 26px 18px}#road-haven-bootstrap .bootstrap-emblem{width:80px;height:80px;margin-top:10px}#road-haven-bootstrap img{width:74px;height:74px;border-radius:20px}#road-haven-bootstrap .bootstrap-emblem:after{left:14px;right:14px;height:7px}#road-haven-bootstrap .bootstrap-leaf:first-of-type{left:-6px;top:24px}#road-haven-bootstrap h1{margin-top:10px;font-size:26px}#road-haven-bootstrap p{min-height:2em;margin:8px 0 12px;font-size:13px}#road-haven-bootstrap button{margin-top:12px;padding:10px 22px}}
-@media(prefers-reduced-motion:reduce){#road-haven-bootstrap section,#road-haven-bootstrap img,#road-haven-bootstrap .bootstrap-emblem:after,#road-haven-bootstrap .bootstrap-leaf{animation:none}#road-haven-bootstrap progress::-webkit-progress-value{transition:none}}
-</style><div id="road-haven-bootstrap" role="status" aria-live="polite"><section><small>오늘도, 함께 만드는 작은 마을</small><div class="bootstrap-emblem" aria-hidden="true"><img src="https://cdn.jsdelivr.net/gh/h0623-dev/House@8c79625961edbea14c4eab9fae44e79f131e34e3/assets/pwa/road-haven-icon.png" alt="" width="116" height="116"><i class="bootstrap-leaf"></i><i class="bootstrap-leaf"></i></div><h1>로드헤이븐</h1><p id="road-haven-bootstrap-message">작은 쉼터와 친구들을 준비하고 있어요.</p><progress id="road-haven-bootstrap-progress" aria-label="게임 준비 진행" max="100" value="0"></progress><button id="road-haven-bootstrap-retry" hidden>다시 준비하기</button></section></div><script>(function remoteWebBootstrap(config) {
+@keyframes road-haven-bootstrap-leaf{0%,100%{transform:translate(0,0) rotate(0)}50%{transform:translate(5px,-7px) rotate(12deg)}}
+@keyframes road-haven-bootstrap-cloud{from{transform:translateX(-12px)}to{transform:translateX(18px)}}
+@media(max-height:500px) and (min-width:560px){#road-haven-bootstrap section{width:min(760px,100%);grid-template-columns:minmax(190px,1fr) minmax(210px,.85fr);gap:8px 26px;align-items:center}#road-haven-bootstrap h1{grid-column:1/-1;justify-self:start;font-size:32px}#road-haven-bootstrap .bootstrap-emblem{width:min(38vw,64dvh,300px)}#road-haven-bootstrap .bootstrap-status{text-align:left}#road-haven-bootstrap p{font-size:13px;min-height:3em}#road-haven-bootstrap button{margin-top:12px}}
+@media(prefers-reduced-motion:reduce){#road-haven-bootstrap section,#road-haven-bootstrap img,#road-haven-bootstrap .bootstrap-emblem:after,#road-haven-bootstrap .bootstrap-leaf,#road-haven-bootstrap .bootstrap-cloud{animation:none}#road-haven-bootstrap progress::-webkit-progress-value{transition:none}}
+</style><div id="road-haven-bootstrap" role="status" aria-live="polite"><i class="bootstrap-cloud" aria-hidden="true"></i><i class="bootstrap-cloud cloud-near" aria-hidden="true"></i><section><h1>로드헤이븐</h1><div class="bootstrap-emblem" aria-hidden="true"><img src="https://cdn.jsdelivr.net/gh/h0623-dev/House@f5562675f1214729aa5b1dc7e3a9c900b591d333/assets/app-brand-v063.webp" alt="" width="340" height="340"><i class="bootstrap-leaf"></i><i class="bootstrap-leaf"></i></div><div class="bootstrap-status"><p id="road-haven-bootstrap-message">작은 쉼터와 친구들을 준비하고 있어요.</p><progress id="road-haven-bootstrap-progress" aria-label="게임 준비 진행" max="100" value="0"></progress><button id="road-haven-bootstrap-retry" hidden>다시 준비하기</button></div></section></div><script>(function remoteWebBootstrap(config) {
   // The game intro shares this clock, so downloading never adds a second wait.
   if (!window.__ROAD_HAVEN_ENTRY__ || !Number.isFinite(window.__ROAD_HAVEN_ENTRY__.startedAt)) {
     window.__ROAD_HAVEN_ENTRY__ = { startedAt: Date.now(), done: false };
@@ -202,5 +206,5 @@ html,body{margin:0;min-height:100%;background:#edf2df;color:#254d3b;font-family:
       void registration.update().catch(() => {}); await inspect();
     } catch { fail('브라우저에서 게임 파일을 저장할 수 없어요. 저장 공간을 확인하거나 Chrome·Safari에서 다시 열어 주세요.'); }
   })();
-})({"base":"/House/","version":"0.63.1","contentVersion":68,"modules":["/House/play/assets/index-_CeC611W.js"],"styles":["/House/play/assets/index-DBt7gxoo.css"]});</script><small aria-label="실행 게임 버전" style="position:fixed;right:8px;bottom:calc(env(safe-area-inset-bottom,0px) + 3px);z-index:12;pointer-events:none;color:#345b47;background:#fff7dfd9;border-radius:4px;padding:2px 5px;font:10px sans-serif">v0.63.1</small></body>
+})({"base":"/House/","version":"0.63.2","contentVersion":69,"modules":["/House/play/assets/index-I-3URtQP.js"],"styles":["/House/play/assets/index-DNIgitgE.css"]});</script><small aria-label="실행 게임 버전" style="position:fixed;right:8px;bottom:calc(env(safe-area-inset-bottom,0px) + 3px);z-index:12;pointer-events:none;color:#345b47;background:#fff7dfd9;border-radius:4px;padding:2px 5px;font:10px sans-serif">v0.63.2</small></body>
 </html>
