@@ -1,9 +1,9 @@
 {
-  "version": "0.63.1",
-  "versionCode": 68,
+  "version": "0.63.2",
+  "versionCode": 69,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.63.1.apk",
-  "sha256": "a3da69f0358d19201c152324b89cec04d625bfa10fd8bc9d4986ed6091d0764e",
-  "notes": "화면 크기·폴드 상태에 맞춘 UI 배치 · Android 전체 화면 및 여백 수정 · 노치 안전영역 적용. 전체 화면 수정은 새 APK 설치 후 적용되며 기존 마을과 자동 패치를 유지합니다.",
-  "publishedAt": "2026-10-18T10:19:12.194Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.63.2.apk",
+  "sha256": "c56cc53177c24713d5b9c31e78f79b61eaa5eb83b2888f05a094b3a8ab123f53",
+  "notes": "휴대폰 회전 안내 화면 제거 · 트럭 정원과 동물 일러스트로 로딩 통일 · 잔잔한 구름·잎사귀 시작 연출. APK68 이상은 자동 콘텐츠 패치로 적용됩니다.",
+  "publishedAt": "2026-10-18T10:57:06.282Z"
 }
