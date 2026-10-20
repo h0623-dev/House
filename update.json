@@ -1,9 +1,9 @@
 {
-  "version": "0.66.0",
-  "versionCode": 72,
+  "version": "0.67.0",
+  "versionCode": 73,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.66.0.apk",
-  "sha256": "1f23750474179811623241e4fc5726552ae8f9adcfc673d2ed98d4c37435686c",
-  "notes": "공용 도로 만남 쉼터·채널 선택·실시간 이동과 인사 기능 준비. 실제 유저 만남은 별도 서버 연결 후 활성화됩니다.",
-  "publishedAt": "2026-10-18T13:33:46.267Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.67.0.apk",
+  "sha256": "5e4d580952bb552a76a4baaabd7debb68963c3ff08d08e804887a2b7101d512a",
+  "notes": "만남 채널을 꽃과 나무가 있는 공용 정원으로 꾸몄어요. 함께 꾸미기에서 장식 8종을 놓고 방향을 바꾸거나 내 장식을 옮기고 회수할 수 있어요. 채널별 꾸밈이 저장되고 같은 채널의 여행자에게 공유돼요.",
+  "publishedAt": "2026-10-20T13:39:41.113Z"
 }
