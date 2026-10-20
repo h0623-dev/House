@@ -1,9 +1,9 @@
 {
-  "version": "0.67.0",
-  "versionCode": 73,
+  "version": "0.67.1",
+  "versionCode": 74,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.67.0.apk",
-  "sha256": "5e4d580952bb552a76a4baaabd7debb68963c3ff08d08e804887a2b7101d512a",
-  "notes": "만남 채널을 꽃과 나무가 있는 공용 정원으로 꾸몄어요. 함께 꾸미기에서 장식 8종을 놓고 방향을 바꾸거나 내 장식을 옮기고 회수할 수 있어요. 채널별 꾸밈이 저장되고 같은 채널의 여행자에게 공유돼요.",
-  "publishedAt": "2026-10-20T13:39:41.113Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.67.1.apk",
+  "sha256": "aa11b6991cc03b3fa8b7ec8b91fec69b416348338bd67e709186c9d065873382",
+  "notes": "연속 씨앗 심기 멈춤과 탑승 다리·방향 표현 수정, 코끼리 하차 오류와 동물 관절 틈 보완",
+  "publishedAt": "2026-10-20T14:52:47.248Z"
 }
