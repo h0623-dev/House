@@ -1,13 +1,14 @@
 {
   "schema": 2,
-  "buildId": "9d24fbbb749d6fbf1cf7740bf634ef49fc9c08532da652133a0350e1b22596cf",
-  "version": "0.67.0",
-  "contentVersion": 73,
+  "buildId": "2e24fb2f91f1ca7e78bbf5dad460fa7ee5c7e1db43e0d4464c8400748dec4bfb",
+  "version": "0.67.1",
+  "contentVersion": 74,
   "base": "/House/",
   "remoteSource": {
     "repository": "h0623-dev/House",
-    "commit": "8e721f896e1e1e88b1a0d1b432bbe8683461fa75",
+    "commit": "709b77df28e946b340ce76c3dfa3fad2141afbcb",
     "commits": [
+      "709b77df28e946b340ce76c3dfa3fad2141afbcb",
       "8e721f896e1e1e88b1a0d1b432bbe8683461fa75",
       "08c7850dd3c05a3ee4034110fefd3aedd7c0f58f",
       "95dcc8f828046857fcf3fcd7dc2b5bbd0f9c1006"
@@ -17,7 +18,7 @@
     {
       "path": "index.html",
       "bytes": 5355,
-      "sha256": "47a214ac74943c50bebf233da83f52f8bd54448e5e03f9c13cbdbe1d190f973f"
+      "sha256": "7e1fc89a7026de96b87fd53b195a90fbe64da9f0f96e2dbac163c482b0e3383e"
     },
     {
       "path": "manifest.webmanifest",
@@ -265,16 +266,16 @@
       "sha256": "639db3e773a00df8e81a86636197465d212e715bf7ce419cb9f703a6dc89e207"
     },
     {
+      "path": "play/assets/index-ChIV5HUg.js",
+      "sourceUrl": "https://cdn.jsdelivr.net/gh/h0623-dev/House@709b77df28e946b340ce76c3dfa3fad2141afbcb/assets/index-ChIV5HUg.js",
+      "bytes": 980905,
+      "sha256": "bd0f2f14451386c3b5df0668dcc67badb3e50e5e58cb7df3ba67eeae1c232738"
+    },
+    {
       "path": "play/assets/index-DLUPUS9T.css",
       "sourceUrl": "https://cdn.jsdelivr.net/gh/h0623-dev/House@08c7850dd3c05a3ee4034110fefd3aedd7c0f58f/assets/index-DLUPUS9T.css",
       "bytes": 463550,
       "sha256": "b21db430c1da6d1a8ada809a01ced329dc659ce20dbbef755573c68389c85ed6"
-    },
-    {
-      "path": "play/assets/index-DWapmkDt.js",
-      "sourceUrl": "https://cdn.jsdelivr.net/gh/h0623-dev/House@08c7850dd3c05a3ee4034110fefd3aedd7c0f58f/assets/index-DWapmkDt.js",
-      "bytes": 975534,
-      "sha256": "29717a54fa0f3261e5195da5843e4f30c8b17622e8d173a3c3d08a8bc8918ee1"
     },
     {
       "path": "play/assets/pwa/road-haven-icon-maskable.png",
