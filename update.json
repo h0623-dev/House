@@ -1,9 +1,9 @@
 {
-  "version": "0.74.0",
-  "versionCode": 81,
+  "version": "0.74.1",
+  "versionCode": 82,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.0.apk",
-  "sha256": "19f21278cf7ae1771866580759590a21a6ac7be7ed77453335daac52c4aa1b1d",
-  "notes": "이동형 위험구역 전투: 직접 이동·조준·사격, 회피·장전, 동물 지원·물자 회수·구조·귀환",
-  "publishedAt": "2026-10-21T07:40:31.969Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.1.apk",
+  "sha256": "404f4c6191ec465487ed20c10d8844b64639710bfd9ef99e3712ab46d1ec3dbb",
+  "notes": "이동형 위험구역 전투 최적화: 전투 렌더링과 입력 응답 개선, 모바일 성능 안정화",
+  "publishedAt": "2026-10-21T08:12:39.652Z"
 }
