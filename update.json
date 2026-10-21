@@ -1,9 +1,9 @@
 {
-  "version": "0.74.4",
-  "versionCode": 85,
+  "version": "0.74.5",
+  "versionCode": 86,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.4.apk",
-  "sha256": "66ac29b7231aeb5936d3d016ade388d985995345038ca4198f73667b0f3c15f9",
-  "notes": "위험구역 전투 조작과 캐릭터 표현 개선",
-  "publishedAt": "2026-10-21T12:26:53.373Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.5.apk",
+  "sha256": "1b46cdafb0d9207909d44e0b6e9760ac68327a4a30c0d84e2dcbd4c2f55d5f53",
+  "notes": "마을 캐릭터 원화와 의상을 전투에 동일하게 적용",
+  "publishedAt": "2026-10-21T13:24:58.895Z"
 }
