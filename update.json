@@ -1,9 +1,9 @@
 {
-  "version": "0.74.3",
-  "versionCode": 84,
+  "version": "0.74.4",
+  "versionCode": 85,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.3.apk",
-  "sha256": "c11c5d650b27a104f2b9fa244dd0b7b9eb08c7dc81dc57587ba3d5e63dd98d84",
-  "notes": "주인공의 걷기와 행동 이동 속도를 기존 속도로 복구",
-  "publishedAt": "2026-10-21T11:55:02.075Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.4.apk",
+  "sha256": "66ac29b7231aeb5936d3d016ade388d985995345038ca4198f73667b0f3c15f9",
+  "notes": "위험구역 전투 조작과 캐릭터 표현 개선",
+  "publishedAt": "2026-10-21T12:26:53.373Z"
 }
