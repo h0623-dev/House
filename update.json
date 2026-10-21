@@ -1,9 +1,9 @@
 {
-  "version": "0.71.0",
-  "versionCode": 78,
+  "version": "0.72.0",
+  "versionCode": 79,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.71.0.apk",
-  "sha256": "7f8df19c7d2d90fdb9ec3637028981fcfd46a198643e4c846a84ad1d168aed9a",
-  "notes": "현실 시간 로딩 풍경: 07:00~18:00 폐주유소의 동물 쉼터, 18:00~다음 날 07:00 정전된 도시의 밤. 웹 첫 다운로드와 앱 시작 화면에 원화·조명·반딧불이 연출 적용.",
-  "publishedAt": "2026-10-21T01:40:39.719Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.72.0.apk",
+  "sha256": "4e7dff889f4e020cedb95a8efd8e9660955afde84b85ed39a310c72451c27a05",
+  "notes": "접지와 입체감 개선: 동물 개별 관절 보행, 캐릭터 실제 이동 거리·방향에 맞춘 발걸음, 트럭 뒤·앞 가림, 부드러운 차체·나무 그림자와 지형 색감 조화. 추가 개체 때문에 쓰다듬기·이동이 시작되지 않던 오류 수정.",
+  "publishedAt": "2026-10-21T02:24:17.505Z"
 }
