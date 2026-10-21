@@ -1,9 +1,9 @@
 {
-  "version": "0.70.0",
-  "versionCode": 77,
+  "version": "0.71.0",
+  "versionCode": 78,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.70.0.apk",
-  "sha256": "3e5efa5c16278e2d0b5877283a125e7a6aa055893e99f4dbbeecd1031cec9268",
-  "notes": "동물 가족과 새 이웃: 기존 11종을 두 마리씩, 말·양·염소·소·오리·닭·수달·너구리를 두 마리씩 추가. 19종 38마리의 개별 이동과 휴식, 지상 충돌 회피, 동물 친구 안내.",
-  "publishedAt": "2026-10-21T01:04:48.775Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.71.0.apk",
+  "sha256": "7f8df19c7d2d90fdb9ec3637028981fcfd46a198643e4c846a84ad1d168aed9a",
+  "notes": "현실 시간 로딩 풍경: 07:00~18:00 폐주유소의 동물 쉼터, 18:00~다음 날 07:00 정전된 도시의 밤. 웹 첫 다운로드와 앱 시작 화면에 원화·조명·반딧불이 연출 적용.",
+  "publishedAt": "2026-10-21T01:40:39.719Z"
 }
