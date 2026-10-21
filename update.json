@@ -1,9 +1,9 @@
 {
-  "version": "0.74.5",
-  "versionCode": 86,
+  "version": "0.74.6",
+  "versionCode": 87,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.5.apk",
-  "sha256": "1b46cdafb0d9207909d44e0b6e9760ac68327a4a30c0d84e2dcbd4c2f55d5f53",
-  "notes": "마을 캐릭터 원화와 의상을 전투에 동일하게 적용",
-  "publishedAt": "2026-10-21T13:24:58.895Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.6.apk",
+  "sha256": "004a0a1255abfcee2b189b86f2396631243afa9bf55461894c66a0f6201d9991",
+  "notes": "동물의 자연스러운 이동과 앉는 휴식, 체력·기력 회복 물약 추가",
+  "publishedAt": "2026-10-21T13:57:44.603Z"
 }
