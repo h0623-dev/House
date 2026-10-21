@@ -1,9 +1,9 @@
 {
-  "version": "0.74.2",
-  "versionCode": 83,
+  "version": "0.74.3",
+  "versionCode": 84,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.2.apk",
-  "sha256": "2d2dd5d6381284d5b1b1833a0b09d787d65441f44f914c477f57bf6873177797",
-  "notes": "닉네임 설정과 이름 변경 화면 추가, 온라인 이름 처리 연동 업데이트",
-  "publishedAt": "2026-10-21T08:36:22.733Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.3.apk",
+  "sha256": "c11c5d650b27a104f2b9fa244dd0b7b9eb08c7dc81dc57587ba3d5e63dd98d84",
+  "notes": "주인공의 걷기와 행동 이동 속도를 기존 속도로 복구",
+  "publishedAt": "2026-10-21T11:55:02.075Z"
 }
