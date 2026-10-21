@@ -1,9 +1,9 @@
 {
-  "version": "0.73.0",
-  "versionCode": 80,
+  "version": "0.74.0",
+  "versionCode": 81,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.73.0.apk",
-  "sha256": "4a1e872210bda2c006e35030c3fce545a82f474d7cbf0b8301a3c9233a415dd2",
-  "notes": "휴대폰·폴더블 화면 자동 맞춤, 읽기 쉬운 글자·터치 크기, 고해상도 렌더링과 안전 영역 대응",
-  "publishedAt": "2026-10-21T04:52:43.785Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.0.apk",
+  "sha256": "19f21278cf7ae1771866580759590a21a6ac7be7ed77453335daac52c4aa1b1d",
+  "notes": "이동형 위험구역 전투: 직접 이동·조준·사격, 회피·장전, 동물 지원·물자 회수·구조·귀환",
+  "publishedAt": "2026-10-21T07:40:31.969Z"
 }
