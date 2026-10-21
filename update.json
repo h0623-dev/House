@@ -1,9 +1,9 @@
 {
-  "version": "0.67.1",
-  "versionCode": 74,
+  "version": "0.68.0",
+  "versionCode": 75,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.67.1.apk",
-  "sha256": "aa11b6991cc03b3fa8b7ec8b91fec69b416348338bd67e709186c9d065873382",
-  "notes": "연속 씨앗 심기 멈춤과 탑승 다리·방향 표현 수정, 코끼리 하차 오류와 동물 관절 틈 보완",
-  "publishedAt": "2026-10-20T14:52:47.248Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.68.0.apk",
+  "sha256": "ffa392cfc5d35df3884c1c0b89f7d0260c629453406ea5ef7713d9101060fb85",
+  "notes": "트럭의 밤: 가구 배치로 여는 극장·이야기 모임·수리점·야시장·족욕 쉼터, 손님과 세 번의 선택 및 밤 앨범 추가",
+  "publishedAt": "2026-10-21T00:03:10.204Z"
 }
