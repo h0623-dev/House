@@ -1,9 +1,9 @@
 {
-  "version": "0.74.1",
-  "versionCode": 82,
+  "version": "0.74.2",
+  "versionCode": 83,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.1.apk",
-  "sha256": "404f4c6191ec465487ed20c10d8844b64639710bfd9ef99e3712ab46d1ec3dbb",
-  "notes": "이동형 위험구역 전투 최적화: 전투 렌더링과 입력 응답 개선, 모바일 성능 안정화",
-  "publishedAt": "2026-10-21T08:12:39.652Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.2.apk",
+  "sha256": "2d2dd5d6381284d5b1b1833a0b09d787d65441f44f914c477f57bf6873177797",
+  "notes": "닉네임 설정과 이름 변경 화면 추가, 온라인 이름 처리 연동 업데이트",
+  "publishedAt": "2026-10-21T08:36:22.733Z"
 }
