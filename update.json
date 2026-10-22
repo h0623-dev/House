@@ -1,9 +1,9 @@
 {
-  "version": "0.74.7",
-  "versionCode": 88,
+  "version": "0.74.8",
+  "versionCode": 89,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.7.apk",
-  "sha256": "41abc86e3de743cacdd4fac4e5fded7b188e67b502ea944d302f6cc090bb4e64",
-  "notes": "위험구역 12마리 처치 클리어와 놓친 물자 안내, 정찰 안내 개선",
-  "publishedAt": "2026-10-22T00:04:41.939Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.8.apk",
+  "sha256": "aba513790c4f5919ee3f8da40885f2993f29769a385c62dadd800005062250ef",
+  "notes": "밭과 건물 자유 배치·층간 이동, 2층 단계 확장과 지지 구조 개선",
+  "publishedAt": "2026-10-22T12:55:48.453Z"
 }
