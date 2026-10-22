@@ -1,9 +1,9 @@
 {
-  "version": "0.74.9",
-  "versionCode": 90,
+  "version": "0.75.0",
+  "versionCode": 91,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.9.apk",
-  "sha256": "ea0d94d52c1441aa2a301c47015c6441911cccbd4f5227afa807b18a5fb9b85c",
-  "notes": "밭 위치 이동과 배치 조작 개선",
-  "publishedAt": "2026-10-22T13:24:06.884Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.75.0.apk",
+  "sha256": "679fd6000a790ecdcad8950c4176e6b2ca51d3cbbe370a6ff95d104fcbafc88d",
+  "notes": "B안 수납장형 가방과 성장·퀘스트 메뉴 적용",
+  "publishedAt": "2026-10-22T23:33:34.006Z"
 }
