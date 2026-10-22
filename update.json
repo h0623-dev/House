@@ -1,9 +1,9 @@
 {
-  "version": "0.74.8",
-  "versionCode": 89,
+  "version": "0.74.9",
+  "versionCode": 90,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.8.apk",
-  "sha256": "aba513790c4f5919ee3f8da40885f2993f29769a385c62dadd800005062250ef",
-  "notes": "밭과 건물 자유 배치·층간 이동, 2층 단계 확장과 지지 구조 개선",
-  "publishedAt": "2026-10-22T12:55:48.453Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.74.9.apk",
+  "sha256": "ea0d94d52c1441aa2a301c47015c6441911cccbd4f5227afa807b18a5fb9b85c",
+  "notes": "밭 위치 이동과 배치 조작 개선",
+  "publishedAt": "2026-10-22T13:24:06.884Z"
 }
