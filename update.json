@@ -1,9 +1,9 @@
 {
-  "version": "0.76.0",
-  "versionCode": 93,
+  "version": "0.76.1",
+  "versionCode": 94,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.76.0.apk",
-  "sha256": "dd5941c03f608b00e15d105f3281baeb427d0c5e3736d0d8adaae97f685159c6",
-  "notes": "도로 위 발 디딤과 동물·감염체의 걸음을 다듬고, 숲길·교량·검문소마다 지형·장애물·적의 구성을 다르게 만들었어요.",
-  "publishedAt": "2026-10-23T03:42:16.169Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.76.1.apk",
+  "sha256": "de148de2d4485fe9b85dd65b7ec69f35390c40ef444222a4aeada88fe21fc847",
+  "notes": "등록된 운영자에게 건설·전투 전체 기능을 제공하는 업데이트입니다.",
+  "publishedAt": "2026-10-23T04:58:24.082Z"
 }
