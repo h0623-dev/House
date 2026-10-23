@@ -1,9 +1,9 @@
 {
-  "version": "0.78.0",
-  "versionCode": 97,
+  "version": "0.78.1",
+  "versionCode": 98,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.78.0.apk",
-  "sha256": "26fae7227e8af88de69248ecdeb7f3391c5bae720b8ddef225d52f919094ac26",
-  "notes": "인증된 운영자의 실제 마을에 현재 준비된 시설·층·콘텐츠 완성을 적용했어요.",
-  "publishedAt": "2026-10-23T06:22:11.983Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.78.1.apk",
+  "sha256": "0a2401776ee85b39089a225014f527a9cfc3f122caef3c98dd014e5d3cd7409b",
+  "notes": "기존 마을과 재고를 유지하며, 층 표시와 가림 처리를 정리하고 완성 마을의 화면 부하를 줄였어요.",
+  "publishedAt": "2026-10-23T06:57:16.035Z"
 }
