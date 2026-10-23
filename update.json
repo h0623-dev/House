@@ -1,9 +1,9 @@
 {
-  "version": "0.79.3",
-  "versionCode": 103,
+  "version": "0.79.4",
+  "versionCode": 104,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.3.apk",
-  "sha256": "fd99311ff4b7acc5cd40273cf9e225a30aebe2aa5317a4ac2588c2f25f73c46f",
-  "notes": "Android 렉 재개선 · 반복 경로 탐색 및 네이티브 업데이트 처리 최적화",
-  "publishedAt": "2026-10-23T13:30:57.643Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.4.apk",
+  "sha256": "022de3fb3c3693d5e85ad4b860db59f19c9f98d4cfc003dad0648184d129da5d",
+  "notes": "성능 진단 기본 해제 · 양보 경로 최적화 · 통합 세계 지도",
+  "publishedAt": "2026-10-23T13:57:40.419Z"
 }
