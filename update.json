@@ -1,9 +1,9 @@
 {
-  "version": "0.79.4",
-  "versionCode": 104,
+  "version": "0.79.5",
+  "versionCode": 105,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.4.apk",
-  "sha256": "022de3fb3c3693d5e85ad4b860db59f19c9f98d4cfc003dad0648184d129da5d",
-  "notes": "성능 진단 기본 해제 · 양보 경로 최적화 · 통합 세계 지도",
-  "publishedAt": "2026-10-23T13:57:40.419Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.5.apk",
+  "sha256": "4b45045b11085eaa560d0c1e788038b40b118315642ca79ecd00f094e758c012",
+  "notes": "지형 표시 복원 · 완성 마을 지속 렉 개선",
+  "publishedAt": "2026-10-23T21:51:51.662Z"
 }
