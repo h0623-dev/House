@@ -1,9 +1,9 @@
 {
-  "version": "0.75.1",
-  "versionCode": 92,
+  "version": "0.76.0",
+  "versionCode": 93,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.75.1.apk",
-  "sha256": "7644d9ef14ce0ff7addcfde39668343964698237bdc22f5188608f552e0767aa",
-  "notes": "햇살 온실: 아이템·퀘스트·상점·메뉴·탐험을 밝은 목재와 유리, 식물 장식으로 새롭게 꾸몄어요.",
-  "publishedAt": "2026-10-23T00:46:12.777Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.76.0.apk",
+  "sha256": "dd5941c03f608b00e15d105f3281baeb427d0c5e3736d0d8adaae97f685159c6",
+  "notes": "도로 위 발 디딤과 동물·감염체의 걸음을 다듬고, 숲길·교량·검문소마다 지형·장애물·적의 구성을 다르게 만들었어요.",
+  "publishedAt": "2026-10-23T03:42:16.169Z"
 }
