@@ -1,9 +1,9 @@
 {
-  "version": "0.79.6",
-  "versionCode": 106,
+  "version": "0.79.7",
+  "versionCode": 107,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.6.apk",
-  "sha256": "134c6957914c48cceda6ec370722108129df74855faf403ed213c1e2dd393a38",
-  "notes": "동물 파츠·가림·화면 밖 그리기 및 경로·통로·UI 반복 작업 최적화",
-  "publishedAt": "2026-10-23T23:33:01.586Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.7.apk",
+  "sha256": "f2c388bfd0ea93327225bd92375bbaf8e3b5f87c48b3353de2bf4b1d1198b5e4",
+  "notes": "화면·프레임 부담에 맞춘 Scene·만남·전투 렌더 해상도 자동 조절",
+  "publishedAt": "2026-10-23T23:53:16.654Z"
 }
