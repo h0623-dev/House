@@ -1,9 +1,9 @@
 {
-  "version": "0.75.0",
-  "versionCode": 91,
+  "version": "0.75.1",
+  "versionCode": 92,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.75.0.apk",
-  "sha256": "679fd6000a790ecdcad8950c4176e6b2ca51d3cbbe370a6ff95d104fcbafc88d",
-  "notes": "B안 수납장형 가방과 성장·퀘스트 메뉴 적용",
-  "publishedAt": "2026-10-22T23:33:34.006Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.75.1.apk",
+  "sha256": "7644d9ef14ce0ff7addcfde39668343964698237bdc22f5188608f552e0767aa",
+  "notes": "햇살 온실: 아이템·퀘스트·상점·메뉴·탐험을 밝은 목재와 유리, 식물 장식으로 새롭게 꾸몄어요.",
+  "publishedAt": "2026-10-23T00:46:12.777Z"
 }
