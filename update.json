@@ -1,9 +1,9 @@
 {
-  "version": "0.76.1",
-  "versionCode": 94,
+  "version": "0.77.0",
+  "versionCode": 95,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.76.1.apk",
-  "sha256": "de148de2d4485fe9b85dd65b7ec69f35390c40ef444222a4aeada88fe21fc847",
-  "notes": "등록된 운영자에게 건설·전투 전체 기능을 제공하는 업데이트입니다.",
-  "publishedAt": "2026-10-23T04:58:24.082Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.77.0.apk",
+  "sha256": "e30646658e0557e30d5948b424c1ac1b51095d606fa6f1b53b932b93649ada3d",
+  "notes": "지은 층과 받침기둥을 함께 보고, 완성 마을 미리보기로 모든 건물을 살펴볼 수 있어요.",
+  "publishedAt": "2026-10-23T05:41:43.191Z"
 }
