@@ -1,9 +1,9 @@
 {
-  "version": "0.79.0",
-  "versionCode": 100,
+  "version": "0.79.1",
+  "versionCode": 101,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.0.apk",
-  "sha256": "cc35313beb387ca6ea1b175171f61d41a3bb4aba952e4a25f8a3a304b4be2291",
-  "notes": "직선형 차량 마을 1~3층 · 기존 마을 일회성 이관",
-  "publishedAt": "2026-10-23T09:16:16.779Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.1.apk",
+  "sha256": "9f70968f7326d0c7f7cb198f53e62cc3273fc105e8d9d234738c2bd10385e8d0",
+  "notes": "연속 배치 · 드래그 위치 보존 · 자리 맞바꾸기 · 되돌리기",
+  "publishedAt": "2026-10-23T09:56:39.595Z"
 }
