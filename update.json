@@ -1,9 +1,9 @@
 {
-  "version": "0.77.1",
-  "versionCode": 96,
+  "version": "0.78.0",
+  "versionCode": 97,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.77.1.apk",
-  "sha256": "ec92a4ba6770bba1f18f363982c40ac868158e0b3668560818b4305b035e6a75",
-  "notes": "확장층 받침대의 고정 발판을 지면에 맞닿는 회전 바퀴로 바꿨어요.",
-  "publishedAt": "2026-10-23T05:59:29.846Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.78.0.apk",
+  "sha256": "26fae7227e8af88de69248ecdeb7f3391c5bae720b8ddef225d52f919094ac26",
+  "notes": "인증된 운영자의 실제 마을에 현재 준비된 시설·층·콘텐츠 완성을 적용했어요.",
+  "publishedAt": "2026-10-23T06:22:11.983Z"
 }
