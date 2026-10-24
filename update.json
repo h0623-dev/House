@@ -1,9 +1,9 @@
 {
-  "version": "0.79.10",
-  "versionCode": 110,
+  "version": "0.79.11",
+  "versionCode": 111,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.10.apk",
-  "sha256": "bab1be5ff5b4b5345f95ae83399ae51843b50fc8f3f7dcad8892b3b9b35f74bf",
-  "notes": "화면 크기에 맞춘 HUD와 메뉴 배치 개선",
-  "publishedAt": "2026-10-24T03:55:34.438Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.11.apk",
+  "sha256": "b92273bdbc1448f393b9c47c21a5d8e2e03095b570140ec181a03a4ad034c33f",
+  "notes": "투명 HUD와 전체 구조 미리보기 정리",
+  "publishedAt": "2026-10-24T06:15:56.054Z"
 }
