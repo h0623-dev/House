@@ -1,9 +1,9 @@
 {
-  "version": "0.79.8",
-  "versionCode": 108,
+  "version": "0.79.9",
+  "versionCode": 109,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.8.apk",
-  "sha256": "45d590884b00add8be1f3d1ec61e1e9c50492f7b8ab3883259505bf9df49f6ad",
-  "notes": "층·차량별 세부 꾸미기 개선",
-  "publishedAt": "2026-10-24T02:05:12.676Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.79.9.apk",
+  "sha256": "7760ebb122ca00507fda9ae5d2105e4c55e3e597d536082ecf6c3f6896ab1394",
+  "notes": "기존 마을 차량 이관 공간 부족 복구",
+  "publishedAt": "2026-10-24T02:33:20.617Z"
 }
