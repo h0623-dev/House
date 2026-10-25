@@ -1,9 +1,9 @@
 {
-  "version": "0.81.0",
-  "versionCode": 113,
+  "version": "0.82.0",
+  "versionCode": 114,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.81.0.apk",
-  "sha256": "7c098d776c855bc9f907efa05d0268295c901ad635b0152354cb0fbf0f4bb978",
-  "notes": "시설 50종과 조경 50종 확장",
-  "publishedAt": "2026-10-24T22:27:28.021Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.82.0.apk",
+  "sha256": "3c62242cedaea3b4619d1d75a8f2ae919be88a0a4d6c223128c0c307d7517c80",
+  "notes": "생활형 차량 건축과 실내 시설 개편",
+  "publishedAt": "2026-10-25T03:36:09.710Z"
 }
