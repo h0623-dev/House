@@ -1,9 +1,9 @@
 {
-  "version": "0.82.0",
-  "versionCode": 114,
+  "version": "0.82.1",
+  "versionCode": 115,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.82.0.apk",
-  "sha256": "3c62242cedaea3b4619d1d75a8f2ae919be88a0a4d6c223128c0c307d7517c80",
-  "notes": "생활형 차량 건축과 실내 시설 개편",
-  "publishedAt": "2026-10-25T03:36:09.710Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.82.1.apk",
+  "sha256": "62c1ccb9a88ce0e29265e04dc05810c6d32019a24f9595daef22852fc46a5736",
+  "notes": "방별 생활 가구와 꾸며진 마을 미리보기",
+  "publishedAt": "2026-10-25T04:54:36.724Z"
 }
