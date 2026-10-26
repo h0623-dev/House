@@ -1,9 +1,9 @@
 {
-  "version": "0.84.0",
-  "versionCode": 120,
+  "version": "0.85.0",
+  "versionCode": 121,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.84.0.apk",
-  "sha256": "cebd610cd70b4234045b3cd55cfc139fc58ab59251a4e4669a8d5899a20c5e9d",
-  "notes": "풍성한 숲과 새로운 동물 이웃",
-  "publishedAt": "2026-10-26T03:07:25.269Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.85.0.apk",
+  "sha256": "2733fa6189d2df8e7e5244d6af7a3f798eaa1b10b58d4551170430ad5c9a0a1b",
+  "notes": "숲 외곽과 폭포, 폐허 도시의 풍경",
+  "publishedAt": "2026-10-26T06:16:27.399Z"
 }
