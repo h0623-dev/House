@@ -1,9 +1,9 @@
 {
-  "version": "0.83.1",
-  "versionCode": 119,
+  "version": "0.84.0",
+  "versionCode": 120,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.83.1.apk",
-  "sha256": "d35e22be72b674fc04e48e640304a4d7fae5369c8b9618fee121d96a84d9e194",
-  "notes": "위아래 서식지와 채집 경관 분포 개선",
-  "publishedAt": "2026-10-26T01:55:16.832Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.84.0.apk",
+  "sha256": "cebd610cd70b4234045b3cd55cfc139fc58ab59251a4e4669a8d5899a20c5e9d",
+  "notes": "풍성한 숲과 새로운 동물 이웃",
+  "publishedAt": "2026-10-26T03:07:25.269Z"
 }
