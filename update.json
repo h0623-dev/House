@@ -1,9 +1,9 @@
 {
-  "version": "0.85.0",
-  "versionCode": 121,
+  "version": "0.85.1",
+  "versionCode": 122,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.85.0.apk",
-  "sha256": "2733fa6189d2df8e7e5244d6af7a3f798eaa1b10b58d4551170430ad5c9a0a1b",
-  "notes": "숲 외곽과 폭포, 폐허 도시의 풍경",
-  "publishedAt": "2026-10-26T06:16:27.399Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.85.1.apk",
+  "sha256": "d964829849c2281221c31a034c647392c8e3f23135f30a20910430001634d1ec",
+  "notes": "확대 상태 지도 드래그와 핀치 전환 개선",
+  "publishedAt": "2026-10-26T08:07:26.177Z"
 }
