@@ -1,9 +1,9 @@
 {
-  "version": "0.82.3",
-  "versionCode": 117,
+  "version": "0.83.0",
+  "versionCode": 118,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.82.3.apk",
-  "sha256": "188a8e8a47fbebf0e6f3d51816cb256898b6a4c00cf7a144aab94e928764f689",
-  "notes": "동물 표시와 생성 안정성 수정",
-  "publishedAt": "2026-10-25T11:51:00.567Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.83.0.apk",
+  "sha256": "e87f16fb544316a6f20c60a1f6ccfcf2737eb348b910623c03e6fe2e4a824cf5",
+  "notes": "생활형 차량 마감과 통합 조작·행동 개선",
+  "publishedAt": "2026-10-26T00:26:41.085Z"
 }
