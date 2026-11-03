@@ -1,9 +1,9 @@
 {
-  "version": "0.85.1",
-  "versionCode": 122,
+  "version": "0.86.0",
+  "versionCode": 123,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.85.1.apk",
-  "sha256": "d964829849c2281221c31a034c647392c8e3f23135f30a20910430001634d1ec",
-  "notes": "확대 상태 지도 드래그와 핀치 전환 개선",
-  "publishedAt": "2026-10-26T08:07:26.177Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.86.0.apk",
+  "sha256": "cc2b979114bbad3df303c361733c3fb85951218cea8ded58738d23a05d291a13",
+  "notes": "길을 고르는 여행·물길 연결·숲 이웃 통로·폐식당 복원·함께 만드는 정박지",
+  "publishedAt": "2026-11-03T13:52:39.829Z"
 }
