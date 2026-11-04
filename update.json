@@ -1,9 +1,9 @@
 {
-  "version": "0.87.1",
-  "versionCode": 126,
-  "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.87.1.apk",
-  "sha256": "873cbe683b6a5201c0b6f7e38a70b0f5189309a10ab80388a1a146032b87bb38",
-  "notes": "새 풍경에 맞춘 채집 수목과 동물 색감·접지·숲길 배치 개선",
-  "publishedAt": "2026-11-04T14:50:47.222Z"
+  "version": "0.87.2",
+  "versionCode": 127,
+  "minimumNativeVersionCode": 127,
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.87.2.apk",
+  "sha256": "70a9738b6706f90ae28f88d8df9129833b8828a73c7c7a2c38d2365a2738d50e",
+  "notes": "선택하신 5번 강아지·고양이 그림으로 앱 아이콘을 바꿨어요. Android 홈 화면 아이콘을 바꾸려면 이번 APK 업데이트를 설치해 주세요. 기존 앱 위에 업데이트하며, 앱을 삭제할 필요가 없어요.",
+  "publishedAt": "2026-11-04T23:08:13.853Z"
 }
