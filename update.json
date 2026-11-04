@@ -1,9 +1,9 @@
 {
-  "version": "0.86.0",
-  "versionCode": 123,
+  "version": "0.86.1",
+  "versionCode": 124,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.86.0.apk",
-  "sha256": "cc2b979114bbad3df303c361733c3fb85951218cea8ded58738d23a05d291a13",
-  "notes": "길을 고르는 여행·물길 연결·숲 이웃 통로·폐식당 복원·함께 만드는 정박지",
-  "publishedAt": "2026-11-03T13:52:39.829Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.86.1.apk",
+  "sha256": "731df5bed7d4bac5b5b1a59c4d3ba190a175aa08d6727d6b0448fcbb4766cd6e",
+  "notes": "마을 화면과 동물 이동 계산 최적화",
+  "publishedAt": "2026-11-03T23:42:04.191Z"
 }
