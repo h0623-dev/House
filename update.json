@@ -1,9 +1,9 @@
 {
-  "version": "0.87.0",
-  "versionCode": 125,
+  "version": "0.87.1",
+  "versionCode": 126,
   "minimumNativeVersionCode": 68,
-  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.87.0.apk",
-  "sha256": "f72f87d8f1811be7c0388e4828fb7c25fdb37d7a2adf71cbee36e144230a3aae",
-  "notes": "울타리와 개울로 이어지는 피난처 풍경, 외곽 무리와 생활 공간 정비",
-  "publishedAt": "2026-11-04T13:36:27.652Z"
+  "apkUrl": "https://raw.githubusercontent.com/h0623-dev/House/landscape-releases/downloads/road-haven-landscape-0.87.1.apk",
+  "sha256": "873cbe683b6a5201c0b6f7e38a70b0f5189309a10ab80388a1a146032b87bb38",
+  "notes": "새 풍경에 맞춘 채집 수목과 동물 색감·접지·숲길 배치 개선",
+  "publishedAt": "2026-11-04T14:50:47.222Z"
 }
