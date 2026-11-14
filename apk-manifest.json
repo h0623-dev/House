@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "fileName": "road-haven-native-0.88.0-rebuild.1.apk",
+  "bytes": 205530532,
+  "sha256": "4c6847c79a1afa136bcdc247028de789f95978158bad3f2ddd29c3cde4427f3c",
+  "applicationId": "com.roadhaven.rebuild",
+  "versionName": "0.88.0-rebuild.1",
+  "versionCode": 1,
+  "apkCertificateSha256": "6260bb22d083829c87ef9558b2474becc2873ca0e9de640e8545562ce6e85ea3",
+  "releaseTag": "native-rebuild-v0.88.0-rebuild.1",
+  "parts": [
+    {
+      "path": "apk-parts/road-haven-native-0.88.0-rebuild.1.apk.part-00",
+      "bytes": 83886080,
+      "sha256": "be3637cbb369026b26c9a5a69b90e748c7f459293a73990ed6620817b44aacee"
+    },
+    {
+      "path": "apk-parts/road-haven-native-0.88.0-rebuild.1.apk.part-01",
+      "bytes": 83886080,
+      "sha256": "348e52653b1f6d73b138e5feba2bd4e76348431a858bbfa97f9554a4310ee55f"
+    },
+    {
+      "path": "apk-parts/road-haven-native-0.88.0-rebuild.1.apk.part-02",
+      "bytes": 37758372,
+      "sha256": "c167463081b8a81e818c18dfe0fcf6da436fdaf049291f316cc91d2b6ddfd370"
+    }
+  ]
+}
