@@ -1,28 +1,28 @@
 {
   "schemaVersion": 1,
-  "fileName": "road-haven-native-0.88.0-rebuild.5.apk",
-  "bytes": 206407445,
-  "sha256": "7e552baeeb08c024f51e7d7ef004ed8263644925f0158fc6d9df7623912c4e65",
+  "fileName": "road-haven-native-0.88.0-rebuild.6.apk",
+  "bytes": 207218633,
+  "sha256": "eaed82ac979be6b4633152387abd6007a5adca72021f909cb00eef1a76670f4c",
   "applicationId": "com.roadhaven.rebuild",
-  "versionName": "0.88.0-rebuild.5",
-  "versionCode": 5,
+  "versionName": "0.88.0-rebuild.6",
+  "versionCode": 6,
   "apkCertificateSha256": "6260bb22d083829c87ef9558b2474becc2873ca0e9de640e8545562ce6e85ea3",
-  "releaseTag": "native-rebuild-v0.88.0-rebuild.5",
+  "releaseTag": "native-rebuild-v0.88.0-rebuild.6",
   "parts": [
     {
-      "path": "apk-parts/road-haven-native-0.88.0-rebuild.5.apk.part-00",
+      "path": "apk-parts/road-haven-native-0.88.0-rebuild.6.apk.part-00",
       "bytes": 83886080,
-      "sha256": "6f64ea49f857277031a5ff6bb9bed1fa47a4c7f1688752ffae6446e90f0c501b"
+      "sha256": "2f4dfdcb37f57149c6ba54b0e784f69d0e1035daa2cd02208b31ddd8f2657863"
     },
     {
-      "path": "apk-parts/road-haven-native-0.88.0-rebuild.5.apk.part-01",
+      "path": "apk-parts/road-haven-native-0.88.0-rebuild.6.apk.part-01",
       "bytes": 83886080,
-      "sha256": "b9754e2d6209c9ebef0329d055b007009fc634155607328181554633c8f3755e"
+      "sha256": "88547a7be8ab59c638fa25c497c427c659054d16ec7ff7a872466206646d6050"
     },
     {
-      "path": "apk-parts/road-haven-native-0.88.0-rebuild.5.apk.part-02",
-      "bytes": 38635285,
-      "sha256": "674b8a2da97134d20b4a57c3c1ffe428f8244e1a274a83e46df3f67313a4d6c8"
+      "path": "apk-parts/road-haven-native-0.88.0-rebuild.6.apk.part-02",
+      "bytes": 39446473,
+      "sha256": "c8ac5d755f60ca54a3eaee48402436f8015e167c4a4950684ab52c226bac3216"
     }
   ]
 }
