@@ -36,7 +36,7 @@ jobs:
           import { execFileSync } from 'node:child_process';
           import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync, writeSync } from 'node:fs';
           import { join, resolve } from 'node:path';
-          const expected = {"schemaVersion":1,"fileName":"road-haven-native-0.88.0-rebuild.3.apk","bytes":206382680,"sha256":"529536f91240a2075de618df0426b66c15f2a606a6928c2f6cd158a2c88aec3d","applicationId":"com.roadhaven.rebuild","versionName":"0.88.0-rebuild.3","versionCode":3,"apkCertificateSha256":"6260bb22d083829c87ef9558b2474becc2873ca0e9de640e8545562ce6e85ea3","releaseTag":"native-rebuild-v0.88.0-rebuild.3","parts":[{"path":"apk-parts/road-haven-native-0.88.0-rebuild.3.apk.part-00","bytes":83886080,"sha256":"a1a8e97a86029c01860a131ddc6ec93414f15044e7fdfc6f83d41221e7050657"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.3.apk.part-01","bytes":83886080,"sha256":"36dee0fb79ac1fa23240c0fca5e3ad8cce9e94ba9afdff54d1f739f133910e8d"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.3.apk.part-02","bytes":38610520,"sha256":"7292cbfab6d4e392af527d95290e6c3d0ea4f6bed651e45fc086ec2364ffec05"}]};
+          const expected = {"schemaVersion":1,"fileName":"road-haven-native-0.88.0-rebuild.4.apk","bytes":206385720,"sha256":"08959754549cde37e1d66c5afb40f0e6fd128415cce095a5fb4419e1a1b61c40","applicationId":"com.roadhaven.rebuild","versionName":"0.88.0-rebuild.4","versionCode":4,"apkCertificateSha256":"6260bb22d083829c87ef9558b2474becc2873ca0e9de640e8545562ce6e85ea3","releaseTag":"native-rebuild-v0.88.0-rebuild.4","parts":[{"path":"apk-parts/road-haven-native-0.88.0-rebuild.4.apk.part-00","bytes":83886080,"sha256":"fd0b8617cfe3f22845353e9850bb3b25da3f7a439f6ae2224f658c30b270c986"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.4.apk.part-01","bytes":83886080,"sha256":"36dee0fb79ac1fa23240c0fca5e3ad8cce9e94ba9afdff54d1f739f133910e8d"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.4.apk.part-02","bytes":38613560,"sha256":"9a770f24fe6805477987cae34ea3e224a9a8eba83829e8e29cd678cc080fcdaa"}]};
           const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
           assert.match(process.env.GITHUB_SHA ?? '', /^[a-f0-9]{40}$/);
           const head = git('rev-parse', 'HEAD');
@@ -91,13 +91,13 @@ jobs:
               total += count;
             }
           } finally { closeSync(destination); }
-          assert.equal(total, 206382680);
+          assert.equal(total, 206385720);
           assert.equal(lstatSync(output).size, total);
-          assert.equal(whole.digest('hex'), '529536f91240a2075de618df0426b66c15f2a606a6928c2f6cd158a2c88aec3d');
+          assert.equal(whole.digest('hex'), '08959754549cde37e1d66c5afb40f0e6fd128415cce095a5fb4419e1a1b61c40');
           writeFileSync(join(directory, 'SHA256SUMS'), `${expected.sha256}  ${expected.fileName}\n`, { flag: 'wx' });
           writeFileSync(join(directory, 'release-notes.md'), [
-            '로드헤이븐 · 0.88.0-rebuild.3', '',
-            '메뉴 버튼·스크롤·터치 취소와 화면 이동 입력을 수정하고, 가로 전체 화면과 햇살 온실 메뉴·HUD를 적용한 Android 네이티브 APK입니다. 약 197 MiB입니다.', '',
+            '로드헤이븐 · 0.88.0-rebuild.4', '',
+            '집 안의 빈 바닥을 눌러 걷고, 호차 이동·꾸미기에서 걸어갈 방을 고를 수 있습니다. 실제 계단 이동과 출입구 동물 비켜 가기, 층 버튼 터치를 수정한 Android 네이티브 APK입니다. 약 197 MiB입니다.', '',
             '0.88.0-rebuild.1 또는 0.88.0-rebuild.2 APK를 설치했다면 앱을 삭제하지 않고 이 APK로 업데이트 설치하세요. 같은 앱 ID와 서명을 유지합니다.', '',
             '최종 컴파일 게임의 Linux 터치 이벤트·화면 검사와 APK 패키지·서명 검증을 완료했습니다. 실제 Android 휴대폰 업데이트 설치 및 성능 검증은 아직 하지 않아 사전 공개로 제공합니다.', '',
             '기존 앱의 다운로드와 자동 업데이트 경로는 변경하지 않았습니다.', ''
@@ -111,28 +111,28 @@ jobs:
           GH_REPO: h0623-dev/House
         run: |
           set -euo pipefail
-          readonly tag='native-rebuild-v0.88.0-rebuild.3'
-          readonly file='road-haven-native-0.88.0-rebuild.3.apk'
+          readonly tag='native-rebuild-v0.88.0-rebuild.4'
+          readonly file='road-haven-native-0.88.0-rebuild.4.apk'
           readonly directory="$RUNNER_TEMP/native-rebuild-download"
           test "$(git ls-remote origin "refs/tags/$tag")" = ''
           test "$(git ls-remote origin refs/heads/native-rebuild-downloads | cut -f1)" = "$GITHUB_SHA"
           cd "$directory"
           sha256sum --check SHA256SUMS
           # Existing tags or releases are conflicts: never delete, overwrite or upload --clobber.
-          gh release create "$tag" "$file" SHA256SUMS --draft --prerelease --latest=false --target "$GITHUB_SHA" --title '로드헤이븐 0.88.0-rebuild.3' --notes-file release-notes.md
+          gh release create "$tag" "$file" SHA256SUMS --draft --prerelease --latest=false --target "$GITHUB_SHA" --title '로드헤이븐 0.88.0-rebuild.4' --notes-file release-notes.md
           gh release view "$tag" --json assets,isDraft,isPrerelease,targetCommitish,tagName > release-check.json
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { readFileSync, statSync } from 'node:fs';
           const release = JSON.parse(readFileSync('release-check.json', 'utf8'));
-          assert.equal(release.tagName, 'native-rebuild-v0.88.0-rebuild.3');
+          assert.equal(release.tagName, 'native-rebuild-v0.88.0-rebuild.4');
           assert.equal(release.targetCommitish, process.env.GITHUB_SHA);
           assert.equal(release.isDraft, true); assert.equal(release.isPrerelease, true);
-          assert.deepEqual(release.assets.map(asset => asset.name).sort(), ['SHA256SUMS', 'road-haven-native-0.88.0-rebuild.3.apk']);
+          assert.deepEqual(release.assets.map(asset => asset.name).sort(), ['SHA256SUMS', 'road-haven-native-0.88.0-rebuild.4.apk']);
           for (const asset of release.assets) {
             assert.equal(asset.size, statSync(asset.name).size);
             assert.equal(asset.state, 'uploaded');
           }
           NODE
           gh release edit "$tag" --draft=false --prerelease --latest=false
-          printf '%s\n' 'APK: https://github.com/h0623-dev/House/releases/download/native-rebuild-v0.88.0-rebuild.3/road-haven-native-0.88.0-rebuild.3.apk' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' 'APK: https://github.com/h0623-dev/House/releases/download/native-rebuild-v0.88.0-rebuild.4/road-haven-native-0.88.0-rebuild.4.apk' >> "$GITHUB_STEP_SUMMARY"
