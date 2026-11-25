@@ -36,7 +36,7 @@ jobs:
           import { execFileSync } from 'node:child_process';
           import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync, writeSync } from 'node:fs';
           import { join, resolve } from 'node:path';
-          const expected = {"schemaVersion":1,"fileName":"road-haven-native-0.88.0-rebuild.8.apk","bytes":228736697,"sha256":"e0998d16268cd4cb5e40b4f069f4a9c1e82b60164d0772d5e3cd267b38359ab4","applicationId":"com.roadhaven.rebuild","versionName":"0.88.0-rebuild.8","versionCode":8,"apkCertificateSha256":"6260bb22d083829c87ef9558b2474becc2873ca0e9de640e8545562ce6e85ea3","releaseTag":"native-rebuild-v0.88.0-rebuild.8","parts":[{"path":"apk-parts/road-haven-native-0.88.0-rebuild.8.apk.part-00","bytes":83886080,"sha256":"306906c64280490721fb2c7966095296f6f5d3971e0734d909711be1c57f258a"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.8.apk.part-01","bytes":83886080,"sha256":"51a8ec53b226ec878dafd4025d22aee024c49c7cda338dba8956fc3f05937ea6"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.8.apk.part-02","bytes":60964537,"sha256":"3ee8f172ebdb9f65d5491a69487ee3752456cd6fe7b9da9f9aa43903093c57f3"}]};
+          const expected = {"schemaVersion":1,"fileName":"road-haven-native-0.88.0-rebuild.9.apk","bytes":231855741,"sha256":"76e99e95db39b81eb178a2b557cf79a431fe2e6372c8110430625398ea431a10","applicationId":"com.roadhaven.rebuild","versionName":"0.88.0-rebuild.9","versionCode":9,"apkCertificateSha256":"7eb907b47eddb3323e42378ba9b0eb7bc2aa46553b338dc6283515b4f89bbb32","releaseTag":"native-rebuild-v0.88.0-rebuild.9","parts":[{"path":"apk-parts/road-haven-native-0.88.0-rebuild.9.apk.part-00","bytes":83886080,"sha256":"372ca761ac498f2f51c3ad3f26fd3b80653fb1d4abf7b4ea162cbd176171b09a"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.9.apk.part-01","bytes":83886080,"sha256":"51a8ec53b226ec878dafd4025d22aee024c49c7cda338dba8956fc3f05937ea6"},{"path":"apk-parts/road-haven-native-0.88.0-rebuild.9.apk.part-02","bytes":64083581,"sha256":"c024ab697177469ffb01ee3e7c45efd7562acf22687457dc31f7cdd5fc0c2e10"}]};
           const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
           assert.match(process.env.GITHUB_SHA ?? '', /^[a-f0-9]{40}$/);
           const head = git('rev-parse', 'HEAD');
@@ -91,20 +91,20 @@ jobs:
               total += count;
             }
           } finally { closeSync(destination); }
-          assert.equal(total, 228736697);
+          assert.equal(total, 231855741);
           assert.equal(lstatSync(output).size, total);
-          assert.equal(whole.digest('hex'), 'e0998d16268cd4cb5e40b4f069f4a9c1e82b60164d0772d5e3cd267b38359ab4');
+          assert.equal(whole.digest('hex'), '76e99e95db39b81eb178a2b557cf79a431fe2e6372c8110430625398ea431a10');
           writeFileSync(join(directory, 'SHA256SUMS'), `${expected.sha256}  ${expected.fileName}\n`, { flag: 'wx' });
           writeFileSync(join(directory, 'release-notes.md'), [
-            "로드헤이븐 · 0.88.0-rebuild.8",
+            "로드헤이븐 · 0.88.0-rebuild.9",
             "",
-            "Android 업데이트 함수를 잘못 판단해 요청이 시작되지 않던 연결 검사를 수정한 네이티브 APK입니다. 낮·밤 로딩 풍경, 게임 시작·기기 로그인·설정 화면과 기존 모험가의 수첩·퀘스트·이동 동작을 포함합니다.",
+            "새 서명으로 만든 네이티브 APK입니다. 이전 rebuild 서명키를 잃어버려 같은 앱 ID에 새 서명을 사용합니다. 확대·이동 렉 개선, 새 HUD와 메뉴 버튼, 건설 배치 복구, 측면 걷기·달리기 동작, 트럭에 다시 탈 때 쉬는 동물 때문에 이동이 멈추던 문제 수정을 포함합니다.",
             "",
-            "rebuild.1~7 APK를 설치했다면 앱을 삭제하지 않고 이번 APK를 한 번 업데이트 설치하세요. 같은 앱 ID·서명·저장 위치를 유지합니다. 이후 일반 게임·이미지 업데이트는 앱 안에서 내려받으며 Android 호스트·엔진 변경에는 새 APK가 필요할 수 있습니다.",
+            "rebuild.1~8 APK가 설치돼 있다면 서명이 달라 덮어 설치할 수 없습니다. 기존 로드헤이븐을 먼저 삭제한 뒤 이번 APK를 설치하세요. 삭제하면 휴대폰 안의 마을 진행과 기기 로그인 정보가 지워지고 새로 시작합니다.",
             "",
-            "다운로드와 검증을 마친 업데이트는 앱을 완전히 종료한 뒤 다시 실행하면 적용됩니다. 마을 화면의 저장 후 적용 버튼으로도 안전하게 다시 시작할 수 있습니다. 메인 화면에서도 자동으로 업데이트를 확인하고 다운로드합니다.",
+            "이후 일반 게임·이미지 업데이트는 앱 안에서 내려받습니다. 준비된 업데이트는 앱을 완전히 종료한 뒤 다시 실행하거나 마을 화면의 저장 후 적용 버튼으로 적용됩니다.",
             "",
-            "Linux/JVM 검사와 APK 패키지·서명 검증 결과입니다. 실제 Android 휴대폰 업데이트 설치 및 성능은 아직 검증하지 않아 사전 공개로 제공합니다.",
+            "Linux/JVM 검사와 APK 패키지·서명 검증 결과입니다. 실제 Android 휴대폰 설치와 성능은 아직 검증하지 않아 사전 공개로 제공합니다.",
             "",
             "기존 앱 다운로드·저장과 다른 공개 배포 채널은 보존합니다.",
             "",
@@ -118,28 +118,28 @@ jobs:
           GH_REPO: h0623-dev/House
         run: |
           set -euo pipefail
-          readonly tag='native-rebuild-v0.88.0-rebuild.8'
-          readonly file='road-haven-native-0.88.0-rebuild.8.apk'
+          readonly tag='native-rebuild-v0.88.0-rebuild.9'
+          readonly file='road-haven-native-0.88.0-rebuild.9.apk'
           readonly directory="$RUNNER_TEMP/native-rebuild-download"
           test "$(git ls-remote origin "refs/tags/$tag")" = ''
           test "$(git ls-remote origin refs/heads/native-rebuild-downloads | cut -f1)" = "$GITHUB_SHA"
           cd "$directory"
           sha256sum --check SHA256SUMS
           # Existing tags or releases are conflicts: never delete, overwrite or upload --clobber.
-          gh release create "$tag" "$file" SHA256SUMS --draft --prerelease --latest=false --target "$GITHUB_SHA" --title '로드헤이븐 0.88.0-rebuild.8' --notes-file release-notes.md
+          gh release create "$tag" "$file" SHA256SUMS --draft --prerelease --latest=false --target "$GITHUB_SHA" --title '로드헤이븐 0.88.0-rebuild.9' --notes-file release-notes.md
           gh release view "$tag" --json assets,isDraft,isPrerelease,targetCommitish,tagName > release-check.json
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { readFileSync, statSync } from 'node:fs';
           const release = JSON.parse(readFileSync('release-check.json', 'utf8'));
-          assert.equal(release.tagName, 'native-rebuild-v0.88.0-rebuild.8');
+          assert.equal(release.tagName, 'native-rebuild-v0.88.0-rebuild.9');
           assert.equal(release.targetCommitish, process.env.GITHUB_SHA);
           assert.equal(release.isDraft, true); assert.equal(release.isPrerelease, true);
-          assert.deepEqual(release.assets.map(asset => asset.name).sort(), ['SHA256SUMS', 'road-haven-native-0.88.0-rebuild.8.apk']);
+          assert.deepEqual(release.assets.map(asset => asset.name).sort(), ['SHA256SUMS', 'road-haven-native-0.88.0-rebuild.9.apk']);
           for (const asset of release.assets) {
             assert.equal(asset.size, statSync(asset.name).size);
             assert.equal(asset.state, 'uploaded');
           }
           NODE
           gh release edit "$tag" --draft=false --prerelease --latest=false
-          printf '%s\n' 'APK: https://github.com/h0623-dev/House/releases/download/native-rebuild-v0.88.0-rebuild.8/road-haven-native-0.88.0-rebuild.8.apk' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' 'APK: https://github.com/h0623-dev/House/releases/download/native-rebuild-v0.88.0-rebuild.9/road-haven-native-0.88.0-rebuild.9.apk' >> "$GITHUB_STEP_SUMMARY"
